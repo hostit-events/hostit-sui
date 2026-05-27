@@ -1,0 +1,16 @@
+[package]
+name = "hostit_ticket"
+version = "0.1.0"
+edition = "2024.beta"
+license = "MIT"
+authors = ["HostIt contributors"]
+published-at = "0x4829706d16be235a2c3fbe86a1f7449100d39a46e3dd8105a5db3762a8ce1848"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
+
+[addresses]
+hostit_ticket = "0x423336143d4e5a810d24b97762bfa10be56b7d5dc86b75e831cb0897264b1e8d"
+
+[dev-addresses]
+hostit_ticket = "0xCAFE"
