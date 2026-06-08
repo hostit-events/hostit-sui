@@ -8,6 +8,7 @@ import {
   TICKET_TYPE,
 } from "@/lib/config";
 import { getFields } from "@/lib/ticketing";
+import { humanizeError } from "@/lib/moveErrors";
 import { claimPoapTx, POAP_TYPE } from "@/lib/poap";
 import { catPalette, catGlyph, PAL } from "@/lib/data";
 import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
@@ -51,7 +52,7 @@ export function WalletScreen() {
           <div className="font-semibold" style={{ fontSize: 18 }}>No wallet connected</div>
           <p className="text-sm" style={{ color: "var(--fg2)", maxWidth: 380 }}>
             Connect your Sui wallet using the button in the top bar to access your wallet. In the meantime you can{" "}
-            <Link href="/" style={{ color: "var(--hi-blue)" }}>discover events</Link>.
+            <Link href="/discover" style={{ color: "var(--hi-blue)" }}>discover events</Link>.
           </p>
         </div>
       </div>
@@ -182,11 +183,15 @@ function WalletInner({ addr }: { addr: string }) {
         <div>
           {ticketsQuery.isLoading ? (
             <div className="card mono">Loading tickets…</div>
+          ) : ticketsQuery.error ? (
+            <div className="card" style={{ color: "var(--color-danger)" }}>
+              Couldn&apos;t load tickets. <button className="btn btn-sm" onClick={() => ticketsQuery.refetch()}>Retry</button>
+            </div>
           ) : tickets.length === 0 ? (
             <EmptyState
               icon="ion:ticket"
               title="No tickets yet"
-              body={<>Tickets you buy or claim show up here.{" "}<Link href="/" style={{ color: "var(--hi-blue)" }}>Discover events</Link>.</>}
+              body={<>Tickets you buy or claim show up here.{" "}<Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover events</Link>.</>}
             />
           ) : (
             <MyTickets address={addr} />
@@ -198,6 +203,10 @@ function WalletInner({ addr }: { addr: string }) {
         <div>
           {poapsQuery.isLoading ? (
             <div className="card mono">Loading collectibles…</div>
+          ) : poapsQuery.error ? (
+            <div className="card" style={{ color: "var(--color-danger)" }}>
+              Couldn&apos;t load collectibles. <button className="btn btn-sm" onClick={() => poapsQuery.refetch()}>Retry</button>
+            </div>
           ) : poaps.length === 0 ? (
             <EmptyState
               icon="ph:medal-fill"
@@ -218,7 +227,7 @@ function WalletInner({ addr }: { addr: string }) {
         <EmptyState
           icon="solar:bookmark-bold"
           title="Nothing saved yet"
-          body={<>Bookmarks live on your device for now. Browse the{" "}<Link href="/" style={{ color: "var(--hi-blue)" }}>Discover</Link>{" "}feed and save events you want to come back to. (On-chain wishlists are coming in v2.)</>}
+          body={<>Bookmarks live on your device for now. Browse the{" "}<Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover</Link>{" "}feed and save events you want to come back to. (On-chain wishlists are coming in v2.)</>}
         />
       )}
     </div>
@@ -307,7 +316,7 @@ function ClaimPoapRow({
       setDone(true);
       onClaimed();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e));
     }
   }
 

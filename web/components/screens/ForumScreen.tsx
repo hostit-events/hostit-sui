@@ -17,8 +17,10 @@ import {
   useCurrentAccount,
   useCurrentClient,
   useSignAndExecute,
+  useSponsorAndExecute,
   useSuiQuery,
 } from "@/lib/hooks";
+import { humanizeError } from "@/lib/moveErrors";
 import { createSessionKey } from "@/lib/seal";
 import {
   FORUM_CHANNELS,
@@ -56,7 +58,9 @@ export function ForumScreen({ id }: { id: string }) {
   const addr = account?.address ?? null;
   const suiClient = useCurrentClient();
   const dAppKit = useDAppKit();
-  const { mutateAsync: signAndExecute, isPending: posting } = useSignAndExecute();
+  const regular = useSignAndExecute();
+  const sponsored = useSponsorAndExecute();
+  const posting = regular.isPending || sponsored.isPending;
 
   // --- Gate: does the connected wallet own a ticket for THIS event? ---------
   const ownedQ = useSuiQuery<
@@ -238,7 +242,9 @@ export function ForumScreen({ id }: { id: string }) {
       });
       // Anchor the post on-chain (proves a valid ticket holder authored it).
       const tx = forumPostTx(id, myTicketId, channel, blobId);
-      const out = await signAndExecute({ transaction: tx });
+      const out = ENOKI_ENABLED
+        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
+        : await regular.mutateAsync({ transaction: tx });
       setPostDigest(out.digest);
       setDraft("");
       // Optimistically show our own message immediately (we know the plaintext).
@@ -250,7 +256,7 @@ export function ForumScreen({ id }: { id: string }) {
       void ensureSession();
       postsQ.refetch();
     } catch (e: unknown) {
-      setPostErr(e instanceof Error ? e.message : String(e));
+      setPostErr(humanizeError(e));
     }
   }
 
@@ -277,6 +283,19 @@ export function ForumScreen({ id }: { id: string }) {
     );
   }
 
+  if (ownedQ.isError) {
+    return (
+      <ForumShell id={id}>
+        <div className="card" style={{ color: "var(--color-danger)" }}>
+          Could not verify your tickets.{" "}
+          <button className="btn btn-sm" onClick={() => ownedQ.refetch()}>
+            Retry
+          </button>
+        </div>
+      </ForumShell>
+    );
+  }
+
   if (!gatedIn) {
     return (
       <ForumShell id={id}>
@@ -296,8 +315,8 @@ export function ForumScreen({ id }: { id: string }) {
   return (
     <ForumShell id={id}>
       <div
-        className="grid gap-5"
-        style={{ gridTemplateColumns: "minmax(180px, 220px) 1fr", alignItems: "start" }}
+        className="grid gap-5 grid-cols-1 lg:grid-cols-[minmax(180px,220px)_1fr]"
+        style={{ alignItems: "start" }}
       >
         {/* Left rail: channels */}
         <aside className="card" style={{ position: "sticky", top: 16 }}>
@@ -368,6 +387,17 @@ export function ForumScreen({ id }: { id: string }) {
             {postsQ.isLoading && channelPosts.length === 0 ? (
               <div className="mono" style={{ color: "var(--fg3)" }}>
                 Loading messages…
+              </div>
+            ) : postsQ.isError && channelPosts.length === 0 ? (
+              <div
+                className="flex flex-col items-center justify-center grow text-center"
+                style={{ color: "var(--color-danger)", gap: 8, padding: "40px 0" }}
+              >
+                <Icon icon="ic:round-error-outline" size={40} />
+                <div className="font-semibold">Could not load messages</div>
+                <button className="btn btn-sm" onClick={() => postsQ.refetch()}>
+                  Retry
+                </button>
               </div>
             ) : channelPosts.length === 0 ? (
               <div

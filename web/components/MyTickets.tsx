@@ -83,6 +83,12 @@ export function MyTickets({ address }: { address: string }) {
   }, [q.data]);
 
   if (q.isLoading) return null;
+  if (q.error)
+    return (
+      <div className="card" style={{ color: "var(--color-danger)" }}>
+        Couldn&apos;t load your tickets. <button className="btn btn-sm" onClick={() => q.refetch()}>Retry</button>
+      </div>
+    );
   if (tickets.length === 0) return null;
 
   return (

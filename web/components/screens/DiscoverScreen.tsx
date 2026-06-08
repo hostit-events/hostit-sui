@@ -14,7 +14,7 @@ import { Icon } from "@/components/Icon";
 export function DiscoverScreen() {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
-  const { events, pricesBySeq, isLoading } = useEventList();
+  const { events, pricesBySeq, isLoading, isError, refetch } = useEventList();
   // Single pair of queryEvents (both market kinds) -> Set of event_seq with a
   // market, so cards can flag it without an N+1 per-card query.
   const { hasMarketSeqs } = useEventsWithMarkets();
@@ -86,6 +86,10 @@ export function DiscoverScreen() {
 
       {isLoading ? (
         <div className="card mono">Loading events…</div>
+      ) : isError ? (
+        <div className="card" style={{ color: "var(--color-danger)" }}>
+          Couldn&apos;t load events. <button className="btn btn-sm" onClick={() => refetch()}>Retry</button>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="card">
           <div className="font-semibold">No events found.</div>

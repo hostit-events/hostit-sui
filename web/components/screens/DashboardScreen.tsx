@@ -102,7 +102,7 @@ export function DashboardScreen() {
   const addr = account?.address ?? null;
   const [tab, setTab] = useState<Tab>("overview");
 
-  const { events, isLoading: eventsLoading } = useEventList();
+  const { events, isLoading: eventsLoading, isError: eventsError, refetch: refetchEvents } = useEventList();
 
   // My events + the set of their event_seq (used to filter all on-chain logs).
   const myEvents = useMemo(
@@ -252,7 +252,11 @@ export function DashboardScreen() {
             />
           </section>
 
-          {myEvents.length === 0 && !eventsLoading ? (
+          {eventsError ? (
+            <div className="card" style={{ color: "var(--color-danger)" }}>
+              Couldn&apos;t load your events. <button className="btn btn-sm" onClick={() => refetchEvents()}>Retry</button>
+            </div>
+          ) : myEvents.length === 0 && !eventsLoading ? (
             <div className="card">
               <div className="font-semibold">You haven&apos;t created any events yet.</div>
               <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>

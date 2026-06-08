@@ -83,5 +83,16 @@ export function useEventList() {
     return m;
   }, [priceSet.data]);
 
-  return { events, pricesBySeq, isLoading: created.isLoading };
+  const refetch = () => {
+    void created.refetch();
+    void priceSet.refetch();
+  };
+
+  return {
+    events,
+    pricesBySeq,
+    isLoading: created.isLoading,
+    isError: created.isError || priceSet.isError,
+    refetch,
+  };
 }
