@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024.beta"
 license = "MIT"
 authors = ["HostIt contributors"]
-published-at = "0x4829706d16be235a2c3fbe86a1f7449100d39a46e3dd8105a5db3762a8ce1848"
+# published-at / original-id are tracked in Published.toml (automated address
+# management) — the single source of truth for the deployed package versions.
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }

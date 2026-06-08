@@ -164,7 +164,6 @@ hostit-sui/
 ├── sources/                                 # Move modules: hub · event · ticket · market · checkin
 │                                            #               access · poap · forum · predict
 ├── tests/                                   # Move test_scenario suites (57 tests)
-├── sdk/ · scripts/                          # standalone TS PTB SDK + CLI smoke scripts
 └── web/                                     # Next.js dApp
     ├── app/                                 # App Router routes (+ /api/sponsor, /api/copilot)
     ├── components/ (+ screens/)             # UI
