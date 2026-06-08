@@ -82,7 +82,16 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Never allow horizontal scroll on mobile. `clip` (not `hidden`) doesn't
+       create a scroll container, so it won't break the sticky header or the
+       landing's sticky/pinned sections. */
+    overflow-x: clip;
   }
+  /* Long unbreakable strings (Sui addresses, object/package ids, blob ids)
+     shouldn't force the layout wider than the screen. */
+  .mono, .break-anywhere { overflow-wrap: anywhere; }
+  /* Media never overflows its column. */
+  img, picture, video { max-width: 100%; }
   body {
     background:
       radial-gradient(1100px 700px at 80% -10%, rgba(0, 124, 250, 0.10), transparent 60%),
