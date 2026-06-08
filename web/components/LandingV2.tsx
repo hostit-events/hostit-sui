@@ -144,14 +144,18 @@ export function LandingV2() {
 
       <header className="lv-nav">
         <div className="lv-wrap lv-nav-in">
-          <a onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} style={{ cursor: "pointer" }}>
+          <a
+            href="#top"
+            onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+            aria-label="Back to top"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="brand" src="/brand/logo-white.png" alt="HostIt" style={{ height: 26 }} />
           </a>
           <nav className="lv-nav-links">
-            <a onClick={() => scrollToId("problem")}>Why HostIt</a>
-            <a onClick={() => scrollToId("solution")}>Platform</a>
-            <a onClick={() => scrollToId("proof")}>Proof</a>
+            <a href="#problem" onClick={(e) => { e.preventDefault(); scrollToId("problem"); }}>Why HostIt</a>
+            <a href="#solution" onClick={(e) => { e.preventDefault(); scrollToId("solution"); }}>Platform</a>
+            <a href="#proof" onClick={(e) => { e.preventDefault(); scrollToId("proof"); }}>Proof</a>
           </nav>
           <div className="lv-nav-cta">
             <button className="lv-btn lv-btn-quiet" onClick={login}>Log in</button>
@@ -292,14 +296,28 @@ export function LandingV2() {
             <p>Everything to run your event, in one place. Sell, promote and manage — escrow-backed and on-chain ready.</p>
             <div className="lv-socials">
               {[["ri:twitter-x-fill", "X"], ["ri:linkedin-fill", "LinkedIn"], ["file-icons:telegram", "Telegram"], ["ri:github-fill", "GitHub"]].map(([ic, label]) => (
-                <a key={label} className="lv-soc" aria-label={label}><Icon icon={ic} size={18} /></a>
+                <a key={label} className="lv-soc" aria-label={label} href="#" aria-disabled="true" onClick={(e) => e.preventDefault()}><Icon icon={ic} size={18} /></a>
               ))}
             </div>
           </div>
           <div className="lv-footer-cols">
-            <FooterCol h="Platform" links={["Overview", "Pricing", "Check-in", "Changelog"]} />
-            <FooterCol h="Company" links={["About", "Careers", "Contact"]} />
-            <FooterCol h="Legal" links={["Terms", "Privacy", "Security", "DMCA"]} />
+            <FooterCol
+              h="Platform"
+              links={[
+                { label: "Overview", href: "#top" },
+                { label: "Pricing", href: "#problem" },
+                { label: "Check-in", href: "#solution" },
+                { label: "Changelog" },
+              ]}
+            />
+            <FooterCol
+              h="Company"
+              links={[{ label: "About" }, { label: "Careers" }, { label: "Contact" }]}
+            />
+            <FooterCol
+              h="Legal"
+              links={[{ label: "Terms" }, { label: "Privacy" }, { label: "Security" }, { label: "DMCA" }]}
+            />
           </div>
         </div>
         <div className="lv-wrap lv-footer-bar">
@@ -315,11 +333,30 @@ function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
 }
 
-function FooterCol({ h, links }: { h: string; links: string[] }) {
+function FooterCol({ h, links }: { h: string; links: { label: string; href?: string }[] }) {
   return (
     <div className="lv-footer-col">
       <div className="lv-footer-h">{h}</div>
-      {links.map((l) => <a key={l}>{l}</a>)}
+      {links.map(({ label, href }) =>
+        href && href.startsWith("#") && href.length > 1 ? (
+          <a
+            key={label}
+            href={href}
+            onClick={(e) => { e.preventDefault(); scrollToId(href.slice(1)); }}
+          >
+            {label}
+          </a>
+        ) : (
+          <a
+            key={label}
+            href="#"
+            aria-disabled="true"
+            onClick={(e) => e.preventDefault()}
+          >
+            {label}
+          </a>
+        ),
+      )}
     </div>
   );
 }

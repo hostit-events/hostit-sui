@@ -226,7 +226,7 @@ export function SettingsScreen() {
         <p className="page-sub">Profile, interests, notifications and encrypted verification.</p>
       </header>
 
-      <div className="grid gap-6" style={{ gridTemplateColumns: "minmax(0,200px) minmax(0,1fr)" }}>
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)]">
         {/* left nav */}
         <aside className="flex flex-col gap-1.5" style={{ alignSelf: "start" }}>
           {NAV.map((n) => (
@@ -259,8 +259,11 @@ export function SettingsScreen() {
                 </p>
               </div>
               <div className="field">
-                <label className="label">Display name</label>
+                <label className="label" htmlFor="settings-profile-name">
+                  Display name
+                </label>
                 <input
+                  id="settings-profile-name"
                   className="input"
                   placeholder="Satoshi"
                   value={profile.name}
@@ -268,8 +271,11 @@ export function SettingsScreen() {
                 />
               </div>
               <div className="field">
-                <label className="label">Location</label>
+                <label className="label" htmlFor="settings-profile-location">
+                  Location
+                </label>
                 <input
+                  id="settings-profile-location"
                   className="input"
                   placeholder="Lisbon, PT"
                   value={profile.location}
@@ -308,8 +314,11 @@ export function SettingsScreen() {
               ) : (
                 <>
                   <div className="field">
-                    <label className="label">Full legal name</label>
+                    <label className="label" htmlFor="settings-kyc-legal-name">
+                      Full legal name
+                    </label>
                     <input
+                      id="settings-kyc-legal-name"
                       className="input"
                       placeholder="As shown on your government ID"
                       value={legalName}
@@ -318,8 +327,11 @@ export function SettingsScreen() {
                     />
                   </div>
                   <div className="field">
-                    <label className="label">ID number</label>
+                    <label className="label" htmlFor="settings-kyc-id-number">
+                      ID number
+                    </label>
                     <input
+                      id="settings-kyc-id-number"
                       className="input"
                       placeholder="Passport / national ID number"
                       value={idNumber}
@@ -386,15 +398,25 @@ export function SettingsScreen() {
           {tab === "interests" && (
             <div className="card space-y-5">
               <div>
-                <div className="section-label">Interests</div>
+                <div className="section-label" id="settings-interests-label">
+                  Interests
+                </div>
                 <p className="page-sub" style={{ fontSize: 13 }}>
                   Pick categories to personalise Discover. Saved on this device.
                 </p>
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div
+                className="flex gap-2 flex-wrap"
+                role="group"
+                aria-labelledby="settings-interests-label"
+              >
                 {CATEGORIES.filter((c) => c.id !== "all").map((c) => (
                   <button
                     key={c.id}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={interests.includes(c.id)}
+                    aria-label={c.label}
                     className={`chip ${interests.includes(c.id) ? "on" : ""}`}
                     onClick={() => toggleInterest(c.id)}
                   >

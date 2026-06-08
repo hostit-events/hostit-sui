@@ -12,6 +12,7 @@ import {
   useSuiQuery,
 } from "@/lib/hooks";
 import { useEventList } from "@/lib/events";
+import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
 import { catPalette, catGlyph } from "@/lib/data";
@@ -180,7 +181,7 @@ export function EventPageScreen({ id }: { id: string }) {
       setDigest(out.digest);
       q.refetch();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e));
     }
   }
 
@@ -250,7 +251,7 @@ export function EventPageScreen({ id }: { id: string }) {
         </div>
       </div>
 
-      <div className="grid gap-8" style={{ gridTemplateColumns: "minmax(0,1fr) 340px" }}>
+      <div className="grid gap-8 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
         {/* ---- Main column ---- */}
         <div className="space-y-8" style={{ minWidth: 0 }}>
           {/* Title block */}
@@ -297,9 +298,9 @@ export function EventPageScreen({ id }: { id: string }) {
 
           {/* About */}
           <div className="space-y-3">
-            <span className="eyebrow">
+            <h2 className="eyebrow">
               <Icon icon="ph:info-bold" size={14} /> About
-            </span>
+            </h2>
             <p className="text-sm whitespace-pre-wrap" style={{ color: "var(--fg2)", lineHeight: 1.7 }}>
               {meta?.description?.trim() || "No description was provided for this event."}
             </p>
@@ -307,9 +308,9 @@ export function EventPageScreen({ id }: { id: string }) {
 
           {/* Good to know */}
           <div className="space-y-3">
-            <span className="eyebrow">
+            <h2 className="eyebrow">
               <Icon icon="ph:list-checks-bold" size={14} /> Good to know
-            </span>
+            </h2>
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))" }}>
               <GoodToKnow icon="mdi:door-open" title="Doors" value={`${fmtTime(startMs)}, ${fmtDate(startMs)}`} />
               <GoodToKnow
@@ -342,9 +343,9 @@ export function EventPageScreen({ id }: { id: string }) {
 
           {/* Markets — parimutuel prediction markets (Sellout Clock + range) */}
           <div className="space-y-3">
-            <span className="eyebrow">
+            <h2 className="eyebrow">
               <Icon icon="mdi:chart-line" size={14} /> Markets
-            </span>
+            </h2>
             <EventMarketsScreen eventId={id} eventSeq={eventSeq} maxTickets={maxTickets} />
           </div>
         </div>
@@ -353,9 +354,9 @@ export function EventPageScreen({ id }: { id: string }) {
         <div>
           <div className="card space-y-4" style={{ position: "sticky", top: 24 }}>
             <div>
-              <span className="eyebrow" style={{ margin: 0 }}>
+              <h2 className="eyebrow" style={{ margin: 0 }}>
                 <Icon icon="ion:ticket" size={14} /> Tickets
-              </span>
+              </h2>
               <div className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
                 {soldOut ? (
                   <span style={{ color: "var(--color-danger)" }}>Sold out</span>
