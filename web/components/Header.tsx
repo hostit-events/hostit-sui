@@ -15,7 +15,7 @@ export function Header() {
   const pathname = usePathname() || "/";
   return (
     <header
-      className="sticky top-0 z-50"
+      className="hidden md:block sticky top-0 z-50"
       style={{
         background: "rgba(11,15,38,.82)",
         backdropFilter: "blur(16px) saturate(1.2)",
@@ -55,18 +55,6 @@ export function Header() {
           <AuthControl />
         </div>
       </div>
-      {/* mobile nav */}
-      <nav className="md:hidden flex items-center gap-1 px-3 pb-2 -mt-1 overflow-x-auto" aria-label="Primary">
-        {NAV.map((n) => {
-          const active = pathname === n.href || pathname.startsWith(n.href + "/");
-          return (
-            <Link key={n.href} href={n.href} className={`topnav-item ${active ? "active" : ""}`}>
-              <Icon icon={n.icon} size={16} />
-              {n.label}
-            </Link>
-          );
-        })}
-      </nav>
     </header>
   );
 }

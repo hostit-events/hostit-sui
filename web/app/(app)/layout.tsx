@@ -1,19 +1,22 @@
 import { Header } from "@/components/Header";
+import { MobileTabBar } from "@/components/MobileTabBar";
 import { NETWORK, PACKAGE_ID, ENOKI_ENABLED } from "@/lib/config";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Header />
-      <main className="flex-1 w-full mx-auto max-w-[1180px] px-5 sm:px-8 py-8">{children}</main>
+      {/* pb-24 on mobile clears the fixed bottom tab bar */}
+      <main className="flex-1 w-full mx-auto max-w-[1180px] px-5 sm:px-8 pt-8 pb-24 md:pb-8">{children}</main>
       <Footer />
+      <MobileTabBar />
     </>
   );
 }
 
 function Footer() {
   return (
-    <footer style={{ borderTop: "1px solid var(--hair)" }} className="mt-10">
+    <footer style={{ borderTop: "1px solid var(--hair)" }} className="mt-10 hidden md:block">
       <div className="mx-auto max-w-[1180px] px-5 sm:px-8 py-9 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}

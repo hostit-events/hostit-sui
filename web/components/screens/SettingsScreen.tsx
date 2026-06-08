@@ -8,6 +8,7 @@ import { storeBlob, readBlob } from "@/lib/walrus";
 import { CATEGORIES } from "@/lib/data";
 import { Icon } from "@/components/Icon";
 import { AddressDisplay } from "@/components/AddressDisplay";
+import { AuthControl } from "@/components/AuthControl";
 import { toBase64, fromBase64 } from "@mysten/sui/utils";
 import { useDAppKit } from "@mysten/dapp-kit-react";
 import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
@@ -228,6 +229,13 @@ export function SettingsScreen() {
         </h1>
         <p className="page-sub">Profile, interests, notifications and encrypted verification.</p>
       </header>
+
+      {/* Mobile: the header is hidden, so the account sign-in/out lives here
+          (this is the "Account" bottom-tab destination). */}
+      <div className="md:hidden flex items-center justify-between gap-3 card" style={{ padding: 14 }}>
+        <span className="section-label" style={{ margin: 0 }}>Wallet</span>
+        <AuthControl />
+      </div>
 
       <div className="grid gap-6 grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)]">
         {/* left nav */}
