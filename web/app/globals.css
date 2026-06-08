@@ -271,12 +271,15 @@
   .mtab.active { color: var(--hi-blue); }
   .mtab-fab {
     flex: none; display: flex; align-items: center; justify-content: center;
-    width: 54px; height: 54px; margin: 0 4px -14px; border-radius: 50%;
+    width: 56px; height: 56px; margin: 0 6px; border-radius: 50%;
     background: var(--hi-blue); color: #fff;
-    box-shadow: 0 10px 24px rgba(0, 124, 250, .45);
+    box-shadow: 0 8px 22px rgba(0, 124, 250, .45);
+    /* raise above the bar via transform (no layout shift → never clipped at the
+       viewport bottom, unlike a negative margin) */
+    transform: translateY(-16px);
     transition: transform .15s ease;
   }
-  .mtab-fab:active { transform: scale(.94); }
+  .mtab-fab:active { transform: translateY(-16px) scale(.94); }
 
   /* ---- mono helper ---- */
   .mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: .02em; color: var(--fg3); }
