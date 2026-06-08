@@ -76,6 +76,9 @@ export function humanizeError(e: unknown): string {
   if (/no valid gas coins/i.test(raw))
     return "Your wallet has no SUI to pay for gas on this action. Add testnet SUI from a faucet and try again.";
   if (/insufficient.*(gas|balance)|gasbalance/i.test(raw)) return "Not enough SUI for gas.";
-  if (/dry_run_failed/i.test(raw)) return "This action would fail on-chain right now.";
+  if (/no valid coins|coinwithbalance|insufficient.*coin/i.test(raw))
+    return "You don’t have enough of that coin — get testnet USDC from a faucet.";
+  if (/\/api\/sponsor|dry_run_failed|enoki/i.test(raw))
+    return "Couldn’t sponsor this transaction — please retry.";
   return raw.length > 220 ? raw.slice(0, 220) + "…" : raw;
 }

@@ -26,6 +26,9 @@ export const SPONSORED_TARGETS = [
   `${PACKAGE_ID}::market::refund`,
   `${PACKAGE_ID}::checkin::self_check_in`,
   `${PACKAGE_ID}::checkin::check_in`,
+  // proof-of-attendance + community forum (holder actions, gas-sponsored)
+  `${PACKAGE_ID}::poap::claim_poap`,
+  `${PACKAGE_ID}::forum::post`,
   // prediction markets (parimutuel sellout bets, settled on-chain via event::minted)
   // NOTE: sponsoring speculative bets is a production money-decision to revisit.
   `${PACKAGE_ID_LATEST}::predict::create_sellout_market`,
