@@ -295,8 +295,13 @@ export function LandingV2() {
             <img src="/brand/logo-white.png" alt="HostIt" style={{ height: 26 }} />
             <p>Everything to run your event, in one place. Sell, promote and manage — escrow-backed and on-chain ready.</p>
             <div className="lv-socials">
-              {[["ri:twitter-x-fill", "X"], ["ri:linkedin-fill", "LinkedIn"], ["file-icons:telegram", "Telegram"], ["ri:github-fill", "GitHub"]].map(([ic, label]) => (
-                <a key={label} className="lv-soc" aria-label={label} role="link" aria-disabled="true" tabIndex={-1} onClick={(e) => e.preventDefault()}><Icon icon={ic} size={18} /></a>
+              {[
+                ["ri:twitter-x-fill", "X", "https://x.com/hostit_events"],
+                ["ri:linkedin-fill", "LinkedIn", "https://www.linkedin.com/company/hostit-events"],
+                ["file-icons:telegram", "Telegram", "https://t.me/hostitevents"],
+                ["ri:github-fill", "GitHub", "https://github.com/hostit-events"],
+              ].map(([ic, label, href]) => (
+                <a key={label} className="lv-soc" aria-label={label} href={href} target="_blank" rel="noopener noreferrer"><Icon icon={ic} size={18} /></a>
               ))}
             </div>
           </div>
