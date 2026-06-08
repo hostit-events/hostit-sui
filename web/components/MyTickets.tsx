@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   COINS,
   ENOKI_ENABLED,
+  REFUND_PERIOD_MS,
   TICKET_STATUS,
   TICKET_TYPE,
   coinInfo,
@@ -14,7 +16,20 @@ import { humanizeError } from "@/lib/moveErrors";
 import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { Icon } from "./Icon";
 import { TxLink } from "./TxLink";
-import type { GetOwnedObjectsParams, PaginatedObjectsResponse } from "@mysten/sui/jsonRpc";
+import type {
+  GetObjectParams,
+  GetOwnedObjectsParams,
+  PaginatedObjectsResponse,
+  SuiObjectResponse,
+} from "@mysten/sui/jsonRpc";
+
+function fmtRefundDate(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 /** Deterministic faux-QR matrix (ticket-stub motif). */
 function Qr({ seed, size = 54, dim = 11 }: { seed: string; size?: number; dim?: number }) {
@@ -82,14 +97,30 @@ export function MyTickets({ address }: { address: string }) {
     });
   }, [q.data]);
 
-  if (q.isLoading) return null;
+  if (q.isLoading)
+    return (
+      <div className="card mono" role="status" aria-live="polite">
+        Loading your tickets…
+      </div>
+    );
   if (q.error)
     return (
       <div className="card" style={{ color: "var(--color-danger)" }}>
         Couldn&apos;t load your tickets. <button className="btn btn-sm" onClick={() => q.refetch()}>Retry</button>
       </div>
     );
-  if (tickets.length === 0) return null;
+  if (tickets.length === 0)
+    return (
+      <div className="card" style={{ color: "var(--fg3)" }}>
+        <span className="eyebrow">
+          <Icon icon="ion:ticket" size={14} /> Wallet
+        </span>
+        <p style={{ marginTop: 10 }}>
+          No tickets yet. Tickets you buy or claim show up here.{" "}
+          <Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover events</Link>.
+        </p>
+      </div>
+    );
 
   return (
     <section className="space-y-5">
@@ -148,6 +179,19 @@ function TicketStub({
   const refundCoin = COINS.find((c) => matchesCoinType(paidType, c.type))?.type ?? `0x${paidType}`;
   const ci = coinInfo(refundCoin);
 
+  // Refundability + window live on the Event object, not the ticket.
+  const eventQ = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>("getObject", {
+    id: eventId,
+    options: { showContent: true },
+  });
+  const ef = getFields(eventQ.data ?? {});
+  const isRefundable = ef ? Boolean(ef.is_refundable) : false;
+  const endMs = ef ? Number(ef.end_ms) : 0;
+  const refundOpensMs = endMs;
+  const refundClosesMs = endMs + REFUND_PERIOD_MS;
+  const now = Date.now();
+  const inRefundWindow = now >= refundOpensMs && now <= refundClosesMs;
+
   async function send(build: () => ReturnType<typeof selfCheckInTx>) {
     setErr(null);
     try {
@@ -191,9 +235,13 @@ function TicketStub({
 
       <div className="ev-body" style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
         <div className="flex flex-col gap-2 grow" style={{ minWidth: 0 }}>
-          <div className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+          <Link
+            href={`/event/${eventId}`}
+            className="mono"
+            style={{ color: "var(--fg3)", overflow: "hidden", textOverflow: "ellipsis" }}
+          >
             event {eventId.slice(0, 10)}…
-          </div>
+          </Link>
           {paid > 0n && (
             <span className="badge badge-soft" style={{ alignSelf: "flex-start" }}>
               paid {ci.symbol}
@@ -210,15 +258,29 @@ function TicketStub({
                 <Icon icon="zondicons:inbox-check" size={15} /> Check in
               </button>
             )}
-            {issued && paid > 0n && (
-              <button
-                className="btn btn-sm"
-                disabled={isPending}
-                onClick={() => send(() => refundTx({ eventId, ticketId, coinType: refundCoin, recipient: address }))}
-                title="Refundable events only, within the post-event refund window."
-              >
-                Refund
-              </button>
+            {issued && paid > 0n && ef && (
+              isRefundable && inRefundWindow ? (
+                <button
+                  className="btn btn-sm"
+                  disabled={isPending}
+                  onClick={() => send(() => refundTx({ eventId, ticketId, coinType: refundCoin, recipient: address }))}
+                  title={`Refund window closes ${fmtRefundDate(refundClosesMs)}.`}
+                >
+                  Refund
+                </button>
+              ) : !isRefundable ? (
+                <span className="badge badge-soft" style={{ alignSelf: "flex-start" }}>
+                  Non-refundable
+                </span>
+              ) : now < refundOpensMs ? (
+                <span className="badge badge-soft" style={{ alignSelf: "flex-start" }}>
+                  Refundable {fmtRefundDate(refundOpensMs)} – {fmtRefundDate(refundClosesMs)}
+                </span>
+              ) : (
+                <span className="badge badge-soft" style={{ alignSelf: "flex-start" }}>
+                  Refund window closed
+                </span>
+              )
             )}
           </div>
           {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}

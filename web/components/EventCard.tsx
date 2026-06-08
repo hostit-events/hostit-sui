@@ -64,6 +64,13 @@ export function EventCard({
   const [err, setErr] = useState<string | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
   const [meta, setMeta] = useState<EventMetadata | null>(null);
+  const [pendingCoin, setPendingCoin] = useState<string | null>(null);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const f = getFields(q.data ?? {});
   const uri = f ? String(f.uri ?? "") : "";
@@ -116,9 +123,10 @@ export function EventCard({
   const coverUrl = meta?.coverBlobId && isBlobId(meta.coverBlobId) ? blobUrl(meta.coverBlobId) : undefined;
   const glyphIcon = catGlyph(cat);
 
-  async function run(tx: Transaction) {
+  async function run(tx: Transaction, coinType?: string) {
     if (!buyerAddress) return;
     setErr(null);
+    setPendingCoin(coinType ?? null);
     try {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: buyerAddress })
@@ -127,6 +135,8 @@ export function EventCard({
       q.refetch();
     } catch (e: unknown) {
       setErr(humanizeError(e));
+    } finally {
+      setPendingCoin(null);
     }
   }
 
@@ -193,17 +203,21 @@ export function EventCard({
             <div className="flex gap-2 flex-wrap">
               {prices.map((p) => {
                 const ci = coinInfo(p.coinType);
+                const allIn = `${fmtAmount(totalWithFee(BigInt(p.price)), ci.decimals)} ${ci.symbol}`;
+                const coinPending = pendingCoin === p.coinType;
                 return (
-                  <button
-                    key={p.coinType}
-                    className="btn btn-primary btn-sm"
-                    disabled={!canAct || isPending}
-                    title={`Total incl. 3% fee: ${fmtAmount(totalWithFee(BigInt(p.price)), ci.decimals)} ${ci.symbol}`}
-                    onClick={() => run(buyTx({ eventId, coinType: p.coinType, priceUnits: BigInt(p.price), recipient: buyerAddress!, sponsored: ENOKI_ENABLED }))}
-                  >
-                    <Icon icon="ion:ticket" size={15} />
-                    {isPending ? "Buying…" : canAct ? `${fmtAmount(BigInt(p.price), ci.decimals)} ${ci.symbol}` : statusLabel()}
-                  </button>
+                  <div key={p.coinType} className="flex flex-col gap-1">
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={!canAct || isPending}
+                      title={`Total incl. 3% fee: ${allIn}`}
+                      onClick={() => run(buyTx({ eventId, coinType: p.coinType, priceUnits: BigInt(p.price), recipient: buyerAddress!, sponsored: ENOKI_ENABLED }), p.coinType)}
+                    >
+                      <Icon icon="ion:ticket" size={15} />
+                      {coinPending ? "Buying…" : canAct ? `${fmtAmount(BigInt(p.price), ci.decimals)} ${ci.symbol}` : statusLabel()}
+                    </button>
+                    {canAct && <span className="text-[11px]" style={{ color: "var(--fg3)" }}>{allIn} incl. 3% fee</span>}
+                  </div>
                 );
               })}
             </div>

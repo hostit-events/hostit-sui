@@ -57,7 +57,7 @@ function fmtTime(ms: number): string {
 function GoodToKnow({ icon, title, value }: { icon: string; title: string; value: string }) {
   return (
     <div className="card" style={{ padding: 16 }}>
-      <div className="flex items-center gap-1.5 eyebrow" style={{ margin: 0 }}>
+      <div className="flex items-center gap-1.5 section-label" style={{ margin: 0 }}>
         <Icon icon={icon} size={14} /> {title}
       </div>
       <div className="text-sm" style={{ color: "var(--fg1)", marginTop: 6 }}>
@@ -85,6 +85,10 @@ export function EventPageScreen({ id }: { id: string }) {
   const [meta, setMeta] = useState<EventMetadata | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
+  // Re-render every ~30s so sale-window state (open/ended) stays fresh without a reload.
+  const [, setNowTick] = useState(0);
+  // Which coin button is mid-purchase, so only that one shows "Buying…".
+  const [pendingCoin, setPendingCoin] = useState<string | null>(null);
 
   const f = getFields(q.data ?? {});
   const uri = f ? String(f.uri ?? "") : "";
@@ -104,6 +108,11 @@ export function EventPageScreen({ id }: { id: string }) {
     };
   }, [uri]);
 
+  useEffect(() => {
+    const t = setInterval(() => setNowTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
   // ---- loading / error / not-found ----
   if (q.isLoading) {
     return (
@@ -111,14 +120,14 @@ export function EventPageScreen({ id }: { id: string }) {
         <div className="poster" style={{ height: 240 }}>
           <div className="poster-noise" />
         </div>
-        <div className="card mono">Loading event…</div>
+        <div className="card mono" role="status">Loading event…</div>
       </div>
     );
   }
   if (!f) {
     return (
       <div className="space-y-6 screen-in">
-        <div className="card">
+        <div className="card" role="status">
           <div className="font-semibold">Event not found.</div>
           <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
             This object isn&apos;t a HostIt event, or it failed to load.{" "}
@@ -171,9 +180,10 @@ export function EventPageScreen({ id }: { id: string }) {
       ? "Free"
       : "—";
 
-  async function run(tx: Transaction) {
+  async function run(tx: Transaction, coinKey?: string) {
     if (!addr) return;
     setErr(null);
+    setPendingCoin(coinKey ?? null);
     try {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
@@ -182,6 +192,8 @@ export function EventPageScreen({ id }: { id: string }) {
       q.refetch();
     } catch (e: unknown) {
       setErr(humanizeError(e));
+    } finally {
+      setPendingCoin(null);
     }
   }
 
@@ -298,7 +310,7 @@ export function EventPageScreen({ id }: { id: string }) {
 
           {/* About */}
           <div className="space-y-3">
-            <h2 className="eyebrow">
+            <h2 className="section-label flex items-center gap-1.5">
               <Icon icon="ph:info-bold" size={14} /> About
             </h2>
             <p className="text-sm whitespace-pre-wrap" style={{ color: "var(--fg2)", lineHeight: 1.7 }}>
@@ -308,10 +320,10 @@ export function EventPageScreen({ id }: { id: string }) {
 
           {/* Good to know */}
           <div className="space-y-3">
-            <h2 className="eyebrow">
+            <h2 className="section-label flex items-center gap-1.5">
               <Icon icon="ph:list-checks-bold" size={14} /> Good to know
             </h2>
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))" }}>
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
               <GoodToKnow icon="mdi:door-open" title="Doors" value={`${fmtTime(startMs)}, ${fmtDate(startMs)}`} />
               <GoodToKnow
                 icon="carbon:location"
@@ -343,7 +355,7 @@ export function EventPageScreen({ id }: { id: string }) {
 
           {/* Markets — parimutuel prediction markets (Sellout Clock + range) */}
           <div className="space-y-3">
-            <h2 className="eyebrow">
+            <h2 className="section-label flex items-center gap-1.5">
               <Icon icon="mdi:chart-line" size={14} /> Markets
             </h2>
             <EventMarketsScreen eventId={id} eventSeq={eventSeq} maxTickets={maxTickets} />
@@ -354,7 +366,7 @@ export function EventPageScreen({ id }: { id: string }) {
         <div>
           <div className="card space-y-4" style={{ position: "sticky", top: 24 }}>
             <div>
-              <h2 className="eyebrow" style={{ margin: 0 }}>
+              <h2 className="section-label flex items-center gap-1.5" style={{ margin: 0 }}>
                 <Icon icon="ion:ticket" size={14} /> Tickets
               </h2>
               <div className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
@@ -396,12 +408,13 @@ export function EventPageScreen({ id }: { id: string }) {
                 {isPending ? "Claiming…" : canAct ? "Claim free ticket" : statusLabel()}
               </button>
             ) : prices.length === 0 ? (
-              <span className="badge badge-line">Price not set by organizer</span>
+              <span className="badge badge-line" role="status">Price not set by organizer</span>
             ) : (
               <div className="space-y-2">
                 {prices.map((p) => {
                   const ci = coinInfo(p.coinType);
                   const total = totalWithFee(BigInt(p.price));
+                  const buying = isPending && pendingCoin === p.coinType;
                   return (
                     <button
                       key={p.coinType}
@@ -417,14 +430,15 @@ export function EventPageScreen({ id }: { id: string }) {
                             recipient: addr!,
                             sponsored: ENOKI_ENABLED,
                           }),
+                          p.coinType,
                         )
                       }
                     >
                       <Icon icon="ion:ticket" size={16} />
-                      {isPending
+                      {buying
                         ? "Buying…"
                         : canAct
-                          ? `Buy · ${fmtAmount(BigInt(p.price), ci.decimals)} ${ci.symbol}`
+                          ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
                           : statusLabel()}
                     </button>
                   );
@@ -447,15 +461,17 @@ export function EventPageScreen({ id }: { id: string }) {
             )}
 
             {digest && (
-              <TxLink
-                digest={digest}
-                className="mono text-[12px]"
-                style={{ color: "var(--color-success)" }}
-                before={<><Icon icon="ph:check-circle-bold" size={13} />{" "}</>}
-              />
+              <div role="status">
+                <TxLink
+                  digest={digest}
+                  className="mono text-[12px]"
+                  style={{ color: "var(--color-success)" }}
+                  before={<><Icon icon="ph:check-circle-bold" size={13} />{" "}</>}
+                />
+              </div>
             )}
             {err && (
-              <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>
+              <div className="text-xs break-words" role="alert" style={{ color: "var(--color-danger)" }}>
                 {err}
               </div>
             )}

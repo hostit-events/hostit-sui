@@ -222,6 +222,9 @@ export function ForumScreen({ id }: { id: string }) {
   const [postErr, setPostErr] = useState<string | null>(null);
   const [postDigest, setPostDigest] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement>(null);
+  const sendingRef = useRef(false);
+
+  const MAX_MESSAGE_LEN = 1000;
 
   useEffect(() => {
     // keep the stream pinned to the newest message
@@ -230,8 +233,10 @@ export function ForumScreen({ id }: { id: string }) {
   }, [channelPosts.length, decoded]);
 
   async function sendMessage() {
+    if (sendingRef.current) return;
     const text = draft.trim();
     if (!text || !addr || !myTicketId) return;
+    sendingRef.current = true;
     setPostErr(null);
     try {
       // Encrypt body to the event policy and pin it on Walrus.
@@ -257,6 +262,8 @@ export function ForumScreen({ id }: { id: string }) {
       postsQ.refetch();
     } catch (e: unknown) {
       setPostErr(humanizeError(e));
+    } finally {
+      sendingRef.current = false;
     }
   }
 
@@ -326,6 +333,7 @@ export function ForumScreen({ id }: { id: string }) {
               <button
                 key={c.id}
                 className={`topnav-item ${channel === c.id ? "active" : ""}`}
+                aria-current={channel === c.id ? "page" : undefined}
                 onClick={() => setChannel(c.id)}
                 style={{ justifyContent: "flex-start", width: "100%" }}
               >
@@ -441,23 +449,34 @@ export function ForumScreen({ id }: { id: string }) {
               style={{ minHeight: 52 }}
               placeholder={`Message #${activeChannel?.label ?? channel}…`}
               value={draft}
+              maxLength={MAX_MESSAGE_LEN}
+              disabled={posting}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
+                  if (posting) return;
                   void sendMessage();
                 }
               }}
             />
-            <button
-              className="btn btn-primary"
-              disabled={posting || !draft.trim()}
-              onClick={() => void sendMessage()}
-              title="Encrypts to the event policy, pins to Walrus, anchors on-chain."
-            >
-              <Icon icon="ic:round-send" size={16} />
-              {posting ? "Posting…" : "Send"}
-            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                className="btn btn-primary"
+                disabled={posting || !draft.trim()}
+                onClick={() => void sendMessage()}
+                title="Encrypts to the event policy, pins to Walrus, anchors on-chain."
+              >
+                <Icon icon="ic:round-send" size={16} />
+                {posting ? "Posting…" : "Send"}
+              </button>
+              <span
+                className="mono"
+                style={{ fontSize: 10, color: "var(--fg3)", whiteSpace: "nowrap" }}
+              >
+                {draft.length}/{MAX_MESSAGE_LEN} · ⌘/Ctrl+Enter
+              </span>
+            </div>
           </div>
           {postDigest && (
             <div className="text-xs" style={{ padding: "0 18px 12px" }}>

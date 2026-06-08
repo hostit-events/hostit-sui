@@ -102,9 +102,19 @@ function WalletInner({ addr }: { addr: string }) {
     });
   }, [poapsQuery.data]);
 
+  const claimedEventIds = useMemo(
+    () => new Set(poaps.map((p) => String(p.fields.event_id ?? ""))),
+    [poaps],
+  );
+
   const checkedIn = useMemo(
-    () => tickets.filter((t) => Number(t.fields.status) === TICKET_STATUS.CHECKED_IN),
-    [tickets],
+    () =>
+      tickets.filter(
+        (t) =>
+          Number(t.fields.status) === TICKET_STATUS.CHECKED_IN &&
+          !claimedEventIds.has(String(t.fields.event_id ?? "")),
+      ),
+    [tickets, claimedEventIds],
   );
 
   const TABS: { id: Tab; label: string; icon: string; count?: number }[] = [
@@ -169,7 +179,7 @@ function WalletInner({ addr }: { addr: string }) {
       {/* Segmented tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {TABS.map((t) => (
-          <button key={t.id} className={`chip ${tab === t.id ? "on" : ""}`} onClick={() => setTab(t.id)}>
+          <button key={t.id} className={`chip ${tab === t.id ? "on" : ""}`} aria-pressed={tab === t.id} onClick={() => setTab(t.id)}>
             <Icon icon={t.icon} size={14} /> {t.label}
             {typeof t.count === "number" && t.count > 0 && (
               <span style={{ opacity: 0.7 }}> ({t.count})</span>
@@ -182,7 +192,7 @@ function WalletInner({ addr }: { addr: string }) {
       {tab === "tickets" && (
         <div>
           {ticketsQuery.isLoading ? (
-            <div className="card mono">Loading tickets…</div>
+            <div className="card mono" role="status" aria-live="polite">Loading tickets…</div>
           ) : ticketsQuery.error ? (
             <div className="card" style={{ color: "var(--color-danger)" }}>
               Couldn&apos;t load tickets. <button className="btn btn-sm" onClick={() => ticketsQuery.refetch()}>Retry</button>
@@ -202,7 +212,7 @@ function WalletInner({ addr }: { addr: string }) {
       {tab === "collectibles" && (
         <div>
           {poapsQuery.isLoading ? (
-            <div className="card mono">Loading collectibles…</div>
+            <div className="card mono" role="status" aria-live="polite">Loading collectibles…</div>
           ) : poapsQuery.error ? (
             <div className="card" style={{ color: "var(--color-danger)" }}>
               Couldn&apos;t load collectibles. <button className="btn btn-sm" onClick={() => poapsQuery.refetch()}>Retry</button>
@@ -236,7 +246,7 @@ function WalletInner({ addr }: { addr: string }) {
 
 function EmptyState({ icon, title, body }: { icon: string; title: string; body: React.ReactNode }) {
   return (
-    <div className="card flex flex-col items-center text-center gap-2" style={{ padding: 40 }}>
+    <div className="card flex flex-col items-center text-center gap-2" style={{ padding: 40 }} role="status" aria-live="polite">
       <span style={{ color: "var(--fg3)" }}><Icon icon={icon} size={38} /></span>
       <div className="font-semibold" style={{ fontSize: 16 }}>{title}</div>
       <p className="text-sm" style={{ color: "var(--fg2)", maxWidth: 380 }}>{body}</p>
