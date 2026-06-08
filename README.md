@@ -158,17 +158,17 @@ Live on **Sui testnet**. `web/lib/config.ts` is the source of truth (all values 
 
 ## Repository layout
 
-```mermaid
-graph TD
-  root["hostit-sui/"]
-  root --> mv["Move package<br/>Move.toml · Move.lock · Published.toml"]
-  root --> sdk["sdk/ · scripts/<br/>standalone TS PTB SDK + CLI smokes"]
-  root --> web["web/ — Next.js dApp"]
-  mv --> src["sources/<br/>hub · event · ticket · market · checkin<br/>access · poap · forum · predict"]
-  mv --> tests["tests/<br/>Move test_scenario suites (57 tests)"]
-  web --> app["app/<br/>App Router routes + /api/sponsor + /api/copilot"]
-  web --> comp["components/ (+ screens/)<br/>UI"]
-  web --> lib["lib/<br/>config · ticketing · predict · hooks<br/>walrus · seal · sponsor · …"]
+```
+hostit-sui/
+├── Move.toml · Move.lock · Published.toml   # Sui Move package manifest + publish state
+├── sources/                                 # Move modules: hub · event · ticket · market · checkin
+│                                            #               access · poap · forum · predict
+├── tests/                                   # Move test_scenario suites (57 tests)
+├── sdk/ · scripts/                          # standalone TS PTB SDK + CLI smoke scripts
+└── web/                                     # Next.js dApp
+    ├── app/                                 # App Router routes (+ /api/sponsor, /api/copilot)
+    ├── components/ (+ screens/)             # UI
+    └── lib/                                 # config · ticketing · predict · hooks · walrus · seal · sponsor
 ```
 
 ---
