@@ -25,10 +25,10 @@ export function CustomCursor() {
     if (!root.dataset.cursor) root.dataset.cursor = "hostit";
 
     const HOVER =
-      "a,button,[role=button],summary,label[for],.chip,.switch,.seg button," +
+      "a,button,[role=button],summary,label[for],.chip,.switch," +
       ".nav-item,.topnav-item,.set-nav-item,.fo-chan,.pick,.ev-card,.ev-feat,.ev-row,.ci-pick,.dash-ev," +
-      ".ticket,.poap,.mtab,.icon-btn,.qty button,.acct,.lv-btn,.lv-soc,.lv-nav-links a,.btn," +
-      ".disc-cta,.ev-community,.pay-method,.team-row,.tier,.toggle-card,.fo-send,.fo-attach-btn,[onclick]";
+      ".ticket,.poap,.mtab,.icon-btn,.acct,.lv-btn,.lv-soc,.lv-nav-links a,.btn," +
+      ".disc-cta,.ev-community,.pay-method,.team-row,.tier,.toggle-card,.fo-send,.fo-attach-btn";
     const TEXT =
       "input:not([type=range]):not([type=checkbox]):not([type=radio]),textarea,[contenteditable=true],[contenteditable='']";
 

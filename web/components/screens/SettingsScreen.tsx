@@ -106,7 +106,10 @@ export function SettingsScreen() {
   }, []);
 
   function saveProfile() {
-    lsWrite(PROFILE_KEY, profile);
+    const trimmed: Profile = { name: profile.name.trim(), location: profile.location.trim() };
+    setProfile(trimmed);
+    lsWrite(PROFILE_KEY, trimmed);
+    if (!trimmed.name && !trimmed.location) return;
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 1800);
   }
@@ -233,6 +236,7 @@ export function SettingsScreen() {
             <button
               key={n.id}
               onClick={() => setTab(n.id)}
+              aria-current={tab === n.id ? "page" : undefined}
               className={`topnav-item ${tab === n.id ? "active" : ""}`}
               style={{
                 justifyContent: "flex-start",
@@ -266,6 +270,7 @@ export function SettingsScreen() {
                   id="settings-profile-name"
                   className="input"
                   placeholder="Satoshi"
+                  maxLength={80}
                   value={profile.name}
                   onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
                 />
@@ -278,6 +283,7 @@ export function SettingsScreen() {
                   id="settings-profile-location"
                   className="input"
                   placeholder="Lisbon, PT"
+                  maxLength={80}
                   value={profile.location}
                   onChange={(e) => setProfile((p) => ({ ...p, location: e.target.value }))}
                 />
@@ -322,7 +328,10 @@ export function SettingsScreen() {
                       className="input"
                       placeholder="As shown on your government ID"
                       value={legalName}
-                      onChange={(e) => setLegalName(e.target.value)}
+                      onChange={(e) => {
+                        setLegalName(e.target.value);
+                        if (kycMsg?.tone === "ok") setKycMsg(null);
+                      }}
                       disabled={kycBusy}
                     />
                   </div>
@@ -335,7 +344,10 @@ export function SettingsScreen() {
                       className="input"
                       placeholder="Passport / national ID number"
                       value={idNumber}
-                      onChange={(e) => setIdNumber(e.target.value)}
+                      onChange={(e) => {
+                        setIdNumber(e.target.value);
+                        if (kycMsg?.tone === "ok") setKycMsg(null);
+                      }}
                       disabled={kycBusy}
                     />
                   </div>
@@ -366,7 +378,7 @@ export function SettingsScreen() {
                       className="panel space-y-2"
                       style={{ padding: "14px 16px", borderColor: "var(--color-verified)" }}
                     >
-                      <div className="eyebrow">
+                      <div className="section-label">
                         <Icon icon="ph:lock-key-open-fill" size={13} /> Decrypted (this session)
                       </div>
                       <div className="text-sm">
@@ -486,7 +498,7 @@ export function SettingsScreen() {
               ) : (
                 <>
                   <div className="panel" style={{ padding: "14px 16px" }}>
-                    <div className="eyebrow">
+                    <div className="section-label">
                       <Icon icon="ic:round-account-balance-wallet" size={13} /> Connected wallet
                     </div>
                     <div style={{ marginTop: 8 }}>
@@ -494,7 +506,7 @@ export function SettingsScreen() {
                     </div>
                   </div>
                   <div className="panel" style={{ padding: "14px 16px" }}>
-                    <div className="eyebrow">
+                    <div className="section-label">
                       <Icon icon="ph:globe-simple-fill" size={13} /> suiNS name
                     </div>
                     <div style={{ marginTop: 8 }}>

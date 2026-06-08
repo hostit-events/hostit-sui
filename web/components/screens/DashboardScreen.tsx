@@ -218,6 +218,8 @@ export function DashboardScreen() {
           <button
             key={t.id}
             className={`chip ${tab === t.id ? "on" : ""}`}
+            aria-current={tab === t.id ? "page" : undefined}
+            aria-pressed={tab === t.id}
             onClick={() => setTab(t.id)}
           >
             <Icon icon={t.icon} size={14} /> {t.label}
@@ -238,19 +240,23 @@ export function DashboardScreen() {
             <StatTile
               icon="ion:ticket"
               num={statsLoading ? "…" : ticketsSold.toLocaleString()}
-              label="Tickets sold"
+              label="Tickets sold (recent)"
             />
             <StatTile
               icon="zondicons:inbox-check"
               num={statsLoading ? "…" : checkedInCount.toLocaleString()}
-              label="Checked in"
+              label="Checked in (recent)"
             />
             <StatTile
               icon="solar:dollar-minimalistic-bold"
               num={statsLoading ? "…" : grossLabel(grossByCoin)}
-              label="Gross revenue"
+              label="Gross revenue (recent)"
             />
           </section>
+          <p className="text-xs" style={{ color: "var(--fg3)", marginTop: -16 }}>
+            Sales, check-in and revenue figures are derived from the most recent on-chain activity
+            and may undercount over the full history of your events.
+          </p>
 
           {eventsError ? (
             <div className="card" style={{ color: "var(--color-danger)" }}>
@@ -296,10 +302,18 @@ export function DashboardScreen() {
           ) : (
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               <div style={{ overflowX: "auto" }}>
-                <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+                <table
+                  className="w-full text-sm"
+                  style={{ borderCollapse: "collapse" }}
+                  aria-label="Attendees: recent ticket mints across your events"
+                >
+                  <caption className="sr-only">
+                    Recent ticket mints across your events, showing serial, event, buyer, coin,
+                    amount paid and time.
+                  </caption>
                   <thead>
                     <tr style={{ color: "var(--fg3)", textAlign: "left" }}>
-                      <Th>#</Th>
+                      <Th>Serial</Th>
                       <Th>Event</Th>
                       <Th>Buyer</Th>
                       <Th>Coin</Th>
@@ -375,25 +389,29 @@ export function DashboardScreen() {
             <StatTile
               icon="ion:ticket"
               num={minted.isLoading ? "…" : ticketsSold.toLocaleString()}
-              label="Tickets minted"
+              label="Tickets minted (recent)"
               fill
             />
             <StatTile
               icon="solar:dollar-minimalistic-bold"
               num={minted.isLoading ? "…" : grossLabel(grossByCoin)}
-              label="Gross revenue"
+              label="Gross revenue (recent)"
             />
             <StatTile
               icon="zondicons:inbox-check"
               num={checkins.isLoading ? "…" : checkedInCount.toLocaleString()}
-              label="Checked in"
+              label="Checked in (recent)"
             />
             <StatTile
               icon="streamline:star-badge-solid"
               num={poaps.isLoading ? "…" : poapCount.toLocaleString()}
-              label="POAPs claimed"
+              label="POAPs claimed (recent)"
             />
           </div>
+          <p className="text-xs" style={{ color: "var(--fg3)" }}>
+            These totals are aggregated from the most recent on-chain mint, check-in and POAP events
+            and may undercount across the full history of your events.
+          </p>
 
           {/* Per-event breakdown of gross by coin */}
           {grossByCoin.size > 0 && (
@@ -458,7 +476,10 @@ function Header() {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ padding: "12px 16px", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>
+    <th
+      scope="col"
+      style={{ padding: "12px 16px", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}
+    >
       {children}
     </th>
   );

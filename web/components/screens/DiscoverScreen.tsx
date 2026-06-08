@@ -67,6 +67,9 @@ export function DiscoverScreen() {
             <Icon icon="ic:round-search" size={18} />
           </span>
           <input
+            id="discover-search"
+            name="discover-search"
+            aria-label="Search events"
             className="input"
             placeholder="Search events, cities, organizers…"
             value={q}
@@ -76,22 +79,22 @@ export function DiscoverScreen() {
         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Categories">
         {CATEGORIES.map((c) => (
-          <button key={c.id} className={`chip ${cat === c.id ? "on" : ""}`} onClick={() => setCat(c.id)}>
+          <button key={c.id} className={`chip ${cat === c.id ? "on" : ""}`} aria-pressed={cat === c.id} onClick={() => setCat(c.id)}>
             <Icon icon={c.icon} size={14} /> {c.label}
           </button>
         ))}
       </div>
 
       {isLoading ? (
-        <div className="card mono">Loading events…</div>
+        <div className="card mono" role="status" aria-live="polite">Loading events…</div>
       ) : isError ? (
-        <div className="card" style={{ color: "var(--color-danger)" }}>
+        <div className="card" style={{ color: "var(--color-danger)" }} role="status" aria-live="polite">
           Couldn&apos;t load events. <button className="btn btn-sm" onClick={() => refetch()}>Retry</button>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card">
+        <div className="card" role="status" aria-live="polite">
           <div className="font-semibold">No events found.</div>
           <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
             Try a different search, or{" "}

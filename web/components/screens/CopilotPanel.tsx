@@ -8,6 +8,23 @@ interface Msg {
   content: string;
 }
 
+// Live event context handed to the Co-pilot. Mirrors the EventCtx contract in
+// app/api/copilot/route.ts — every field is optional and treated defensively.
+export interface CopilotEvent {
+  name?: string;
+  status?: string;
+  date?: string;
+  city?: string;
+  venue?: string;
+  category?: string;
+  sold?: number;
+  cap?: number;
+  pct?: number;
+  revenue?: string;
+  views?: number;
+  priceLabel?: string;
+}
+
 const QUICK_PROMPTS: { label: string; icon: string; prompt: string }[] = [
   {
     label: "Announcement",
@@ -109,7 +126,7 @@ function Sparkle({ size = 14 }: { size?: number }) {
   );
 }
 
-export function CopilotPanel({ event }: { event: any }) {
+export function CopilotPanel({ event }: { event: CopilotEvent }) {
   const evName = event?.name ?? "your event";
   const [messages, setMessages] = useState<Msg[]>([
     {
@@ -185,7 +202,7 @@ export function CopilotPanel({ event }: { event: any }) {
       </div>
 
       {/* Message stream */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div ref={scrollRef} role="log" aria-live="polite" aria-label="Co-pilot conversation" style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
         {messages.map((m, i) =>
           m.role === "assistant" ? (
             <div key={i} className="flex gap-2.5" style={{ alignItems: "flex-start" }}>
@@ -287,6 +304,7 @@ export function CopilotPanel({ event }: { event: any }) {
         <input
           className="input grow"
           placeholder="Ask your Co-pilot…"
+          aria-label="Ask your Co-pilot"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={busy}
@@ -297,7 +315,7 @@ export function CopilotPanel({ event }: { event: any }) {
       </form>
 
       {err && (
-        <div className="text-xs" style={{ padding: "0 18px 12px", color: "var(--color-danger)" }}>
+        <div role="alert" className="text-xs" style={{ padding: "0 18px 12px", color: "var(--color-danger)" }}>
           {err}
         </div>
       )}

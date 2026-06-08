@@ -243,6 +243,8 @@ export function DoorScreen({ id }: { id: string }) {
               <Icon icon="ic:round-search" size={18} />
             </span>
             <input
+              id="door-search"
+              aria-label="Search attendees"
               className="input"
               placeholder="Filter admits by address or serial…"
               value={query}

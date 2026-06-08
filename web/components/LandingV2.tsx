@@ -296,7 +296,7 @@ export function LandingV2() {
             <p>Everything to run your event, in one place. Sell, promote and manage — escrow-backed and on-chain ready.</p>
             <div className="lv-socials">
               {[["ri:twitter-x-fill", "X"], ["ri:linkedin-fill", "LinkedIn"], ["file-icons:telegram", "Telegram"], ["ri:github-fill", "GitHub"]].map(([ic, label]) => (
-                <a key={label} className="lv-soc" aria-label={label} href="#" aria-disabled="true" onClick={(e) => e.preventDefault()}><Icon icon={ic} size={18} /></a>
+                <a key={label} className="lv-soc" aria-label={label} role="link" aria-disabled="true" tabIndex={-1} onClick={(e) => e.preventDefault()}><Icon icon={ic} size={18} /></a>
               ))}
             </div>
           </div>

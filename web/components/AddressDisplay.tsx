@@ -29,6 +29,10 @@ export function AddressDisplay({
 }: AddressDisplayProps) {
   const { data: name, isLoading } = useSuiNSName(address);
 
+  if (!address) {
+    return <span className={`opacity-60 ${className}`}>—</span>;
+  }
+
   if (isLoading) {
     return (
       <span className={`mono opacity-60 ${className}`}>
@@ -45,11 +49,9 @@ export function AddressDisplay({
       >
         <span className="font-medium">@{name}</span>
         {showBadge && (
-          <span
-            className="text-[10px] text-[var(--color-verified)] inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[var(--color-verified)]/15"
-            aria-label="suiNS verified"
-          >
-            ✓
+          <span className="text-[10px] text-[var(--color-verified)] inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[var(--color-verified)]/15">
+            <span aria-hidden="true">✓</span>
+            <span className="sr-only">suiNS verified</span>
           </span>
         )}
       </span>

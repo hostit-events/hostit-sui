@@ -28,7 +28,7 @@ export function Header() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/logo-white.png" alt="HostIt" style={{ height: 25, width: "auto", display: "block" }} />
         </Link>
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="hidden md:flex items-center gap-1" aria-label="Primary">
           {NAV.map((n) => {
             const active = pathname === n.href || pathname.startsWith(n.href + "/");
             return (
@@ -40,7 +40,12 @@ export function Header() {
           })}
         </nav>
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
-          <Link href="/create" className="btn btn-primary btn-sm">
+          <Link
+            href="/create"
+            className="btn btn-primary btn-sm"
+            aria-label="Create event"
+            style={{ minHeight: 44 }}
+          >
             <Icon icon="ic:round-add" size={16} />
             <span className="hidden sm:inline">Create event</span>
           </Link>
@@ -51,7 +56,7 @@ export function Header() {
         </div>
       </div>
       {/* mobile nav */}
-      <nav className="md:hidden flex items-center gap-1 px-3 pb-2 -mt-1 overflow-x-auto">
+      <nav className="md:hidden flex items-center gap-1 px-3 pb-2 -mt-1 overflow-x-auto" aria-label="Primary">
         {NAV.map((n) => {
           const active = pathname === n.href || pathname.startsWith(n.href + "/");
           return (
