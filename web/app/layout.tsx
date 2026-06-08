@@ -3,7 +3,6 @@ import "./landing-v2.css";
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Providers } from "./providers";
-import { CustomCursor } from "@/components/CustomCursor";
 
 export const metadata: Metadata = {
   title: "HostIt — Events made easy",
@@ -20,7 +19,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           strategy="afterInteractive"
         />
         <Providers>{children}</Providers>
-        <CustomCursor />
       </body>
     </html>
   );

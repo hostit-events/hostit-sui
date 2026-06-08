@@ -264,16 +264,21 @@ button[class*="connect" i] {
   border-radius: var(--r-md) !important;
 }
 
-/* ---- custom cursor (desktop / fine pointer only) — ported from the design ---- */
+/* ---- custom cursor (desktop / fine pointer only) ----
+   OS-rendered: the blue HostIt triangle is drawn by the OS via the `cursor`
+   property (custom SVG, with native fallback), so there's no JS follower to
+   lag, fight `position:fixed`, or disappear over iframes/scrollbars. The
+   hotspot (4 3 / 5 4) sits on the triangle's tip. */
 @media (hover: hover) and (pointer: fine) {
-  html.cursor-on, html.cursor-on *, html.cursor-on *::before, html.cursor-on *::after { cursor: none !important; }
-  .cursorx { position: fixed; left: 0; top: 0; z-index: 2147483647; pointer-events: none; opacity: 0; transition: opacity .25s ease; }
-  .cursorx-ring, .cursorx-dot { position: fixed; left: 0; top: 0; will-change: transform, width, height; }
-  .cursorx-ring { width: 34px; height: 34px; box-sizing: border-box; border: 1.6px solid var(--hi-blue); background: transparent; box-shadow: 0 0 16px rgba(0,124,250,.30); transition: background .22s ease, border-color .2s ease; }
-  .cursorx-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hi-blue); box-shadow: 0 0 9px rgba(0,124,250,.6); transition: opacity .18s ease; }
-  .cursorx.is-hover .cursorx-ring { background: rgba(0,124,250,.10); }
-  .cursorx.is-text .cursorx-ring { background: rgba(0,124,250,.18); border-color: var(--hi-blue); }
-  .cursorx-tri { position: fixed; left: 0; top: 0; display: none; will-change: transform; transform-origin: 4px 3px; filter: drop-shadow(0 2px 5px rgba(0,0,0,.45)); }
-  .cursorx-tri svg path { fill: var(--hi-blue); stroke: #fff; stroke-width: 1.4; stroke-linejoin: round; }
-  .cursorx-label { position: fixed; left: 0; top: 0; opacity: 0; will-change: transform, opacity; transition: opacity .16s ease; font-family: var(--font-sans); font-size: 12px; font-weight: 600; letter-spacing: .01em; color: #fff; background: var(--hi-blue); padding: 3px 9px; border-radius: 7px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+  html, body { cursor: url("/cursor/hostit.svg") 4 3, auto; }
+  a, button, [role=button], summary, label[for], .chip, .switch,
+  .nav-item, .topnav-item, .set-nav-item, .fo-chan, .pick, .ev-card, .ev-feat, .ev-row, .ci-pick, .dash-ev,
+  .ticket, .poap, .mtab, .icon-btn, .acct, .lv-btn, .lv-soc, .lv-nav-links a, .btn,
+  .disc-cta, .ev-community, .pay-method, .team-row, .tier, .toggle-card, .fo-send, .fo-attach-btn {
+    cursor: url("/cursor/hostit-pointer.svg") 5 4, pointer;
+  }
+  input:not([type=range]):not([type=checkbox]):not([type=radio]), textarea, [contenteditable=true], [contenteditable=''] {
+    cursor: text;
+  }
+  button:disabled, [aria-disabled="true"], .is-disabled { cursor: not-allowed; }
 }
