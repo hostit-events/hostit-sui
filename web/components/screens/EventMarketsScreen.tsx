@@ -43,6 +43,10 @@ import {
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
 import type {
+  CoinBalance,
+  DynamicFieldName,
+  GetBalanceParams,
+  GetDynamicFieldObjectParams,
   GetObjectParams,
   PaginatedEvents,
   QueryEventsParams,
@@ -79,6 +83,63 @@ function parseUsdcUnits(s: string): bigint | null {
   const fracPadded = (frac + "000000").slice(0, 6);
   const units = BigInt(whole || "0") * 1_000_000n + BigInt(fracPadded || "0");
   return units > 0n ? units : null;
+}
+
+// --- Reading the caller's per-bettor stake (for the claim gate) -------------
+//
+// Per-bettor stakes live in on-chain `Table<address, u64>` fields, which are
+// dynamic fields NOT returned inline by getObject. We pull the table's object id
+// out of the raw market content, then getDynamicFieldObject({ name: address })
+// to read this wallet's stake. A value > 0 on the WINNING side means the wallet
+// has unclaimed winnings; removal-on-claim means a re-read returns 0 ("Claimed").
+
+type RawFields = Record<string, unknown>;
+
+function rawMarketFields(obj: SuiObjectResponse | undefined): RawFields | null {
+  const content = obj?.data?.content as { fields?: RawFields } | undefined;
+  return content?.fields ?? null;
+}
+
+// Extract a `Table`/`vector<u64>`-style child object id from a parsed Move field
+// shaped like `{ fields: { id: { id: "0x…" } } }`. Returns null if absent.
+function tableId(field: unknown): string | null {
+  const f = (field as { fields?: { id?: { id?: string } } } | undefined)?.fields;
+  const id = f?.id?.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+// A `Table<address,u64>` entry surfaces as a dynamic-field object whose content
+// fields carry `{ name, value }`; the value is the u64 stake (JSON string).
+function dynamicFieldU64Value(obj: SuiObjectResponse | undefined): bigint | null {
+  const content = obj?.data?.content as { fields?: { value?: unknown } } | undefined;
+  const v = content?.fields?.value;
+  if (v === undefined || v === null) return null;
+  try {
+    return BigInt(v as string | number);
+  } catch {
+    return null;
+  }
+}
+
+const ADDRESS_NAME = (addr: string): DynamicFieldName => ({ type: "address", value: addr });
+
+// "Get testnet USDC" hint shown when a connected wallet's USDC balance is 0, so
+// the bet buttons (disabled in that case) aren't a silent dead end.
+function NoUsdcHint() {
+  return (
+    <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
+      You have 0 USDC.{" "}
+      <a
+        href="https://faucet.circle.com/"
+        target="_blank"
+        rel="noreferrer"
+        style={{ color: "var(--hi-blue)", textDecoration: "underline" }}
+      >
+        Get testnet USDC
+      </a>{" "}
+      to place a bet.
+    </div>
+  );
 }
 
 // Shared TX feedback (success digest link + humanized error) for the market cards.
@@ -157,6 +218,37 @@ function SelloutMarketCard({
     [marketQ.data],
   );
 
+  // Connected wallet's USDC balance — gates the bet buttons (see NoUsdcHint).
+  const balanceQ = useSuiQuery<"getBalance", GetBalanceParams, CoinBalance>(
+    "getBalance",
+    { owner: addr ?? "", coinType: USDC_COIN_TYPE },
+    { enabled: Boolean(addr), staleTime: 15_000 },
+  );
+  const usdcZero = Boolean(addr) && balanceQ.data
+    ? BigInt(balanceQ.data.totalBalance) <= 0n
+    : false;
+
+  // Caller's stake on the WINNING side (only meaningful once settled). Read from
+  // the winning side's `Table<address,u64>` via a dynamic-field lookup.
+  const winningTableId = useMemo(() => {
+    if (!market?.settled) return null;
+    const f = rawMarketFields(marketQ.data);
+    if (!f) return null;
+    return tableId(market.outcomeYes ? f.yes_stakes : f.no_stakes);
+  }, [market?.settled, market?.outcomeYes, marketQ.data]);
+
+  const winStakeQ = useSuiQuery<
+    "getDynamicFieldObject",
+    GetDynamicFieldObjectParams,
+    SuiObjectResponse
+  >(
+    "getDynamicFieldObject",
+    { parentId: winningTableId ?? "", name: ADDRESS_NAME(addr ?? "") },
+    { enabled: Boolean(winningTableId && addr), staleTime: 15_000, retry: false },
+  );
+  // null = not loaded yet / no entry; 0n = entry zeroed (claimed); >0 = claimable.
+  const winningStake = winStakeQ.data ? dynamicFieldU64Value(winStakeQ.data) : null;
+
   async function run(tx: Transaction) {
     if (!addr) return;
     setErr(null);
@@ -167,6 +259,8 @@ function SelloutMarketCard({
       setDigest(out.digest);
       created.refetch();
       marketQ.refetch();
+      balanceQ.refetch();
+      winStakeQ.refetch();
     } catch (e: unknown) {
       setErr(humanizeError(e));
     }
@@ -272,7 +366,7 @@ function SelloutMarketCard({
               <button
                 className="btn btn-primary"
                 style={{ flex: 1 }}
-                disabled={!addr || isPending || parseUsdcUnits(amount) === null}
+                disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
                 onClick={() => {
                   const units = parseUsdcUnits(amount);
                   if (units === null) return;
@@ -291,7 +385,7 @@ function SelloutMarketCard({
               <button
                 className="btn"
                 style={{ flex: 1 }}
-                disabled={!addr || isPending || parseUsdcUnits(amount) === null}
+                disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
                 onClick={() => {
                   const units = parseUsdcUnits(amount);
                   if (units === null) return;
@@ -317,6 +411,7 @@ function SelloutMarketCard({
                 Connect a wallet to bet.
               </div>
             )}
+            {usdcZero && <NoUsdcHint />}
           </div>
         )}
 
@@ -338,30 +433,60 @@ function SelloutMarketCard({
           </div>
         )}
 
-        {/* Settled: outcome + claim. */}
-        {market.settled && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <span style={{ color: "var(--fg2)" }}>Outcome:</span>
-              {market.outcomeYes ? (
-                <span className="badge badge-green">Sold out</span>
+        {/* Settled: outcome + claim (gated on a real unclaimed winning stake). */}
+        {market.settled && (() => {
+          // Resolve claim eligibility from the caller's winning-side stake.
+          const stakeLoading = Boolean(addr && winningTableId) && winStakeQ.isLoading;
+          const hasWinningStake = winningStake !== null && winningStake > 0n;
+          // An entry that exists but is 0 means the wallet already claimed.
+          const alreadyClaimed = winningStake !== null && winningStake === 0n;
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <span style={{ color: "var(--fg2)" }}>Outcome:</span>
+                {market.outcomeYes ? (
+                  <span className="badge badge-green">Sold out</span>
+                ) : (
+                  <span className="badge badge-line">Did not sell out</span>
+                )}
+              </div>
+              {!addr ? (
+                <button className="btn btn-primary btn-block" disabled>
+                  <Icon icon="ph:coins-bold" size={16} /> Connect wallet to claim
+                </button>
+              ) : stakeLoading ? (
+                <button className="btn btn-primary btn-block" disabled>
+                  <Icon icon="ph:coins-bold" size={16} /> Checking your stake…
+                </button>
+              ) : hasWinningStake ? (
+                <>
+                  <button
+                    className="btn btn-primary btn-block"
+                    disabled={isPending}
+                    onClick={() =>
+                      run(claimTx({ marketId: marketId!, coinType: USDC_COIN_TYPE, recipient: addr! }))
+                    }
+                  >
+                    <Icon icon="ph:coins-bold" size={16} />
+                    {isPending ? "Claiming…" : "Claim winnings"}
+                  </button>
+                  <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
+                    Your winning-side stake: {fmtAmount(winningStake!, 6)} USDC + a pro-rata share of
+                    the losing pool.
+                  </div>
+                </>
               ) : (
-                <span className="badge badge-line">Did not sell out</span>
+                <div
+                  className="text-[12px] flex items-center gap-1.5"
+                  style={{ color: "var(--fg3)" }}
+                >
+                  <Icon icon="ph:info-bold" size={14} />
+                  {alreadyClaimed ? "Claimed." : "You did not bet the winning side."}
+                </div>
               )}
             </div>
-            <button
-              className="btn btn-primary btn-block"
-              disabled={!addr || isPending}
-              onClick={() => run(claimTx({ marketId: marketId!, coinType: USDC_COIN_TYPE, recipient: addr! }))}
-            >
-              <Icon icon="ph:coins-bold" size={16} />
-              {isPending ? "Claiming…" : addr ? "Claim winnings" : "Connect wallet to claim"}
-            </button>
-            <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
-              Only winning-side stakes can claim; a losing or empty stake will be rejected.
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {txFeedback}
       </div>
@@ -429,6 +554,41 @@ function RangeMarketCard({
     [marketQ.data],
   );
 
+  // Connected wallet's USDC balance — gates the bet button (see NoUsdcHint).
+  const balanceQ = useSuiQuery<"getBalance", GetBalanceParams, CoinBalance>(
+    "getBalance",
+    { owner: addr ?? "", coinType: USDC_COIN_TYPE },
+    { enabled: Boolean(addr), staleTime: 15_000 },
+  );
+  const usdcZero = Boolean(addr) && balanceQ.data
+    ? BigInt(balanceQ.data.totalBalance) <= 0n
+    : false;
+
+  // Caller's stake in the WINNING bucket (only meaningful once settled). The
+  // per-bucket `stakes` is a `vector<Table<address,u64>>`; pull the winning
+  // bucket's table id, then a dynamic-field lookup for this wallet's stake.
+  // NOTE: in the refund path (winning bucket has no bets) the contract refunds
+  // each bettor across every bucket — that's handled below by enabling claim
+  // whenever the winning bucket itself drew no stake.
+  const winningTableId = useMemo(() => {
+    if (!market?.settled) return null;
+    const f = rawMarketFields(marketQ.data);
+    const stakes = f?.stakes;
+    if (!Array.isArray(stakes)) return null;
+    return tableId(stakes[market.winningBucket]);
+  }, [market?.settled, market?.winningBucket, marketQ.data]);
+
+  const winStakeQ = useSuiQuery<
+    "getDynamicFieldObject",
+    GetDynamicFieldObjectParams,
+    SuiObjectResponse
+  >(
+    "getDynamicFieldObject",
+    { parentId: winningTableId ?? "", name: ADDRESS_NAME(addr ?? "") },
+    { enabled: Boolean(winningTableId && addr), staleTime: 15_000, retry: false },
+  );
+  const winningStake = winStakeQ.data ? dynamicFieldU64Value(winStakeQ.data) : null;
+
   async function run(tx: Transaction) {
     if (!addr) return;
     setErr(null);
@@ -439,6 +599,8 @@ function RangeMarketCard({
       setDigest(out.digest);
       refetchMarkets();
       marketQ.refetch();
+      balanceQ.refetch();
+      winStakeQ.refetch();
     } catch (e: unknown) {
       setErr(humanizeError(e));
     }
@@ -614,7 +776,7 @@ function RangeMarketCard({
             </label>
             <button
               className="btn btn-primary btn-block"
-              disabled={!addr || isPending || parseUsdcUnits(amount) === null}
+              disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
               onClick={() => {
                 const units = parseUsdcUnits(amount);
                 if (units === null) return;
@@ -640,6 +802,7 @@ function RangeMarketCard({
                 Connect a wallet to bet.
               </div>
             )}
+            {usdcZero && <NoUsdcHint />}
           </div>
         )}
 
@@ -663,31 +826,65 @@ function RangeMarketCard({
           </div>
         )}
 
-        {/* Settled: winning bucket + claim. */}
-        {market.settled && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <span style={{ color: "var(--fg2)" }}>Winning bucket:</span>
-              <span className="badge badge-green mono">
-                {bucketLabel(market.cutoffs, market.winningBucket)}
-              </span>
+        {/* Settled: winning bucket + claim (gated on a real unclaimed stake). */}
+        {market.settled && (() => {
+          // If the winning bucket drew no bets, the contract takes the REFUND
+          // path: any bettor reclaims their own stake from every bucket. We can't
+          // cheaply prove "bet some bucket" from one lookup, so in that case we
+          // leave claim enabled and let humanizeError surface E_NO_STAKE for
+          // wallets that never bet. With winners present, we gate precisely on the
+          // winning-bucket stake.
+          const refundPath = (market.totals[market.winningBucket] ?? 0n) === 0n;
+          const stakeLoading = Boolean(addr && winningTableId) && winStakeQ.isLoading;
+          const hasWinningStake = winningStake !== null && winningStake > 0n;
+          const alreadyClaimed = winningStake !== null && winningStake === 0n;
+          const canClaim = refundPath || hasWinningStake;
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <span style={{ color: "var(--fg2)" }}>Winning bucket:</span>
+                <span className="badge badge-green mono">
+                  {bucketLabel(market.cutoffs, market.winningBucket)}
+                </span>
+              </div>
+              {!addr ? (
+                <button className="btn btn-primary btn-block" disabled>
+                  <Icon icon="ph:coins-bold" size={16} /> Connect wallet to claim
+                </button>
+              ) : !refundPath && stakeLoading ? (
+                <button className="btn btn-primary btn-block" disabled>
+                  <Icon icon="ph:coins-bold" size={16} /> Checking your stake…
+                </button>
+              ) : canClaim ? (
+                <>
+                  <button
+                    className="btn btn-primary btn-block"
+                    disabled={isPending}
+                    onClick={() =>
+                      run(claimRangeTx({ marketId: marketId!, coinType: USDC_COIN_TYPE, recipient: addr! }))
+                    }
+                  >
+                    <Icon icon="ph:coins-bold" size={16} />
+                    {isPending ? "Claiming…" : refundPath ? "Refund stake" : "Claim winnings"}
+                  </button>
+                  <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
+                    {refundPath
+                      ? "No one bet the winning bucket — each bettor refunds their own stake."
+                      : `Your winning-bucket stake: ${fmtAmount(winningStake!, 6)} USDC + a pro-rata share of the losing pools.`}
+                  </div>
+                </>
+              ) : (
+                <div
+                  className="text-[12px] flex items-center gap-1.5"
+                  style={{ color: "var(--fg3)" }}
+                >
+                  <Icon icon="ph:info-bold" size={14} />
+                  {alreadyClaimed ? "Claimed." : "You did not bet the winning bucket."}
+                </div>
+              )}
             </div>
-            <button
-              className="btn btn-primary btn-block"
-              disabled={!addr || isPending}
-              onClick={() =>
-                run(claimRangeTx({ marketId: marketId!, coinType: USDC_COIN_TYPE, recipient: addr! }))
-              }
-            >
-              <Icon icon="ph:coins-bold" size={16} />
-              {isPending ? "Claiming…" : addr ? "Claim winnings" : "Connect wallet to claim"}
-            </button>
-            <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
-              Winning-bucket stakes split the losing pools; if the winning bucket had no bets, each
-              bettor refunds their own stake.
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {txFeedback}
       </div>

@@ -3,11 +3,17 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DAY_MS, ENOKI_ENABLED, COINS, coinInfo } from "@/lib/config";
-import { createEventTx } from "@/lib/ticketing";
+import { DAY_MS, ENOKI_ENABLED, COINS, coinInfo, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
+import { createEventTx, setPriceTx } from "@/lib/ticketing";
+import { humanizeError } from "@/lib/moveErrors";
 import { putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
 import { storeFile } from "@/lib/walrus";
-import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute } from "@/lib/hooks";
+import {
+  useCurrentAccount,
+  useCurrentClient,
+  useSignAndExecute,
+  useSponsorAndExecute,
+} from "@/lib/hooks";
 import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
@@ -42,6 +48,7 @@ export function CreateEventScreen() {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
   const router = useRouter();
+  const client = useCurrentClient();
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
   const txPending = regular.isPending || sponsored.isPending;
@@ -83,6 +90,12 @@ export function CreateEventScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
+  // Set on success once we resolve the new Event id from the create tx — powers
+  // the "Set your ticket price" deep-link so paid pricing is never silently lost.
+  const [createdEventId, setCreatedEventId] = useState<string | null>(null);
+  // True once the follow-up set_price call landed automatically; null = not
+  // attempted (free event / no price), false = attempted but couldn't complete.
+  const [priceSet, setPriceSet] = useState<boolean | null>(null);
 
   const [p1, p2] = catPalette(category);
   const ci = coinInfo(coinType);
@@ -153,6 +166,8 @@ export function CreateEventScreen() {
 
     setErr(null);
     setDigest(null);
+    setCreatedEventId(null);
+    setPriceSet(null);
     try {
       // 1) Cover image → Walrus (optional)
       let coverBlobId: string | undefined;
@@ -210,12 +225,87 @@ export function CreateEventScreen() {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
+      // Event is live regardless of what happens with pricing below.
       setDigest(out.digest);
+
+      // 4) CREATE-PRICE-DROPPED fix: pricing is a separate cap-gated call (the
+      // Event is shared on creation), so the Step-2 price must be applied with a
+      // follow-up `set_price`. The sponsored path returns only { digest }, so we
+      // resolve the new Event id + OrganizerCap id authoritatively from the chain
+      // by reading the create tx's object changes (works for both paths).
+      const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
+      const ids = await resolveCreatedIds(out.digest).catch(() => null);
+      if (ids?.eventId) setCreatedEventId(ids.eventId);
+
+      if (wantsPrice) {
+        const dec = coinInfo(coinType).decimals;
+        const priceUnits = BigInt(Math.round(Number(basePrice) * 10 ** dec));
+        if (ids?.eventId && ids?.capId && priceUnits > 0n) {
+          try {
+            setBusy("Setting price…");
+            const priceTx = setPriceTx({
+              capId: ids.capId,
+              eventId: ids.eventId,
+              coinType,
+              price: priceUnits,
+            });
+            // set_price is on the sponsor allowlist (mirrors create_event).
+            if (ENOKI_ENABLED) {
+              await sponsored.mutateAsync({ transaction: priceTx, sender: addr });
+            } else {
+              await regular.mutateAsync({ transaction: priceTx });
+            }
+            setPriceSet(true);
+          } catch {
+            // Don't surface as a publish error — the event is already live.
+            // The success screen's "Set your ticket price" CTA recovers it.
+            setPriceSet(false);
+          }
+        } else {
+          // Couldn't derive ids (or no resolvable price) — fall back to the CTA.
+          setPriceSet(false);
+        }
+      }
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e));
     } finally {
       setBusy(null);
     }
+  }
+
+  /**
+   * Resolve the new Event (shared) + OrganizerCap (owned) object ids from a
+   * create-event tx by reading its on-chain object changes. Uses
+   * `waitForTransaction` so it works even if the create result carried no
+   * effects (e.g. the sponsored path, which returns only a digest).
+   */
+  async function resolveCreatedIds(
+    txDigest: string,
+  ): Promise<{ eventId: string | null; capId: string | null }> {
+    const rpc = client as unknown as {
+      waitForTransaction: (input: {
+        digest: string;
+        options?: { showObjectChanges?: boolean };
+        timeout?: number;
+        pollInterval?: number;
+      }) => Promise<{
+        objectChanges?:
+          | Array<{ type?: string; objectType?: string; objectId?: string }>
+          | null;
+      }>;
+    };
+    const res = await rpc.waitForTransaction({
+      digest: txDigest,
+      options: { showObjectChanges: true },
+      timeout: 30_000,
+    });
+    const changes = res.objectChanges ?? [];
+    const created = changes.filter((c) => c.type === "created");
+    const eventId =
+      created.find((c) => c.objectType === EVENT_TYPE)?.objectId ?? null;
+    const capId =
+      created.find((c) => c.objectType === ORGANIZER_CAP_TYPE)?.objectId ?? null;
+    return { eventId, capId };
   }
 
   const dateLabel = Number.isFinite(startMs)
@@ -262,7 +352,28 @@ export function CreateEventScreen() {
           <div style={{ marginTop: 10 }}>
             <TxLink digest={digest} chars={12} className="mono" />
           </div>
-          {!isFree && (
+          {!isFree && priceSet === true && (
+            <div
+              className="card"
+              style={{
+                marginTop: 18,
+                textAlign: "left",
+                background: "rgba(0,200,120,.08)",
+                borderColor: "var(--color-success)",
+              }}
+            >
+              <div className="flex items-center gap-2" style={{ color: "var(--color-success)" }}>
+                <Icon icon="ph:check-circle-fill" size={16} />
+                <span className="text-sm font-semibold">Ticket price set</span>
+              </div>
+              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
+                Your price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} is live on-chain.
+                You can adjust pricing and add more coins any time in{" "}
+                <strong style={{ color: "var(--fg1)" }}>My Events</strong>.
+              </p>
+            </div>
+          )}
+          {!isFree && priceSet !== true && (
             <div
               className="card"
               style={{
@@ -274,13 +385,20 @@ export function CreateEventScreen() {
             >
               <div className="flex items-center gap-2" style={{ color: "var(--hi-amber)" }}>
                 <Icon icon="ph:warning-fill" size={16} />
-                <span className="text-sm font-semibold">One more step for paid tiers</span>
+                <span className="text-sm font-semibold">Set your ticket price</span>
               </div>
               <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
                 The Event is shared on creation, so pricing is a separate cap-gated call. Set your
-                price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} in{" "}
-                <strong style={{ color: "var(--fg1)" }}>My Events</strong> before the sale opens.
+                price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} before the sale opens —
+                buyers can&apos;t purchase until a price is set.
               </p>
+              <Link
+                href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}
+                className="btn btn-primary"
+                style={{ marginTop: 10 }}
+              >
+                <Icon icon="ph:tag-fill" size={16} /> Set your ticket price
+              </Link>
             </div>
           )}
           <div className="flex gap-2 justify-center" style={{ marginTop: 22, flexWrap: "wrap" }}>
@@ -291,6 +409,8 @@ export function CreateEventScreen() {
               className="btn"
               onClick={() => {
                 setDigest(null);
+                setCreatedEventId(null);
+                setPriceSet(null);
                 setStep(0);
                 setName("");
                 setAgreed(false);
@@ -461,21 +581,22 @@ export function CreateEventScreen() {
             <div className="space-y-4">
               <span className="section-label">Step 2 — Tickets</span>
 
-              <label
-                className="flex items-center justify-between gap-3"
-                style={{ cursor: "pointer" }}
-              >
+              <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold">Free event</div>
                   <div className="text-xs" style={{ color: "var(--fg3)" }}>
                     Attendees claim for free — no on-chain price.
                   </div>
                 </div>
-                <span
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isFree}
+                  aria-label="Free event"
                   className={`switch ${isFree ? "on" : ""}`}
                   onClick={() => setIsFree((v) => !v)}
                 />
-              </label>
+              </div>
 
               {!isFree && (
                 <div className="grid sm:grid-cols-[1fr_140px] gap-3">
@@ -805,10 +926,7 @@ function Toggle({
   desc: string;
 }) {
   return (
-    <label
-      className="flex items-center justify-between gap-3 card"
-      style={{ cursor: "pointer", padding: 16 }}
-    >
+    <div className="flex items-center justify-between gap-3 card" style={{ padding: 16 }}>
       <div className="flex items-start gap-3">
         <Icon icon={icon} size={20} style={{ color: on ? "var(--hi-blue)" : "var(--fg3)" }} />
         <div>
@@ -818,8 +936,15 @@ function Toggle({
           </div>
         </div>
       </div>
-      <span className={`switch ${on ? "on" : ""}`} onClick={() => set(!on)} />
-    </label>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={title}
+        className={`switch ${on ? "on" : ""}`}
+        onClick={() => set(!on)}
+      />
+    </div>
   );
 }
 
