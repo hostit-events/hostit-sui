@@ -13,7 +13,7 @@
 // logs, so it does not depend on useEventMarkets). The RangeMarketCard is new
 // and takes its marketId from useEventMarkets.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Transaction } from "@mysten/sui/transactions";
 import { ENOKI_ENABLED, USDC_COIN_TYPE, EV_MARKET_CREATED } from "@/lib/config";
 import {
@@ -83,6 +83,16 @@ function parseUsdcUnits(s: string): bigint | null {
   const fracPadded = (frac + "000000").slice(0, 6);
   const units = BigInt(whole || "0") * 1_000_000n + BigInt(fracPadded || "0");
   return units > 0n ? units : null;
+}
+
+// USDC has 6 decimals, so any digits beyond the 6th are silently truncated by
+// parseUsdcUnits. Clamp the raw input on change so what the user sees matches
+// what gets staked (and don't fight numeric/garbage input — leave that to the
+// parser + the helper line below).
+function clampUsdcInput(s: string): string {
+  const dot = s.indexOf(".");
+  if (dot === -1) return s;
+  return s.slice(0, dot + 1) + s.slice(dot + 1, dot + 7);
 }
 
 // --- Reading the caller's per-bettor stake (for the claim gate) -------------
@@ -252,6 +262,7 @@ function SelloutMarketCard({
   async function run(tx: Transaction) {
     if (!addr) return;
     setErr(null);
+    setDigest(null);
     try {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
@@ -268,6 +279,10 @@ function SelloutMarketCard({
 
   const now = Date.now();
   const loading = created.isLoading || (Boolean(marketId) && marketQ.isLoading);
+  // The market id resolved but its getObject failed/returned no parseable
+  // content — surface an error + Retry instead of a permanent "Loading…".
+  const marketLoadFailed =
+    Boolean(marketId) && !marketQ.isLoading && (marketQ.isError || !market);
 
   // Shared header used in every state of the card.
   const header = (
@@ -299,6 +314,23 @@ function SelloutMarketCard({
             Anyone can open this market — it&apos;s a parimutuel pool settled on-chain.
           </div>
           {txFeedback}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Market getObject error: offer a Retry instead of a stuck spinner. ----
+  if (marketLoadFailed) {
+    return (
+      <div className="space-y-3">
+        {header}
+        <div className="card space-y-3" style={{ padding: 16 }}>
+          <div className="text-sm" style={{ color: "var(--color-danger)" }}>
+            Couldn&apos;t load this market.
+          </div>
+          <button className="btn btn-block" onClick={() => marketQ.refetch()}>
+            <Icon icon="ph:arrow-clockwise-bold" size={16} /> Retry
+          </button>
         </div>
       </div>
     );
@@ -354,14 +386,19 @@ function SelloutMarketCard({
                 className="input mono"
                 type="number"
                 min="0"
-                step="0.1"
+                step="0.01"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => setAmount(clampUsdcInput(e.target.value))}
                 style={{ width: 110 }}
                 disabled={isPending}
               />
               <span style={{ color: "var(--fg3)" }}>USDC</span>
             </label>
+            {parseUsdcUnits(amount) === null && (
+              <div className="text-[11px]" style={{ color: "var(--hi-amber)" }}>
+                Enter an amount greater than 0 (up to 6 decimals).
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 className="btn btn-primary"
@@ -421,6 +458,16 @@ function SelloutMarketCard({
             <div className="text-[12px]" style={{ color: "var(--fg2)" }}>
               Betting is closed. Settle on-chain to lock the outcome from the event&apos;s minted
               count.
+            </div>
+            <div
+              className="text-[11px] flex items-start gap-1.5"
+              style={{ color: "var(--hi-amber)" }}
+            >
+              <Icon icon="ph:warning-bold" size={14} />
+              <span>
+                Settling locks the outcome now. Tickets may still sell until the event ends — settle
+                once you&apos;re confident the final count is in.
+              </span>
             </div>
             <button
               className="btn btn-block"
@@ -543,6 +590,12 @@ function RangeMarketCard({
   const [err, setErr] = useState<string | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
 
+  // Reset the picked bucket when the market changes — a stale index from a
+  // previously-viewed market could point at a non-existent bucket.
+  useEffect(() => {
+    setPicked(0);
+  }, [marketId]);
+
   // Fetch + parse the range market object once we know its id.
   const marketQ = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>(
     "getObject",
@@ -592,6 +645,7 @@ function RangeMarketCard({
   async function run(tx: Transaction) {
     if (!addr) return;
     setErr(null);
+    setDigest(null);
     try {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
@@ -608,6 +662,10 @@ function RangeMarketCard({
 
   const now = Date.now();
   const loading = marketsLoading || (Boolean(marketId) && marketQ.isLoading);
+  // The market id resolved but its getObject failed/returned no parseable
+  // content — surface an error + Retry instead of a permanent "Loading…".
+  const marketLoadFailed =
+    Boolean(marketId) && !marketQ.isLoading && (marketQ.isError || !market);
 
   // Shared header used in every state of the card.
   const header = (
@@ -659,6 +717,23 @@ function RangeMarketCard({
     );
   }
 
+  // ---- Market getObject error: offer a Retry instead of a stuck spinner. ----
+  if (marketLoadFailed) {
+    return (
+      <div className="space-y-3">
+        {header}
+        <div className="card space-y-3" style={{ padding: 16 }}>
+          <div className="text-sm" style={{ color: "var(--color-danger)" }}>
+            Couldn&apos;t load this market.
+          </div>
+          <button className="btn btn-block" onClick={() => marketQ.refetch()}>
+            <Icon icon="ph:arrow-clockwise-bold" size={16} /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ---- Loading market state. ----
   if (loading || !market) {
     return (
@@ -705,7 +780,7 @@ function RangeMarketCard({
                     {isWinner && " ✓"}
                   </span>
                   <span className="mono" style={{ color: "var(--fg3)" }}>
-                    {pct.toFixed(0)}% · {fmtAmount(t, 6)}
+                    {hasBets ? `${pct.toFixed(0)}% · ${fmtAmount(t, 6)}` : "—"}
                   </span>
                 </div>
                 <div
@@ -719,7 +794,9 @@ function RangeMarketCard({
                   <div
                     style={{
                       height: "100%",
-                      width: `${Math.max(pct, hasBets ? 1 : 0)}%`,
+                      // No bets yet: render a muted zero-width bar (no implied
+                      // odds). With bets, floor at 1% so funded buckets stay visible.
+                      width: hasBets ? `${Math.max(pct, 1)}%` : "0%",
                       borderRadius: 999,
                       background: isWinner ? "var(--color-success)" : "var(--hi-blue)",
                       transition: "width .3s ease",
@@ -766,14 +843,19 @@ function RangeMarketCard({
                 className="input mono"
                 type="number"
                 min="0"
-                step="0.1"
+                step="0.01"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => setAmount(clampUsdcInput(e.target.value))}
                 style={{ width: 110 }}
                 disabled={isPending}
               />
               <span style={{ color: "var(--fg3)" }}>USDC</span>
             </label>
+            {parseUsdcUnits(amount) === null && (
+              <div className="text-[11px]" style={{ color: "var(--hi-amber)" }}>
+                Enter an amount greater than 0 (up to 6 decimals).
+              </div>
+            )}
             <button
               className="btn btn-primary btn-block"
               disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
@@ -812,6 +894,16 @@ function RangeMarketCard({
             <div className="text-[12px]" style={{ color: "var(--fg2)" }}>
               Betting is closed. Settle on-chain to lock the winning bucket from the event&apos;s
               minted count.
+            </div>
+            <div
+              className="text-[11px] flex items-start gap-1.5"
+              style={{ color: "var(--hi-amber)" }}
+            >
+              <Icon icon="ph:warning-bold" size={14} />
+              <span>
+                Settling locks the winning bucket now. Tickets may still sell until the event ends —
+                settle once you&apos;re confident the final count is in.
+              </span>
             </div>
             <button
               className="btn btn-block"

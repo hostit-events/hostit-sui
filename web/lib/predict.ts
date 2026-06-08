@@ -425,8 +425,12 @@ export function computeBucketOdds(totals: bigint[]): number[] {
  *   bucket 0     -> "0–{c0-1}"  (e.g. "0–249")
  *   bucket i     -> "{c[i-1]}–{c[i]-1}"  (e.g. "250–499")
  *   bucket N     -> "{c[N-1]}+" (e.g. "500+")
- * Uses an en-dash. Accepts bigint[] | number[]. Falls back to "Bucket i" if the
- * index is out of range for the given cutoffs.
+ * The final bucket is intentionally OPEN-ENDED ("N+", i.e. N up to max) — the
+ * winning bucket is `minted >= cutoffs[N-1]`, so there's no closed top to imply.
+ * This also keeps the degenerate-cutoffs case sane: when a tiny maxTickets
+ * collapses cutoffs to a single value c (see defaultCutoffs), bucket 1 reads
+ * "{c}+" rather than a misleading closed range. Uses an en-dash. Accepts
+ * bigint[] | number[]. Falls back to "Bucket i" if the index is out of range.
  */
 export function bucketLabel(cutoffs: bigint[] | number[], i: number): string {
   const c = (cutoffs as (bigint | number)[]).map((x) => BigInt(x));
