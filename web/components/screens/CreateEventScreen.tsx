@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { DAY_MS, ENOKI_ENABLED, COINS, coinInfo, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, setPriceTx } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
@@ -31,6 +30,9 @@ function isoLocal(addMinutes = 0): string {
 // CATEGORIES[0] is the "all" filter — not a real event category.
 const PICKABLE = CATEGORIES.filter((c) => c.id !== "all");
 
+// Sane upper bound for ticket counts — guards against fat-finger / overflow.
+const MAX_TICKET_LIMIT = 10_000_000;
+
 interface ExtraTier {
   name: string;
   price: string;
@@ -47,7 +49,6 @@ const STEPS = [
 export function CreateEventScreen() {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
-  const router = useRouter();
   const client = useCurrentClient();
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
@@ -96,9 +97,23 @@ export function CreateEventScreen() {
   // True once the follow-up set_price call landed automatically; null = not
   // attempted (free event / no price), false = attempted but couldn't complete.
   const [priceSet, setPriceSet] = useState<boolean | null>(null);
+  // Walrus upload caches — on a retry (e.g. the create tx failed after upload)
+  // we skip re-uploading blobs whose inputs haven't changed. Keyed on the cover
+  // File identity and a stringified snapshot of the metadata inputs.
+  const [coverCache, setCoverCache] = useState<{ file: File; blobId: string } | null>(null);
+  const [metaCache, setMetaCache] = useState<{ key: string; blobId: string } | null>(null);
 
   const [p1, p2] = catPalette(category);
   const ci = coinInfo(coinType);
+
+  // A tier row only persists if it has a name; a named row with a non-numeric /
+  // negative price is invalid and would be dropped (price coerces to 0).
+  function tierState(t: ExtraTier): "ok" | "drop" | "badprice" {
+    if (!t.name.trim()) return "drop";
+    const p = Number(t.price);
+    if (t.price.trim() !== "" && (!Number.isFinite(p) || p < 0)) return "badprice";
+    return "ok";
+  }
 
   const startMs = Date.parse(start);
   const endMs = Date.parse(end);
@@ -123,13 +138,28 @@ export function CreateEventScreen() {
     if (s === 1) {
       const maxT = Number(maxTickets);
       const maxU = Number(maxPerUser);
-      if (!Number.isFinite(maxT) || maxT <= 0) return "Max tickets must be positive.";
-      if (!Number.isFinite(maxU) || maxU <= 0) return "Max per attendee must be positive.";
-      if (!isFree && basePrice.trim() && !(Number(basePrice) >= 0))
-        return "Base price must be a number.";
+      if (!Number.isInteger(maxT) || maxT <= 0)
+        return "Max tickets must be a whole number greater than 0.";
+      if (maxT > MAX_TICKET_LIMIT)
+        return `Max tickets can't exceed ${MAX_TICKET_LIMIT.toLocaleString()}.`;
+      if (!Number.isInteger(maxU) || maxU <= 0)
+        return "Max per attendee must be a whole number greater than 0.";
+      if (maxU > maxT) return "Max per attendee can't exceed max tickets.";
+      if (!isFree) {
+        if (!basePrice.trim()) return "Set a base price, or mark the event as free.";
+        const price = Number(basePrice);
+        if (!Number.isFinite(price) || price <= 0)
+          return "Base price must be a number greater than 0.";
+      }
     }
     return null;
   }
+
+  // Live Step-1 date validation, surfaced inline beneath the date pickers.
+  const dateError = validateTimes();
+  // Live Step-2 validation (capacity + base price), surfaced inline as the user
+  // types — same rule set the Next/Publish guard enforces.
+  const ticketError = stepError(1);
 
   function next() {
     const e = stepError(step);
@@ -169,15 +199,20 @@ export function CreateEventScreen() {
     setCreatedEventId(null);
     setPriceSet(null);
     try {
-      // 1) Cover image → Walrus (optional)
+      // 1) Cover image → Walrus (optional). Reuse a cached upload on retry when
+      // the selected file is unchanged.
       let coverBlobId: string | undefined;
       if (coverFile) {
-        setBusy("Uploading cover to Walrus…");
-        coverBlobId = await storeFile(coverFile);
+        if (coverCache && coverCache.file === coverFile) {
+          coverBlobId = coverCache.blobId;
+        } else {
+          setBusy("Uploading cover to Walrus…");
+          coverBlobId = await storeFile(coverFile);
+          setCoverCache({ file: coverFile, blobId: coverBlobId });
+        }
       }
 
       // 2) Build + store rich metadata JSON → Walrus → blobId (goes on-chain as uri)
-      setBusy("Storing event metadata on Walrus…");
       const metaTiers: Tier[] = [];
       if (!isFree && basePrice.trim() !== "") {
         metaTiers.push({ name: "General Admission", price: Number(basePrice) || 0 });
@@ -203,7 +238,16 @@ export function CreateEventScreen() {
         web3,
         refundable,
       };
-      const blobId = await putEventMetadata(metadata);
+      // Reuse the cached metadata blob on retry when the JSON is byte-identical.
+      const metaKey = JSON.stringify(metadata);
+      let blobId: string;
+      if (metaCache && metaCache.key === metaKey) {
+        blobId = metaCache.blobId;
+      } else {
+        setBusy("Storing event metadata on Walrus…");
+        blobId = await putEventMetadata(metadata);
+        setMetaCache({ key: metaKey, blobId });
+      }
 
       // 3) Create the event on-chain (uri = metadata blobId).
       setBusy("Creating event on Sui…");
@@ -368,8 +412,11 @@ export function CreateEventScreen() {
               </div>
               <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
                 Your price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} is live on-chain.
-                You can adjust pricing and add more coins any time in{" "}
-                <strong style={{ color: "var(--fg1)" }}>My Events</strong>.
+                You can adjust pricing and add more coins any time from your{" "}
+                <Link href="/dashboard" style={{ color: "var(--hi-blue)", fontWeight: 600 }}>
+                  dashboard
+                </Link>
+                .
               </p>
             </div>
           )}
@@ -504,6 +551,7 @@ export function CreateEventScreen() {
                   <input
                     className="input"
                     type="datetime-local"
+                    min={isoLocal()}
                     value={start}
                     onChange={(e) => setStart(e.target.value)}
                   />
@@ -513,11 +561,17 @@ export function CreateEventScreen() {
                   <input
                     className="input"
                     type="datetime-local"
+                    min={start}
                     value={end}
                     onChange={(e) => setEnd(e.target.value)}
                   />
                 </div>
               </div>
+              {dateError && (
+                <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+                  <Icon icon="ph:warning-circle-fill" size={12} /> {dateError}
+                </p>
+              )}
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
@@ -630,8 +684,8 @@ export function CreateEventScreen() {
               )}
               {!isFree && (
                 <p className="text-xs" style={{ color: "var(--fg3)" }}>
-                  A 3% platform fee is added on top at checkout. Pricing is set in My Events after
-                  creation (the Event is shared on-chain).
+                  A 3% platform fee is added on top at checkout. Pricing is set from your dashboard
+                  after creation (the Event is shared on-chain).
                 </p>
               )}
 
@@ -642,6 +696,7 @@ export function CreateEventScreen() {
                     className="input"
                     type="number"
                     min={1}
+                    step="1"
                     value={maxTickets}
                     onChange={(e) => setMaxTickets(e.target.value)}
                   />
@@ -652,11 +707,17 @@ export function CreateEventScreen() {
                     className="input"
                     type="number"
                     min={1}
+                    step="1"
                     value={maxPerUser}
                     onChange={(e) => setMaxPerUser(e.target.value)}
                   />
                 </div>
               </div>
+              {ticketError && (
+                <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+                  <Icon icon="ph:warning-circle-fill" size={12} /> {ticketError}
+                </p>
+              )}
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -671,39 +732,57 @@ export function CreateEventScreen() {
                   Extra tiers are saved in event metadata (Walrus) for display. Set their on-chain
                   prices later.
                 </p>
-                {tiers.map((t, i) => (
-                  <div key={i} className="grid sm:grid-cols-[1fr_120px_1fr_auto] gap-2 items-start">
-                    <input
-                      className="input"
-                      placeholder="Tier name (e.g. VIP)"
-                      value={t.name}
-                      onChange={(e) => updateTier(i, { name: e.target.value })}
-                    />
-                    <input
-                      className="input"
-                      type="number"
-                      min={0}
-                      step="any"
-                      placeholder="Price"
-                      value={t.price}
-                      onChange={(e) => updateTier(i, { price: e.target.value })}
-                    />
-                    <input
-                      className="input"
-                      placeholder="Note (optional)"
-                      value={t.note}
-                      onChange={(e) => updateTier(i, { note: e.target.value })}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-danger"
-                      onClick={() => removeTier(i)}
-                      title="Remove tier"
-                    >
-                      <Icon icon="ph:trash-fill" size={14} />
-                    </button>
-                  </div>
-                ))}
+                {tiers.map((t, i) => {
+                  const st = tierState(t);
+                  return (
+                    <div key={i} className="space-y-1">
+                      <div className="grid sm:grid-cols-[1fr_120px_1fr_auto] gap-2 items-start">
+                        <input
+                          className="input"
+                          placeholder="Tier name (e.g. VIP)"
+                          value={t.name}
+                          onChange={(e) => updateTier(i, { name: e.target.value })}
+                        />
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          step="any"
+                          placeholder="Price"
+                          value={t.price}
+                          onChange={(e) => updateTier(i, { price: e.target.value })}
+                        />
+                        <input
+                          className="input"
+                          placeholder="Note (optional)"
+                          value={t.note}
+                          onChange={(e) => updateTier(i, { note: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          onClick={() => removeTier(i)}
+                          title="Remove tier"
+                          aria-label="Remove tier"
+                        >
+                          <Icon icon="ph:trash-fill" size={14} />
+                        </button>
+                      </div>
+                      {st === "drop" && (
+                        <p className="text-xs" style={{ color: "var(--hi-amber)" }}>
+                          <Icon icon="ph:warning-fill" size={12} /> Add a name or this tier won&apos;t
+                          be saved.
+                        </p>
+                      )}
+                      {st === "badprice" && (
+                        <p className="text-xs" style={{ color: "var(--hi-amber)" }}>
+                          <Icon icon="ph:warning-fill" size={12} /> Price isn&apos;t a valid number —
+                          it will be saved as 0.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -731,13 +810,6 @@ export function CreateEventScreen() {
                 icon="ph:cube-transparent-fill"
                 title="Web3 / on-chain native"
                 desc="Flag this as a web3-native event in discovery."
-              />
-              <Toggle
-                on={isFree}
-                set={setIsFree}
-                icon="ph:gift-fill"
-                title="Free event"
-                desc="No payment — attendees claim a free ticket."
               />
             </div>
           )}

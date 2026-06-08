@@ -327,7 +327,6 @@ export function EventManageScreen({ id }: { id: string }) {
     cap: Number(maxTickets),
     pct,
     revenue: grossLabel,
-    views: undefined,
     priceLabel: grossEntries.length ? grossLabel : isFree ? "Free" : "Not set",
   };
 
@@ -419,19 +418,17 @@ export function EventManageScreen({ id }: { id: string }) {
         </div>
         <div className="stat-tile">
           <div className="stat-num">{grossEntries.length ? grossLabel : isFree ? "Free" : "—"}</div>
-          <div className="stat-label">Gross sales</div>
+          <div className="stat-label">Gross sales (recent)</div>
         </div>
         <div className="stat-tile">
           <div className="stat-num">{checkedInCount}</div>
-          <div className="stat-label">Checked in</div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-num" title="On-chain escrow isn't exposed as a readable field; withdraw to settle.">
-            —
-          </div>
-          <div className="stat-label">In escrow</div>
+          <div className="stat-label">Checked in (recent)</div>
         </div>
       </div>
+      <p className="text-[11px]" style={{ color: "var(--fg3)", marginTop: -16 }}>
+        Gross sales and check-ins are tallied from the 50 most recent on-chain logs, not the full
+        history. On-chain escrow isn&apos;t exposed as a readable field — withdraw to settle.
+      </p>
 
       {/* === Capacity bar === */}
       <div className="card space-y-2">
@@ -485,6 +482,7 @@ export function EventManageScreen({ id }: { id: string }) {
             <div className="space-y-2">
               {COINS.map((c) => {
                 const gross = grossByCoin.get(c.type) ?? 0n;
+                const noGross = gross === 0n;
                 return (
                   <div
                     key={c.type}
@@ -499,7 +497,7 @@ export function EventManageScreen({ id }: { id: string }) {
                     </div>
                     <button
                       className="btn btn-primary btn-sm"
-                      disabled={isPending}
+                      disabled={isPending || noGross}
                       onClick={() =>
                         send(
                           withdrawEventBalanceTx({
@@ -510,13 +508,29 @@ export function EventManageScreen({ id }: { id: string }) {
                           }),
                         )
                       }
-                      title={`Withdraw all accrued ${c.symbol} to ${addr}`}
+                      title={
+                        noGross
+                          ? `No recent ${c.symbol} sales to withdraw`
+                          : `Withdraw all accrued ${c.symbol} to ${addr}`
+                      }
                     >
                       <Icon icon="solar:download-minimalistic-bold" size={15} /> Withdraw {c.symbol}
                     </button>
                   </div>
                 );
               })}
+              <p className="text-[11px]" style={{ color: "var(--fg3)" }}>
+                Grossed figures are tallied from recent on-chain logs; the on-chain balance is the
+                source of truth for what a withdraw settles.
+              </p>
+            </div>
+          )}
+          {actionDigest && (
+            <TxLink digest={actionDigest} className="mono text-xs" style={{ color: "var(--color-success)" }} />
+          )}
+          {actionErr && (
+            <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>
+              {actionErr}
             </div>
           )}
         </div>
@@ -561,15 +575,6 @@ export function EventManageScreen({ id }: { id: string }) {
         send={send}
         isPending={isPending}
       />
-
-      {actionDigest && (
-        <TxLink digest={actionDigest} className="mono text-xs" style={{ color: "var(--color-success)" }} />
-      )}
-      {actionErr && (
-        <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>
-          {actionErr}
-        </div>
-      )}
 
       {/* === Attendees preview === */}
       <section className="space-y-4">
@@ -755,6 +760,15 @@ function PredictionMarketsPanel({
             <div className="mono text-sm" style={{ color: "var(--fg2)" }}>
               Loading…
             </div>
+          ) : selloutMarketId && selloutQ.isError ? (
+            <div className="space-y-2">
+              <div className="text-sm" style={{ color: "var(--color-danger)" }}>
+                Couldn&apos;t load this market&apos;s pool.
+              </div>
+              <button className="btn btn-sm" onClick={() => selloutQ.refetch()}>
+                <Icon icon="ic:round-refresh" size={14} /> Retry
+              </button>
+            </div>
           ) : selloutMarketId ? (
             <div className="space-y-1">
               <div className="flex items-center justify-between text-sm">
@@ -824,6 +838,15 @@ function PredictionMarketsPanel({
                 </span>
               )}
             </div>
+          ) : rangeMarketId && rangeQ.isError ? (
+            <div className="space-y-2">
+              <div className="text-sm" style={{ color: "var(--color-danger)" }}>
+                Couldn&apos;t load this market&apos;s pool.
+              </div>
+              <button className="btn btn-sm" onClick={() => rangeQ.refetch()}>
+                <Icon icon="ic:round-refresh" size={14} /> Retry
+              </button>
+            </div>
           ) : rangeMarketId ? (
             <div className="mono text-sm" style={{ color: "var(--fg2)" }}>
               Loading…
@@ -878,17 +901,27 @@ function PricePanel({
   const [ok, setOk] = useState(false);
   const [digest, setDigest] = useState<string | null>(null);
 
-  function priceUnits(): bigint {
+  // Parse the decimal string into smallest-unit bigint without float rounding.
+  // Returns null on malformed input or excess fractional digits.
+  function priceUnits(): bigint | null {
     const dec = coinInfo(coin).decimals;
-    const n = Number(priceStr);
-    if (!Number.isFinite(n) || n <= 0) return 0n;
-    return BigInt(Math.round(n * 10 ** dec));
+    const s = priceStr.trim();
+    if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
+    const [whole, frac = ""] = s.split(".");
+    if (frac.length > dec) return null; // more precision than the coin supports
+    const padded = frac.padEnd(dec, "0");
+    return BigInt(whole || "0") * 10n ** BigInt(dec) + BigInt(padded || "0");
   }
 
   async function submit() {
     setErr(null);
     setOk(false);
+    const dec = coinInfo(coin).decimals;
     const units = priceUnits();
+    if (units === null) {
+      setErr(`Enter a valid price with at most ${dec} decimal places.`);
+      return;
+    }
     if (units <= 0n) {
       setErr("Enter a price greater than zero.");
       return;
@@ -924,7 +957,15 @@ function PricePanel({
       <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
         <div>
           <label className="label">Coin</label>
-          <select className="select" value={coin} onChange={(e) => setCoin(e.target.value)}>
+          <select
+            className="select"
+            value={coin}
+            onChange={(e) => {
+              setCoin(e.target.value);
+              setOk(false);
+              setDigest(null);
+            }}
+          >
             {COINS.map((c) => (
               <option key={c.type} value={c.type}>
                 {c.symbol}
@@ -938,9 +979,13 @@ function PricePanel({
             className="input"
             type="number"
             min={0}
-            step="any"
+            step={(10 ** -coinInfo(coin).decimals).toFixed(coinInfo(coin).decimals)}
             value={priceStr}
-            onChange={(e) => setPriceStr(e.target.value)}
+            onChange={(e) => {
+              setPriceStr(e.target.value);
+              setOk(false);
+              setDigest(null);
+            }}
           />
         </div>
         <button className="btn btn-primary" disabled={isPending} onClick={submit}>
@@ -1017,7 +1062,11 @@ function SignerPanel({ capId, eventId }: { capId: string; eventId: string }) {
             className="input mono"
             placeholder="0x… (64 hex chars)"
             value={hex}
-            onChange={(e) => setHex(e.target.value)}
+            onChange={(e) => {
+              setHex(e.target.value);
+              setOk(false);
+              setDigest(null);
+            }}
           />
         </div>
         <button className="btn btn-primary" disabled={isPending} onClick={add}>
