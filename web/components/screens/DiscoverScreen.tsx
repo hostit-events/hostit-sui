@@ -79,7 +79,7 @@ export function DiscoverScreen() {
         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Categories">
+      <div className="flex gap-2 flex-wrap pb-1" role="group" aria-label="Categories">
         {CATEGORIES.map((c) => (
           <button key={c.id} className={`chip ${cat === c.id ? "on" : ""}`} aria-pressed={cat === c.id} onClick={() => setCat(c.id)}>
             <Icon icon={c.icon} size={14} /> {c.label}

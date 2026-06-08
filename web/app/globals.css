@@ -82,7 +82,16 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Never allow horizontal scroll on mobile. `clip` (not `hidden`) doesn't
+       create a scroll container, so it won't break the sticky header or the
+       landing's sticky/pinned sections. */
+    overflow-x: clip;
   }
+  /* Long unbreakable strings (Sui addresses, object/package ids, blob ids)
+     shouldn't force the layout wider than the screen. */
+  .mono, .break-anywhere { overflow-wrap: anywhere; }
+  /* Media never overflows its column. */
+  img, picture, video { max-width: 100%; }
   body {
     background:
       radial-gradient(1100px 700px at 80% -10%, rgba(0, 124, 250, 0.10), transparent 60%),
@@ -242,6 +251,35 @@
 
   /* ---- glow blob ---- */
   .glow { position: absolute; border-radius: 50%; filter: blur(110px); pointer-events: none; z-index: 0; }
+
+  /* mobile bottom tab bar (native-app style; hidden on md+ via utility) */
+  .mtabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    display: flex; align-items: flex-end; justify-content: space-around; gap: 2px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: rgba(11, 15, 38, .92);
+    backdrop-filter: blur(16px) saturate(1.2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    border-top: 1px solid var(--hair);
+  }
+  .mtab {
+    flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 7px 2px; min-height: 48px; border-radius: 12px;
+    color: var(--fg3); font-size: 11px; font-weight: 600; letter-spacing: .01em;
+    transition: color .15s ease;
+  }
+  .mtab.active { color: var(--hi-blue); }
+  .mtab-fab {
+    flex: none; display: flex; align-items: center; justify-content: center;
+    width: 56px; height: 56px; margin: 0 6px; border-radius: 50%;
+    background: var(--hi-blue); color: #fff;
+    box-shadow: 0 8px 22px rgba(0, 124, 250, .45);
+    /* raise above the bar via transform (no layout shift → never clipped at the
+       viewport bottom, unlike a negative margin) */
+    transform: translateY(-16px);
+    transition: transform .15s ease;
+  }
+  .mtab-fab:active { transform: translateY(-16px) scale(.94); }
 
   /* ---- mono helper ---- */
   .mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: .02em; color: var(--fg3); }
