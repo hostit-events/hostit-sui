@@ -18,3 +18,4 @@ Published.toml.*-backup
 
 # OS / editor
 .DS_Store
+.vercel
