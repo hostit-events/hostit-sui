@@ -1,12 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { ConnectButton } from "@mysten/dapp-kit-react/ui";
 import { useCurrentAccount } from "@/lib/hooks";
 import { useIsGoogleSession, useSignOut } from "@/lib/auth";
 import { ENOKI_ENABLED } from "@/lib/config";
 import { Icon } from "./Icon";
+
+// dapp-kit's ConnectButton is a web component that pulls in
+// @webcomponents/scoped-custom-element-registry, which touches `window` at
+// module load — load it client-only so it's never evaluated during SSR.
+const ConnectButton = dynamic(
+  () => import("@mysten/dapp-kit-react/ui").then((m) => m.ConnectButton),
+  { ssr: false },
+);
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 

@@ -1,13 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { ConnectButton } from "@mysten/dapp-kit-react/ui";
 import { useAuthCallback } from "@mysten/enoki/react";
 import { useCurrentAccount } from "@/lib/hooks";
 import { ENOKI_ENABLED } from "@/lib/config";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { Icon } from "@/components/Icon";
+
+// Web-component button → load client-only so its window-touching polyfill
+// isn't evaluated during SSR.
+const ConnectButton = dynamic(
+  () => import("@mysten/dapp-kit-react/ui").then((m) => m.ConnectButton),
+  { ssr: false },
+);
 
 /**
  * Login gateway. Google sign-in uses a full-page redirect (Enoki zkLogin):
