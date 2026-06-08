@@ -383,6 +383,8 @@ function SelloutMarketCard({
             <label className="flex items-center gap-2 text-sm">
               <span style={{ color: "var(--fg2)" }}>Stake</span>
               <input
+                id="market-bet-sellout"
+                aria-label="Bet amount (USDC)"
                 className="input mono"
                 type="number"
                 min="0"
@@ -824,6 +826,8 @@ function RangeMarketCard({
             <label className="block text-sm">
               <span style={{ color: "var(--fg2)" }}>Bucket</span>
               <select
+                id="market-bet-bucket"
+                aria-label="Bucket"
                 className="select mono"
                 value={safePicked}
                 onChange={(e) => setPicked(Number(e.target.value))}
@@ -840,6 +844,8 @@ function RangeMarketCard({
             <label className="flex items-center gap-2 text-sm">
               <span style={{ color: "var(--fg2)" }}>Stake</span>
               <input
+                id="market-bet-range"
+                aria-label="Bet amount (USDC)"
                 className="input mono"
                 type="number"
                 min="0"

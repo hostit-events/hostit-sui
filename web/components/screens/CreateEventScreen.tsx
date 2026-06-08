@@ -517,8 +517,9 @@ export function CreateEventScreen() {
             <div className="space-y-4">
               <span className="section-label">Step 1 — Details</span>
               <div>
-                <label className="label">Event name</label>
+                <label className="label" htmlFor="ce-event-name">Event name</label>
                 <input
+                  id="ce-event-name"
                   className="input"
                   placeholder="e.g. Sui Builders Night"
                   value={name}
@@ -526,8 +527,8 @@ export function CreateEventScreen() {
                 />
               </div>
 
-              <div>
-                <label className="label">Category</label>
+              <div role="group" aria-label="Category">
+                <div className="label" aria-hidden="true">Category</div>
                 <div className="flex gap-2 flex-wrap">
                   {PICKABLE.map((c) => (
                     <button
@@ -547,8 +548,9 @@ export function CreateEventScreen() {
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Event starts</label>
+                  <label className="label" htmlFor="ce-start">Event starts</label>
                   <input
+                    id="ce-start"
                     className="input"
                     type="datetime-local"
                     min={isoLocal()}
@@ -557,8 +559,9 @@ export function CreateEventScreen() {
                   />
                 </div>
                 <div>
-                  <label className="label">Event ends</label>
+                  <label className="label" htmlFor="ce-end">Event ends</label>
                   <input
+                    id="ce-end"
                     className="input"
                     type="datetime-local"
                     min={start}
@@ -575,8 +578,9 @@ export function CreateEventScreen() {
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Venue</label>
+                  <label className="label" htmlFor="ce-venue">Venue</label>
                   <input
+                    id="ce-venue"
                     className="input"
                     placeholder="e.g. The Glasshouse"
                     value={venue}
@@ -584,8 +588,9 @@ export function CreateEventScreen() {
                   />
                 </div>
                 <div>
-                  <label className="label">City</label>
+                  <label className="label" htmlFor="ce-city">City</label>
                   <input
+                    id="ce-city"
                     className="input"
                     placeholder="e.g. Lisbon"
                     value={city}
@@ -595,8 +600,9 @@ export function CreateEventScreen() {
               </div>
 
               <div>
-                <label className="label">Tag (optional)</label>
+                <label className="label" htmlFor="ce-tag">Tag (optional)</label>
                 <input
+                  id="ce-tag"
                   className="input"
                   placeholder="e.g. Conference, Festival, Meetup"
                   value={tag}
@@ -605,8 +611,9 @@ export function CreateEventScreen() {
               </div>
 
               <div>
-                <label className="label">Description</label>
+                <label className="label" htmlFor="ce-description">Description</label>
                 <textarea
+                  id="ce-description"
                   className="textarea"
                   placeholder="What is this event about? Who is it for?"
                   value={description}
@@ -615,8 +622,9 @@ export function CreateEventScreen() {
               </div>
 
               <div>
-                <label className="label">Cover image (stored on Walrus on publish)</label>
+                <label className="label" htmlFor="ce-cover">Cover image (stored on Walrus on publish)</label>
                 <input
+                  id="ce-cover"
                   className="input"
                   type="file"
                   accept="image/*"
@@ -655,8 +663,9 @@ export function CreateEventScreen() {
               {!isFree && (
                 <div className="grid sm:grid-cols-[1fr_140px] gap-3">
                   <div>
-                    <label className="label">Base price</label>
+                    <label className="label" htmlFor="ce-base-price">Base price</label>
                     <input
+                      id="ce-base-price"
                       className="input"
                       type="number"
                       min={0}
@@ -667,8 +676,9 @@ export function CreateEventScreen() {
                     />
                   </div>
                   <div>
-                    <label className="label">Coin</label>
+                    <label className="label" htmlFor="ce-coin">Coin</label>
                     <select
+                      id="ce-coin"
                       className="select"
                       value={coinType}
                       onChange={(e) => setCoinType(e.target.value)}
@@ -691,8 +701,9 @@ export function CreateEventScreen() {
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Max tickets</label>
+                  <label className="label" htmlFor="ce-max-tickets">Max tickets</label>
                   <input
+                    id="ce-max-tickets"
                     className="input"
                     type="number"
                     min={1}
@@ -702,8 +713,9 @@ export function CreateEventScreen() {
                   />
                 </div>
                 <div>
-                  <label className="label">Max per attendee</label>
+                  <label className="label" htmlFor="ce-max-per-user">Max per attendee</label>
                   <input
+                    id="ce-max-per-user"
                     className="input"
                     type="number"
                     min={1}
@@ -721,9 +733,9 @@ export function CreateEventScreen() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="label" style={{ margin: 0 }}>
+                  <div className="label" style={{ margin: 0 }}>
                     Additional tiers (optional)
-                  </label>
+                  </div>
                   <button type="button" className="btn btn-sm" onClick={addTier}>
                     <Icon icon="ph:plus-bold" size={13} /> Add tier
                   </button>
@@ -738,12 +750,16 @@ export function CreateEventScreen() {
                     <div key={i} className="space-y-1">
                       <div className="grid sm:grid-cols-[1fr_120px_1fr_auto] gap-2 items-start">
                         <input
+                          id={`ce-tier-name-${i}`}
+                          aria-label="Tier name"
                           className="input"
                           placeholder="Tier name (e.g. VIP)"
                           value={t.name}
                           onChange={(e) => updateTier(i, { name: e.target.value })}
                         />
                         <input
+                          id={`ce-tier-price-${i}`}
+                          aria-label="Tier price"
                           className="input"
                           type="number"
                           min={0}
@@ -753,6 +769,8 @@ export function CreateEventScreen() {
                           onChange={(e) => updateTier(i, { price: e.target.value })}
                         />
                         <input
+                          id={`ce-tier-note-${i}`}
+                          aria-label="Tier note"
                           className="input"
                           placeholder="Note (optional)"
                           value={t.note}
