@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConnectButton } from "@mysten/dapp-kit-react/ui";
+import { AuthControl } from "./AuthControl";
 import { Icon } from "./Icon";
 
 const NAV = [
@@ -52,7 +52,7 @@ export function Header() {
           <Link href="/settings" className="btn btn-sm" aria-label="Settings" title="Settings">
             <Icon icon="ic:round-settings" size={18} />
           </Link>
-          <ConnectButton />
+          <AuthControl />
         </div>
       </div>
       {/* mobile nav */}

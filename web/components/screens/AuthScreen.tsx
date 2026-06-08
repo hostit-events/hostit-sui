@@ -1,33 +1,51 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ConnectButton } from "@mysten/dapp-kit-react/ui";
+import { useAuthCallback } from "@mysten/enoki/react";
 import { useCurrentAccount } from "@/lib/hooks";
 import { ENOKI_ENABLED } from "@/lib/config";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { Icon } from "@/components/Icon";
 
 /**
- * Login gateway. Not connected → welcome + connect. Once a wallet is connected,
- * we bounce straight into the app — connecting *is* the onboarding. There is no
- * "set up your profile" step (it was redundant: interests live in Settings and
- * nothing else read the role), so it no longer reappears on every visit.
+ * Login gateway. Google sign-in uses a full-page redirect (Enoki zkLogin):
+ * clicking "Continue with Google" navigates the tab to Google and back here
+ * with the token in the URL hash, which `useAuthCallback` completes. Once any
+ * account (Google or wallet) is connected, we bounce into the app.
  */
 export function AuthScreen() {
   const account = useCurrentAccount();
   const router = useRouter();
+  // Completes the Google redirect by reading the id_token from the URL hash.
+  useAuthCallback();
+  // Are we mid-callback (returned from Google) so we should show a spinner
+  // rather than the sign-in card?
+  const [returningFromGoogle] = useState(
+    () => typeof window !== "undefined" && /id_token=/.test(window.location.hash),
+  );
+  const [callbackError, setCallbackError] = useState(false);
 
   useEffect(() => {
     if (account) router.replace("/discover");
   }, [account, router]);
 
-  if (account) {
+  // If we came back from Google but no session materializes, surface an error
+  // instead of spinning forever.
+  useEffect(() => {
+    if (!returningFromGoogle || account) return;
+    const t = setTimeout(() => setCallbackError(true), 10000);
+    return () => clearTimeout(t);
+  }, [returningFromGoogle, account]);
+
+  if (account || (returningFromGoogle && !callbackError)) {
     return (
       <div
         className="screen-in"
         style={{ minHeight: "70vh", display: "flex", alignItems: "center", justifyContent: "center" }}
       >
-        <div className="mono" style={{ color: "var(--fg3)" }}>Signed in — taking you to HostIt…</div>
+        <div className="mono" style={{ color: "var(--fg3)" }}>Signing you in…</div>
       </div>
     );
   }
@@ -44,10 +62,33 @@ export function AuthScreen() {
             <span className="eyebrow"><Icon icon="ion:ticket" size={14} /> HostIt</span>
             <h1 className="page-title" style={{ marginTop: 16, fontSize: 30 }}>Welcome to HostIt</h1>
             <p className="page-sub" style={{ marginTop: 8 }}>
-              Tickets, events and proof-of-attendance — fully on-chain on Sui. Connect a wallet
+              Tickets, events and proof-of-attendance — fully on-chain on Sui. Sign in
               to get started. No passwords, ever.
             </p>
           </div>
+
+          {callbackError && (
+            <div
+              role="alert"
+              style={{
+                padding: "10px 14px",
+                border: "1px solid var(--hair-2)",
+                borderRadius: "var(--r-md)",
+                background: "rgba(250,0,84,.08)",
+                color: "var(--fg1)",
+                fontSize: 14,
+              }}
+            >
+              Google sign-in didn’t complete. Please try again.
+            </div>
+          )}
+
+          {ENOKI_ENABLED && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <GoogleSignInButton style={{ width: "100%", justifyContent: "center", minHeight: 46 }} />
+              <div className="mono" style={{ textAlign: "center", color: "var(--fg3)", fontSize: 12 }}>or connect a wallet</div>
+            </div>
+          )}
 
           <div style={{ display: "flex", justifyContent: "center" }}>
             <ConnectButton />
@@ -70,9 +111,9 @@ export function AuthScreen() {
             <p className="text-sm" style={{ color: "var(--fg2)", margin: 0 }}>
               {ENOKI_ENABLED ? (
                 <>
-                  Prefer no wallet install? Sign in with <strong style={{ color: "var(--fg1)" }}>Google</strong>{" "}
-                  via zkLogin — your account is derived with passkey-grade security and gas is
-                  sponsored on us. Pick it from the connect dialog above.
+                  Sign in with <strong style={{ color: "var(--fg1)" }}>Google</strong> via zkLogin —
+                  your account is derived with passkey-grade security and gas is sponsored on us. No
+                  popup; you’re briefly redirected to Google and back.
                 </>
               ) : (
                 <>

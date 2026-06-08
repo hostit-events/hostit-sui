@@ -3,8 +3,7 @@
 
 import { createDAppKit } from "@mysten/dapp-kit-core";
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
-import { enokiWalletsInitializer } from "@mysten/enoki";
-import { ENOKI_API_KEY, ENOKI_ENABLED, GOOGLE_CLIENT_ID, NETWORK } from "./config";
+import { NETWORK } from "./config";
 
 type DAppKitInstance = ReturnType<typeof buildDAppKit>;
 
@@ -34,28 +33,9 @@ function buildDAppKit(
       }),
     defaultNetwork: defaultNet,
     autoConnect: true,
-    walletInitializers:
-      ENOKI_ENABLED && GOOGLE_CLIENT_ID
-        ? [
-            enokiWalletsInitializer({
-              apiKey: ENOKI_API_KEY,
-              providers: {
-                google: {
-                  clientId: GOOGLE_CLIENT_ID,
-                  // Pin the OAuth redirect to one stable URL. Enoki otherwise
-                  // defaults redirect_uri to the *current* page, so signing in
-                  // via the global "Connect Wallet" header from /discover,
-                  // /wallet, … would each need allowlisting in Google. With
-                  // this, only `${origin}/auth` must be registered per domain.
-                  // (getDAppKit runs client-side only, so `window` is defined;
-                  // guarded anyway for safety.)
-                  ...(typeof window !== "undefined"
-                    ? { redirectUrl: `${window.location.origin}/auth` }
-                    : {}),
-                },
-              },
-            }),
-          ]
-        : [],
+    // Google sign-in is handled by Enoki's full-page redirect flow (see
+    // lib/auth.ts), not a dapp-kit popup wallet. dapp-kit keeps its default
+    // wallet-standard wallets (Slush + injected extensions).
+    walletInitializers: [],
   });
 }

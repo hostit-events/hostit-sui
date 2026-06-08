@@ -2,26 +2,54 @@
 
 import { useMutation, useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import {
-  useCurrentAccount,
+  useCurrentAccount as useDAppKitAccount,
   useCurrentClient,
   useDAppKit,
 } from "@mysten/dapp-kit-react";
 import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
+import { useEnokiFlow, useZkLogin } from "@mysten/enoki/react";
+import type { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import type { Transaction } from "@mysten/sui/transactions";
 import { toBase64 } from "@mysten/sui/utils";
 import { sponsorAndExecute } from "./sponsor";
+import { ENOKI_NETWORK } from "./auth";
 
-export { useCurrentAccount, useCurrentClient };
+export { useCurrentClient };
 
 /**
- * Mirror of the old `useSignAndExecuteTransaction` shape via the v2 signer.
- * Unwraps the discriminated-union result and throws on failed transactions so
- * callers can just read `.digest` / `.effects` on the returned Transaction.
+ * Current account, unified across auth methods: a Google (Enoki zkLogin)
+ * session takes precedence, otherwise the connected dapp-kit wallet. Consumers
+ * only read `.address`, so we expose a minimal `{ address }` shape.
+ */
+export function useCurrentAccount(): { address: string } | null {
+  const wallet = useDAppKitAccount();
+  const zkAddress = useZkLogin().address;
+  if (zkAddress) return { address: zkAddress };
+  return wallet ? { address: wallet.address } : null;
+}
+
+/**
+ * Mirror of the old `useSignAndExecuteTransaction` shape. For wallets it goes
+ * through dapp-kit's signer; for a Google (zkLogin) session it signs with the
+ * Enoki keypair and executes via the SuiClient. Throws on a failed transaction
+ * so callers can read `.digest` / `.effects` on the result.
  */
 export function useSignAndExecute() {
   const dAppKit = useDAppKit();
+  const client = useCurrentClient() as unknown as SuiJsonRpcClient;
+  const enokiFlow = useEnokiFlow();
+  const zk = useZkLogin();
   return useMutation({
     mutationFn: async (input: { transaction: Transaction }) => {
+      if (zk.address) {
+        const keypair = await enokiFlow.getKeypair({ network: ENOKI_NETWORK });
+        input.transaction.setSenderIfNotSet(zk.address);
+        return await client.signAndExecuteTransaction({
+          transaction: input.transaction,
+          signer: keypair,
+          options: { showEffects: true, showEvents: true },
+        });
+      }
       const result = await new CurrentAccountSigner(dAppKit).signAndExecuteTransaction({
         transaction: input.transaction,
       });
@@ -37,13 +65,15 @@ export function useSignAndExecute() {
 
 /**
  * Sign-and-execute via the Enoki sponsored-transaction flow. Sponsor pays gas;
- * the user only signs the data. Use this hook for actions that match the
- * portal allowlist (register_issuer / buy_ticket / use_ticket). Throws if
- * Enoki is not configured or the user hasn't connected a wallet.
+ * the user only signs. A Google (zkLogin) session signs the sponsored bytes
+ * with the Enoki keypair; a wallet signs via dapp-kit. Throws if the user
+ * hasn't signed in.
  */
 export function useSponsorAndExecute() {
   const dAppKit = useDAppKit();
   const client = useCurrentClient();
+  const enokiFlow = useEnokiFlow();
+  const zk = useZkLogin();
   return useMutation({
     mutationFn: async (input: { transaction: Transaction; sender: string }) => {
       return sponsorAndExecute({
@@ -51,6 +81,11 @@ export function useSponsorAndExecute() {
         sender: input.sender,
         suiClient: client,
         signTransactionBytes: async (bytes) => {
+          if (zk.address) {
+            const keypair = await enokiFlow.getKeypair({ network: ENOKI_NETWORK });
+            const { signature } = await keypair.signTransaction(bytes);
+            return { signature };
+          }
           const signed = await dAppKit.signTransaction({
             transaction: toBase64(bytes),
           });
