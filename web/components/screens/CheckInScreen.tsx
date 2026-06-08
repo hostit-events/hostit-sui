@@ -94,13 +94,13 @@ export function CheckInScreen() {
       <section className="space-y-3">
         <span className="section-label">Your events</span>
         {isLoading ? (
-          <div className="card mono">Loading your events…</div>
+          <div className="card mono" role="status">Loading your events…</div>
         ) : isError ? (
           <div className="card" style={{ color: "var(--color-danger)" }}>
             Couldn&apos;t load your events. <button className="btn btn-sm" onClick={() => refetch()}>Retry</button>
           </div>
         ) : mine.length === 0 ? (
-          <div className="card">
+          <div className="card" role="status">
             <div className="font-semibold">No events to staff.</div>
             <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
               You aren&apos;t the organizer of any event yet. Create one to manage
@@ -247,6 +247,20 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
             >
               <Icon icon="ic:round-meeting-room" size={14} /> Open door view
             </Link>
+            <Link
+              href={`/manage/${event.eventId}`}
+              className="btn btn-sm"
+              title="Manage this event"
+            >
+              <Icon icon="ic:round-settings" size={14} /> Manage
+            </Link>
+            <Link
+              href={`/forum/${event.eventId}`}
+              className="btn btn-sm"
+              title="Open the attendee forum for this event"
+            >
+              <Icon icon="ic:round-forum" size={14} /> Forum
+            </Link>
           </div>
         </div>
       </div>
@@ -275,14 +289,25 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
               title={capId ? "Toggle self check-in" : "OrganizerCap for this event not found"}
             />
           </div>
-          {!capId && (
+          {capsQuery.isError ? (
+            <div className="text-xs" role="status" style={{ color: "var(--color-danger)" }}>
+              Could not load your organizer permissions —{" "}
+              <button className="btn btn-sm" onClick={() => capsQuery.refetch()}>Retry</button>
+            </div>
+          ) : !capId && !capsQuery.isLoading ? (
             <div className="text-xs" style={{ color: "var(--color-danger)" }}>
               No matching OrganizerCap in this wallet — admin actions are disabled.
             </div>
-          )}
+          ) : null}
         </div>
 
-        <SignerManager capId={capId} eventId={event.eventId} isPending={isPending} />
+        <SignerManager
+          capId={capId}
+          eventId={event.eventId}
+          isPending={isPending}
+          capsError={capsQuery.isError}
+          capsLoading={capsQuery.isLoading}
+        />
       </div>
 
       {digest && <TxLink digest={digest} className="mono text-xs" style={{ color: "var(--fg3)" }} />}
@@ -295,10 +320,14 @@ function SignerManager({
   capId,
   eventId,
   isPending,
+  capsError,
+  capsLoading,
 }: {
   capId: string | null;
   eventId: string;
   isPending: boolean;
+  capsError: boolean;
+  capsLoading: boolean;
 }) {
   const { mutateAsync } = useSignAndExecute();
   const [hex, setHex] = useState("");
@@ -375,11 +404,15 @@ function SignerManager({
         )}
         {valid && <span className="badge badge-line">{bytes!.length} bytes</span>}
       </div>
-      {!capId && (
+      {capsError ? (
+        <div className="text-xs" role="status" style={{ color: "var(--color-danger)" }}>
+          Could not load your organizer permissions.
+        </div>
+      ) : !capId && !capsLoading ? (
         <div className="text-xs" style={{ color: "var(--fg3)" }}>
           OrganizerCap required to register signers.
         </div>
-      )}
+      ) : null}
       {ok && <TxLink digest={ok} label="added · tx" className="mono text-xs" style={{ color: "var(--color-success)" }} />}
       {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
     </div>
@@ -471,6 +504,7 @@ function Attendance({ eventId }: { eventId: string }) {
           <input
             className="input"
             placeholder="Search by address, suiNS or serial…"
+            aria-label="Search check-ins by address, suiNS or serial"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ paddingLeft: 42 }}
@@ -479,9 +513,9 @@ function Attendance({ eventId }: { eventId: string }) {
       )}
 
       {q.isLoading ? (
-        <div className="card mono">Loading attendance…</div>
+        <div className="card mono" role="status">Loading attendance…</div>
       ) : filtered.length === 0 ? (
-        <div className="card">
+        <div className="card" role="status">
           <div className="font-semibold">
             {rows.length === 0 ? "No check-ins yet." : "No matches."}
           </div>
