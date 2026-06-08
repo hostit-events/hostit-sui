@@ -44,6 +44,9 @@ export function Header() {
             <Icon icon="ic:round-add" size={16} />
             <span className="hidden sm:inline">Create event</span>
           </Link>
+          <Link href="/settings" className="btn btn-sm" aria-label="Settings" title="Settings">
+            <Icon icon="ic:round-settings" size={18} />
+          </Link>
           <ConnectButton />
         </div>
       </div>

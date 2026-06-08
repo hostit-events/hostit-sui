@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { fromHex } from "@mysten/sui/utils";
 import {
   ORGANIZER_CAP_TYPE,
@@ -13,6 +14,7 @@ import {
   setAllowSelfCheckinTx,
 } from "@/lib/ticketing";
 import { useCurrentAccount, useSignAndExecute, useSuiQuery } from "@/lib/hooks";
+import { humanizeError } from "@/lib/moveErrors";
 import { useSuiNSNames } from "@/lib/verification";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
@@ -55,7 +57,7 @@ function posterVars(seed: string): React.CSSProperties {
 export function CheckInScreen() {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
-  const { events, isLoading } = useEventList();
+  const { events, isLoading, isError, refetch } = useEventList();
 
   const mine = useMemo<EventInfo[]>(
     () => (addr ? events.filter((e) => e.organizer === addr) : []),
@@ -93,6 +95,10 @@ export function CheckInScreen() {
         <span className="section-label">Your events</span>
         {isLoading ? (
           <div className="card mono">Loading your events…</div>
+        ) : isError ? (
+          <div className="card" style={{ color: "var(--color-danger)" }}>
+            Couldn&apos;t load your events. <button className="btn btn-sm" onClick={() => refetch()}>Retry</button>
+          </div>
         ) : mine.length === 0 ? (
           <div className="card">
             <div className="font-semibold">No events to staff.</div>
@@ -214,7 +220,7 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
       setDigest(out.digest);
       obj.refetch();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e));
     }
   }
 
@@ -229,11 +235,18 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
               {event.eventId.slice(0, 12)}…
             </div>
           </div>
-          <div className="relative flex gap-1.5 flex-wrap">
+          <div className="relative flex items-center gap-2 flex-wrap">
             {event.isFree && <span className="badge badge-green">Free</span>}
             <span className="badge" style={{ background: "rgba(255,255,255,.18)", color: "#fff" }}>
               seq {event.eventSeq}
             </span>
+            <Link
+              href={`/door/${event.eventId}`}
+              className="btn btn-sm"
+              title="Open the full-screen door view for this event"
+            >
+              <Icon icon="ic:round-meeting-room" size={14} /> Open door view
+            </Link>
           </div>
         </div>
       </div>
@@ -249,10 +262,13 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
                 Let holders check themselves in within the window (no staff voucher).
               </p>
             </div>
-            <div
+            <button
+              type="button"
               className={`switch ${allowSelf ? "on" : ""}`}
               role="switch"
               aria-checked={allowSelf}
+              aria-label={`Self check-in ${allowSelf ? "enabled" : "disabled"}`}
+              disabled={isPending || !capId}
               onClick={() => {
                 if (!isPending && capId) toggleSelf();
               }}
@@ -316,7 +332,7 @@ function SignerManager({
       setOk(out.digest);
       setHex("");
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e));
     } finally {
       setBusy(false);
     }

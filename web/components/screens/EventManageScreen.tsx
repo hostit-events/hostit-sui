@@ -210,6 +210,26 @@ export function EventManageScreen({ id }: { id: string }) {
       </div>
     );
   }
+  if (capsQ.isError) {
+    return (
+      <div className="space-y-5 screen-in">
+        <div className="card">
+          <div className="font-semibold">Could not load your organizer permissions</div>
+          <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+            We couldn&apos;t check whether this wallet holds the OrganizerCap for this event.
+          </p>
+          <div className="flex gap-2" style={{ marginTop: 16, flexWrap: "wrap" }}>
+            <button className="btn btn-primary btn-sm" onClick={() => capsQ.refetch()}>
+              <Icon icon="ic:round-refresh" size={16} /> Retry
+            </button>
+            <Link href={`/event/${id}`} className="btn btn-sm">
+              <Icon icon="ic:round-explore" size={16} /> View public page
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!capId) {
     return (
       <div className="space-y-5 screen-in">
@@ -358,6 +378,12 @@ export function EventManageScreen({ id }: { id: string }) {
           <div className="flex gap-2" style={{ flexWrap: "wrap", marginTop: 4 }}>
             <Link href="/checkin" className="btn btn-sm">
               <Icon icon="zondicons:inbox-check" size={15} /> Check-in
+            </Link>
+            <Link href={`/door/${id}`} className="btn btn-sm">
+              <Icon icon="material-symbols:door-front-outline" size={15} /> Door view
+            </Link>
+            <Link href={`/forum/${id}`} className="btn btn-sm">
+              <Icon icon="ion:chatbubbles" size={15} /> Event chat
             </Link>
             <Link href={`/event/${id}`} className="btn btn-sm">
               <Icon icon="ic:round-explore" size={15} /> View public page
@@ -508,10 +534,13 @@ export function EventManageScreen({ id }: { id: string }) {
                 Let holders check themselves in within the event window.
               </div>
             </div>
-            <div
-              className={`switch ${allowSelf ? "on" : ""}`}
+            <button
+              type="button"
               role="switch"
               aria-checked={allowSelf}
+              aria-label="Self check-in"
+              disabled={isPending}
+              className={`switch ${allowSelf ? "on" : ""}`}
               onClick={() => {
                 if (!isPending) send(setAllowSelfCheckinTx({ capId, eventId: id, allow: !allowSelf }));
               }}

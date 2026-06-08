@@ -106,7 +106,7 @@ export function DoorScreen({ id }: { id: string }) {
   }, [admits, mode, query]);
 
   return (
-    <div className="min-h-screen flex flex-col screen-in" style={{ background: "var(--bg, #070b1e)" }}>
+    <div className="min-h-screen flex flex-col screen-in" style={{ background: "var(--app-bg)" }}>
       {/* === Top bar === */}
       <header
         className="flex items-center justify-between gap-3"

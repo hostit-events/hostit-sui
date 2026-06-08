@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { COINS, ENOKI_ENABLED, ORGANIZER_CAP_TYPE, coinInfo } from "@/lib/config";
 import { useEventList } from "@/lib/events";
 import {
@@ -145,15 +146,27 @@ function MyEventRow({
           <span className="text-[13px]" style={{ color: "var(--fg2)" }}>
             Self check-in
           </span>
-          <div
-            className={`switch ${allowSelf ? "on" : ""}`}
+          <button
+            type="button"
             role="switch"
             aria-checked={allowSelf}
+            aria-label="Toggle self check-in"
+            disabled={isPending}
+            className={`switch ${allowSelf ? "on" : ""}`}
             onClick={() => {
               if (!isPending) send(setAllowSelfCheckinTx({ capId, eventId, allow: !allowSelf }));
             }}
           />
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Link href={`/manage/${eventId}`} className="btn btn-primary">
+          Manage
+        </Link>
+        <Link href={`/event/${eventId}`} className="btn">
+          View
+        </Link>
       </div>
 
       {!isFree && (
