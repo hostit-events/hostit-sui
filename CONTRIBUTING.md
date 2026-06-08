@@ -58,7 +58,7 @@ There is no JS unit-test framework; `tsc --noEmit` + `lint` are the frontend gat
 - **Move code** — capabilities replace roles (`PlatformCap`, `OrganizerCap{event_id}`); all timestamps are **milliseconds**. Prefer narrow scope with explicit follow-ups over speculative generalization.
 - **Gasless transactions** — the sponsorable move-call allowlist is **server-authoritative** in `web/app/api/sponsor/route.ts` (mirrored as a client hint in `web/lib/sponsor.ts`). If you add a sponsored entry function, add its target to **both**.
 - **Package versioning** — the package is upgraded in place, so types anchor to the version that introduced them. When touching the `predict` module, use `PACKAGE_ID_LATEST` for call targets and the matching pinned constant for its types (see `web/lib/config.ts` and `CLAUDE.md`).
-- **Deploys are gated upgrades** — shipping Move changes uses `sui client upgrade`, which a maintainer runs with explicit per-deploy authorization. Don't deploy as part of a PR.
+- **Deploys are gated upgrades** — shipping Move changes uses `sui client upgrade`, which a maintainer runs with explicit per-deploy authorization. Don't deploy as part of a PR. See [`DEPLOYING.md`](./DEPLOYING.md) for the full upgrade procedure.
 
 ## Reporting bugs & proposing features
 
