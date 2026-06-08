@@ -40,7 +40,19 @@ function buildDAppKit(
             enokiWalletsInitializer({
               apiKey: ENOKI_API_KEY,
               providers: {
-                google: { clientId: GOOGLE_CLIENT_ID },
+                google: {
+                  clientId: GOOGLE_CLIENT_ID,
+                  // Pin the OAuth redirect to one stable URL. Enoki otherwise
+                  // defaults redirect_uri to the *current* page, so signing in
+                  // via the global "Connect Wallet" header from /discover,
+                  // /wallet, … would each need allowlisting in Google. With
+                  // this, only `${origin}/auth` must be registered per domain.
+                  // (getDAppKit runs client-side only, so `window` is defined;
+                  // guarded anyway for safety.)
+                  ...(typeof window !== "undefined"
+                    ? { redirectUrl: `${window.location.origin}/auth` }
+                    : {}),
+                },
               },
             }),
           ]
