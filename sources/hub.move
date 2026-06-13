@@ -71,8 +71,13 @@ fun init(otw: HUB, ctx: &mut TxContext) {
     let d = ticket::init_display(&publisher, ctx);
     transfer::public_transfer(d, ctx.sender());
 
-    // TransferPolicy<Ticket> — shared, empty in v1 (basic marketplace/kiosk
-    // tradability). Kiosk royalty_rule / lock_rule are a v2 follow-up.
+    // TransferPolicy<Ticket> — shared so `Ticket` is Kiosk-tradable. Created
+    // empty here (the Publisher only exists in `init`); the HostIt resale rules
+    // (`policy_rules`: not_used + royalty + lock) are attached post-deploy by
+    // the `TransferPolicyCap<Ticket>` holder via
+    // `policy_rules::setup_ticket_policy`, which seeds the royalty bps from
+    // `hub.royalty_bps`. Splitting attach out of `init` keeps the bps tunable
+    // before bootstrap and avoids wiring `hub` into the OTW init ordering.
     let (policy, policy_cap) = transfer_policy::new<Ticket>(&publisher, ctx);
     transfer::public_share_object(policy);
     transfer::public_transfer(policy_cap, ctx.sender());
