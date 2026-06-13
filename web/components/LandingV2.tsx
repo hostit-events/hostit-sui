@@ -257,7 +257,7 @@ export function LandingV2() {
               <span className="lv-logo lg-evt">Fuel Africa</span>
             </div>
           </div>
-          <p className="lv-logo-aspire rv">We're building for the scale of a Coachella or a FIFA World Cup — earning it one real event at a time, starting with the gatherings shaping Web3 today.</p>
+          <p className="lv-logo-aspire rv">We&apos;re building for the scale of a Coachella or a FIFA World Cup — earning it one real event at a time, starting with the gatherings shaping Web3 today.</p>
           <div className="lv-moat rv">
             <span className="lv-moat-item"><span className="bar" /><b>The moat</b> — sellout markets that settle on real ticket sales, on-chain. <span className="lv-accent">Impossible on a Web2 stack.</span></span>
             <span className="lv-moat-item"><span className="bar" /><b>The track record</b> — the HostIt brand and crew that filled ~50K seats on EVM, now native on Sui.</span>

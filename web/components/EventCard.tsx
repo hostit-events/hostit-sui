@@ -107,7 +107,6 @@ export function EventCard({
   const startMs = Number(f.start_ms);
   const endMs = Number(f.end_ms);
   const purchaseStartMs = Number(f.purchase_start_ms);
-  const isRefundable = Boolean(f.is_refundable);
 
   const remaining = maxTickets - minted;
   const soldOut = remaining <= 0n;
