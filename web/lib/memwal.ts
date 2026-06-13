@@ -8,8 +8,10 @@
 //
 // Architecture (forced by a single shared server-side delegate key): ONE HostIt
 // MemWal account; per-organizer isolation via `namespace = org:<owner address>`.
-// Routes receive the organizer `owner` Sui address from the client and map it to
-// the namespace here, server-side.
+// Routes derive the organizer `owner` from a SERVER-VERIFIED signature (see
+// lib/memwalAuth.ts) — never from an unverified body field — and map it to the
+// namespace here, server-side. `orgNamespace` independently re-validates +
+// canonicalizes the address (defense in depth) before it becomes a namespace key.
 //
 // Mode: RELAYER ONLY. The relayer (a TEE host) does embedding + SEAL encryption +
 // Walrus storage server-side, so this layer does NOT touch lib/walrus.ts or
@@ -62,9 +64,35 @@ function disabled(): MemwalDisabled {
   return { disabled: true, reason: DISABLED_REASON };
 }
 
-/** Map an organizer Sui address to its isolated memory namespace. */
+/**
+ * Strictly validate + canonicalize a Sui address: lowercase, zero-pad short
+ * `0x`-prefixed forms, and require exactly 32 bytes (`/^0x[0-9a-f]{64}$/`).
+ * Throws on anything else. Exported so the auth layer applies the SAME rule
+ * before it ever becomes a namespace key (defense in depth against an
+ * attacker-controlled string slipping into `org:<owner>`).
+ */
+export function canonicalizeSuiAddress(owner: string): string {
+  if (typeof owner !== "string") {
+    throw new Error("Invalid owner address: not a string");
+  }
+  const trimmed = owner.trim().toLowerCase();
+  const match = /^0x([0-9a-f]{1,64})$/.exec(trimmed);
+  if (!match) {
+    throw new Error(
+      "Invalid owner address: expected 0x-prefixed hex up to 32 bytes",
+    );
+  }
+  const padded = match[1].padStart(64, "0");
+  return `0x${padded}`;
+}
+
+/**
+ * Map an organizer Sui address to its isolated memory namespace. Re-validates the
+ * address before building the key so a malformed/attacker-controlled string can
+ * never become a namespace.
+ */
 function orgNamespace(owner: string): string {
-  return `org:${owner}`;
+  return `org:${canonicalizeSuiAddress(owner)}`;
 }
 
 /**
