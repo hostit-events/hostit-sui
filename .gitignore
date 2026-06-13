@@ -19,3 +19,9 @@ Published.toml.*-backup
 # OS / editor
 .DS_Store
 .vercel
+
+# Local working docs / session records (ISSUES.md, .suiperpower) — not part of the repo
+docs/
+
+# Local-only symlink so the suiperpower skills + deploy gating still resolve .suiperpower at the repo root
+/.suiperpower
