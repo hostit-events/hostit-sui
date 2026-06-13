@@ -2,11 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { PACKAGE_ID } from "@/lib/config";
-import { getFields } from "@/lib/ticketing";
+import dynamic from "next/dynamic";
+import type { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { ENOKI_ENABLED, PACKAGE_ID } from "@/lib/config";
+import { checkInTx, getFields } from "@/lib/ticketing";
+import { humanizeError } from "@/lib/moveErrors";
+import {
+  clearStaffKeypair,
+  extractTicketId,
+  generateStaffKeypair,
+  importStaffKeypair,
+  loadStaffKeypair,
+  signVoucher,
+  staffPubkeyHex,
+} from "@/lib/staffKey";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
-import { useSuiQuery } from "@/lib/hooks";
+import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { Icon } from "@/components/Icon";
+import { TxLink } from "@/components/TxLink";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import type {
   GetObjectParams,
@@ -15,6 +28,21 @@ import type {
   SuiEvent,
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
+
+// Camera scanner is browser-only (getUserMedia / BarcodeDetector) — load it
+// client-side, never during SSR.
+const QrScanner = dynamic(() => import("@/components/QrScanner").then((m) => m.QrScanner), {
+  ssr: false,
+  loading: () => (
+    <div className="card mono" style={{ textAlign: "center" }}>
+      Starting camera…
+    </div>
+  ),
+});
+
+// How long a signed voucher stays valid. Kept short: the attendee should submit
+// the check-in right at the gate.
+const VOUCHER_TTL_MS = 5 * 60 * 1000;
 
 // The on-chain check-in log. Not a config export, so we build the type string
 // inline from PACKAGE_ID. Shape (sources/checkin.move::CheckedIn):
@@ -38,7 +66,7 @@ interface Admit {
   ts: number | null;
 }
 
-type Mode = "scan" | "search";
+type Mode = "admit" | "monitor" | "search";
 
 export function DoorScreen({ id }: { id: string }) {
   // --- Event identity (name + venue from on-chain object + Walrus metadata) ---
@@ -92,9 +120,9 @@ export function DoorScreen({ id }: { id: string }) {
 
   const count = admits.length;
 
-  // --- Mode toggle (UI only: the on-chain admit path is attendee self-admit or
-  // a staff-signed voucher; this view monitors that, it does not sign txns) ---
-  const [mode, setMode] = useState<Mode>("scan");
+  // --- Mode toggle: "admit" runs the staff voucher check-in (scan/enter a ticket,
+  // sign the ed25519 voucher, submit on-chain); "monitor"/"search" are read-only. ---
+  const [mode, setMode] = useState<Mode>("admit");
   const [query, setQuery] = useState("");
 
   const shown = useMemo(() => {
@@ -199,14 +227,21 @@ export function DoorScreen({ id }: { id: string }) {
           </button>
         </div>
 
-        {/* === Mode toggle (UI) === */}
+        {/* === Mode toggle === */}
         <div className="flex gap-2" style={{ marginTop: 18 }}>
           <button
-            className={`chip ${mode === "scan" ? "on" : ""}`}
-            onClick={() => setMode("scan")}
+            className={`chip ${mode === "admit" ? "on" : ""}`}
+            onClick={() => setMode("admit")}
             style={{ flex: 1, justifyContent: "center" }}
           >
-            <Icon icon="ic:round-qr-code-scanner" size={15} /> Scan
+            <Icon icon="zondicons:inbox-check" size={15} /> Admit
+          </button>
+          <button
+            className={`chip ${mode === "monitor" ? "on" : ""}`}
+            onClick={() => setMode("monitor")}
+            style={{ flex: 1, justifyContent: "center" }}
+          >
+            <Icon icon="ic:round-monitor" size={15} /> Monitor
           </button>
           <button
             className={`chip ${mode === "search" ? "on" : ""}`}
@@ -217,7 +252,9 @@ export function DoorScreen({ id }: { id: string }) {
           </button>
         </div>
 
-        {mode === "scan" ? (
+        {mode === "admit" ? (
+          <AdmitPanel eventId={id} onAdmitted={() => checkinQ.refetch()} />
+        ) : mode === "monitor" ? (
           <div className="card" style={{ marginTop: 12, textAlign: "center" }}>
             <div
               className="inline-flex items-center justify-center"
@@ -230,7 +267,7 @@ export function DoorScreen({ id }: { id: string }) {
                 margin: "4px auto 10px",
               }}
             >
-              <Icon icon="ic:round-qr-code-scanner" size={44} />
+              <Icon icon="ic:round-monitor" size={44} />
             </div>
             <div className="font-semibold">Monitoring admits</div>
             <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
@@ -326,8 +363,290 @@ export function DoorScreen({ id }: { id: string }) {
         style={{ padding: "16px 18px 22px", color: "var(--fg3)", fontSize: 12.5 }}
       >
         <Icon icon="ic:round-shield" size={15} />
-        Door-only access · read-only attendance · no funds or organizer controls
+        Door-only access · voucher check-in + live attendance · no funds or organizer controls
       </footer>
+    </div>
+  );
+}
+
+// === Staff voucher check-in ===
+//
+// The on-chain `checkin::check_in` takes the attendee's ticket as `&mut Ticket`,
+// so the transaction is submitted by whoever holds the ticket (the attendee, or
+// the attendee's wallet at a kiosk) — the staff device's job is to *sign* the
+// ed25519 voucher that authorizes it. This panel: (1) manages the staff key on
+// this device, (2) reads a ticket id (camera QR or typed), (3) signs the voucher
+// with the staff key locally, and (4) submits the check-in via the connected
+// wallet using the standard sponsored/direct submit helper.
+function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () => void }) {
+  const account = useCurrentAccount();
+  const regular = useSignAndExecute();
+  const sponsored = useSponsorAndExecute();
+
+  const [keypair, setKeypair] = useState<Ed25519Keypair | null>(null);
+  useEffect(() => {
+    setKeypair(loadStaffKeypair());
+  }, []);
+
+  const [useCamera, setUseCamera] = useState(false);
+  const [ticketInput, setTicketInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [digest, setDigest] = useState<string | null>(null);
+  const [lastTicket, setLastTicket] = useState<string | null>(null);
+
+  // Admit a ticket: sign the voucher with the staff key, submit the check-in.
+  async function admit(rawTicket: string) {
+    setErr(null);
+    setDigest(null);
+    const ticketId = extractTicketId(rawTicket);
+    if (!ticketId) {
+      setErr("Couldn't read a ticket id from that input. Expect a 0x… object id.");
+      return;
+    }
+    if (!keypair) {
+      setErr("Set up a staff signing key first (below).");
+      return;
+    }
+    if (!account?.address) {
+      setErr("Connect the ticket-holder's wallet to submit the check-in.");
+      return;
+    }
+    setBusy(true);
+    setLastTicket(ticketId);
+    try {
+      const voucher = await signVoucher(
+        keypair,
+        eventId,
+        ticketId,
+        BigInt(Date.now() + VOUCHER_TTL_MS),
+      );
+      const tx = checkInTx({ eventId, ticketId, ...voucher });
+      const out = ENOKI_ENABLED
+        ? await sponsored.mutateAsync({ transaction: tx, sender: account.address })
+        : await regular.mutateAsync({ transaction: tx });
+      setDigest(out.digest);
+      setTicketInput("");
+      onAdmitted();
+    } catch (e: unknown) {
+      setErr(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3" style={{ marginTop: 12 }}>
+      {/* Reader: camera QR or typed/pasted ticket id */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="section-label">Admit attendee</span>
+          <button
+            className={`chip ${useCamera ? "on" : ""}`}
+            onClick={() => {
+              setErr(null);
+              setUseCamera((v) => !v);
+            }}
+            title="Toggle the camera QR scanner"
+          >
+            <Icon icon="ic:round-qr-code-scanner" size={14} /> {useCamera ? "Camera on" : "Scan QR"}
+          </button>
+        </div>
+
+        {useCamera && (
+          <div style={{ position: "relative" }}>
+            <QrScanner
+              paused={busy}
+              onDecode={(v) => {
+                if (!busy) admit(v);
+              }}
+              onError={(m) => setErr(m)}
+            />
+            <p className="text-xs" style={{ color: "var(--fg3)", marginTop: 6 }}>
+              Point the camera at the attendee&apos;s ticket QR. Requires camera permission and HTTPS.
+            </p>
+          </div>
+        )}
+
+        <div className="field">
+          <label className="label" htmlFor="door-ticket">
+            Ticket id
+          </label>
+          <input
+            id="door-ticket"
+            className="input mono"
+            placeholder="0x… ticket object id"
+            value={ticketInput}
+            onChange={(e) => {
+              setTicketInput(e.target.value);
+              setErr(null);
+            }}
+            spellCheck={false}
+          />
+        </div>
+        <button
+          className="btn btn-primary"
+          disabled={busy || !ticketInput.trim() || !keypair}
+          onClick={() => admit(ticketInput)}
+        >
+          <Icon icon="zondicons:inbox-check" size={16} />
+          {busy ? "Admitting…" : "Sign voucher & check in"}
+        </button>
+
+        {lastTicket && (
+          <div className="mono text-xs" style={{ color: "var(--fg3)" }}>
+            ticket {lastTicket.slice(0, 12)}…{lastTicket.slice(-4)}
+          </div>
+        )}
+        {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
+        {digest && (
+          <TxLink
+            digest={digest}
+            label="admitted · tx"
+            className="mono text-xs"
+            style={{ color: "var(--color-success)" }}
+          />
+        )}
+        <p className="text-xs" style={{ color: "var(--fg3)" }}>
+          The check-in is submitted by the connected wallet (the ticket holder). At a kiosk, the
+          attendee taps in their wallet; the staff key only signs the voucher.
+        </p>
+      </div>
+
+      <StaffKeyManager keypair={keypair} onChange={setKeypair} />
+    </div>
+  );
+}
+
+// Per-device staff signing key. Generated or imported here, persisted in this
+// browser's localStorage, and used only to sign vouchers locally — the private
+// key is never displayed, logged, or sent anywhere. The organizer registers the
+// *public* key on the event (Check-in → Staff signers).
+function StaffKeyManager({
+  keypair,
+  onChange,
+}: {
+  keypair: Ed25519Keypair | null;
+  onChange: (kp: Ed25519Keypair | null) => void;
+}) {
+  const [importing, setImporting] = useState(false);
+  const [secret, setSecret] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const pubHex = keypair ? staffPubkeyHex(keypair) : null;
+
+  function doImport() {
+    setErr(null);
+    try {
+      const kp = importStaffKeypair(secret);
+      onChange(kp);
+      setSecret("");
+      setImporting(false);
+    } catch {
+      setErr("That isn't a valid Sui private key (expected a suiprivkey1… string).");
+    }
+  }
+
+  async function copyPub() {
+    if (!pubHex) return;
+    try {
+      await navigator.clipboard.writeText(pubHex);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard may be unavailable; the key stays visible to copy manually */
+    }
+  }
+
+  return (
+    <div className="card space-y-3">
+      <div>
+        <span className="section-label">Staff signing key</span>
+        <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+          {keypair
+            ? "This device can sign check-in vouchers. The organizer must register the public key below on the event."
+            : "Set up a key so this device can sign check-in vouchers. The private key stays on this device."}
+        </p>
+      </div>
+
+      {keypair ? (
+        <>
+          <div className="field">
+            <label className="label">Public key (register this on the event)</label>
+            <div className="flex items-center gap-2">
+              <input className="input mono" value={pubHex ?? ""} readOnly spellCheck={false} />
+              <button className="btn btn-sm" onClick={copyPub} title="Copy public key">
+                <Icon icon={copied ? "ic:round-check" : "ic:round-content-copy"} size={15} />
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              clearStaffKeypair();
+              onChange(null);
+            }}
+            title="Forget this device's staff key"
+          >
+            <Icon icon="ic:round-delete-outline" size={15} /> Forget key
+          </button>
+        </>
+      ) : importing ? (
+        <>
+          <div className="field">
+            <label className="label" htmlFor="staff-secret">
+              Sui private key
+            </label>
+            <input
+              id="staff-secret"
+              className="input mono"
+              type="password"
+              placeholder="suiprivkey1…"
+              value={secret}
+              onChange={(e) => {
+                setSecret(e.target.value);
+                setErr(null);
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <button className="btn btn-primary btn-sm" disabled={!secret.trim()} onClick={doImport}>
+              Import key
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                setImporting(false);
+                setSecret("");
+                setErr(null);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="flex gap-2 flex-wrap">
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => {
+              setErr(null);
+              onChange(generateStaffKeypair());
+            }}
+          >
+            <Icon icon="ic:round-add" size={15} /> Generate key
+          </button>
+          <button className="btn btn-sm" onClick={() => setImporting(true)}>
+            Import existing
+          </button>
+        </div>
+      )}
+
+      {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
     </div>
   );
 }
