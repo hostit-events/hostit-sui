@@ -2,6 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Icon } from "./Icon";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -173,16 +174,16 @@ export function LandingV2() {
         <div className="lv-hero-vignette" />
         <div className="lv-wrap lv-hero-in">
           <div className="rv" style={{ marginBottom: "clamp(20px,3vw,40px)" }}>
-            <span className="lv-eyebrow"><span className="bar" />All-in-one event platform</span>
+            <span className="lv-eyebrow"><span className="bar" />Permissionless event ticketing · on Sui</span>
           </div>
           <h1 className="lv-display" data-lines>
-            <Lines lines={["Everything to run", "your event, in"]} />
-            <span className="ln"><span className="ln-i" style={{ transitionDelay: ".24s" }}><em className="lv-accent" style={{ fontStyle: "italic" }}>one place.</em></span></span>
+            <Lines lines={["Sell out, pay out,", "and bet on it —"]} />
+            <span className="ln"><span className="ln-i" style={{ transitionDelay: ".24s" }}><em className="lv-accent" style={{ fontStyle: "italic" }}>on-chain.</em></span></span>
           </h1>
           <div className="lv-hero-foot">
             <div className="lv-hero-lede rv" style={{ transitionDelay: ".2s" }}>
-              <span className="tick" />
-              <p className="lv-body">Sell tickets, promote, and manage every detail from a single dashboard — escrow-backed payouts and POAP collectibles built in, on Sui.</p>
+              <span className="lv-perf-tick" aria-hidden="true"><i /></span>
+              <p className="lv-body">Any wallet can host. Tickets sell in any coin, gasless; payouts withdraw straight from on-chain escrow — no platform skim, no takedowns. Then a parimutuel market settles itself on the final count: no oracle, no house. Proven on EVM, now native on Sui.</p>
             </div>
             <div className="lv-hero-actions rv" style={{ transitionDelay: ".32s" }}>
               <button className="lv-btn lv-btn-primary lv-btn-lg" onClick={host}>Host your event<Icon icon="ic:round-arrow-forward" size={19} /></button>
@@ -202,9 +203,9 @@ export function LandingV2() {
             <span className="ln"><span className="ln-i" style={{ transitionDelay: ".24s" }}><span className="muted-clause">tools that never talk.</span></span></span>
           </h2>
           <div className="lv-stats">
-            <Stat n={5} suffix="+" label="tools the average organizer juggles to run a single event" cite="HostIt Organizer Survey · 2025" />
-            <Stat n={23} suffix="%" label="of ticket revenue lost to fees, fraud and no-shows" cite="Live Events Benchmark · 2025" />
-            <Stat n={11} suffix=" hrs" label="spent each week on admin instead of the event itself" cite="Organizer Time Study · 2025" />
+            <Stat n={5} suffix="+" label="tools the average organizer juggles to run a single event" cite="Industry estimate" />
+            <Stat n={23} suffix="%" label="of ticket revenue lost to fees, fraud and no-shows" cite="Industry estimate" />
+            <Stat n={11} suffix=" hrs" label="spent each week on admin instead of the event itself" cite="Industry estimate" />
           </div>
         </div>
       </section>
@@ -229,12 +230,13 @@ export function LandingV2() {
         <div className="lv-sol-stick">
           <div className="lv-sol-top">
             <span className="lv-eyebrow"><span className="bar" />What HostIt does</span>
-            <div className="lv-sol-progress">{[0, 1, 2].map((i) => <span key={i} className="seg"><i /></span>)}</div>
+            <div className="lv-sol-progress">{[0, 1, 2, 3].map((i) => <span key={i} className="seg"><i /></span>)}</div>
           </div>
           <div className="lv-sol-stage">
-            <Beat n="01" tag="Sell" kind="ticket" word="Ticketing" on title="Sell tickets in minutes." body="Stand up a beautiful event page and start taking payments the same afternoon — no setup fee, no monthly cost." list={["Tiered & early-bird pricing", "QR tickets & verified transfers", "Escrow-backed payouts"]} />
-            <Beat n="02" tag="Promote" kind="speaker" word="Reach" title="Fill every seat." body="Reach the people who buy — built-in email, codes and referral links, all measured against real sales." list={["Email campaigns & discount codes", "Referral and affiliate links", "A public page built to convert"]} />
-            <Beat n="03" tag="Manage" kind="chart" word="Control" title="Run it from one screen." body="See every sale as it happens, move people through the door in seconds, and know exactly what worked." list={["Real-time sales dashboard", "Fast contactless door check-in", "On-chain post-event analytics"]} />
+            <Beat n="01" tag="Host" kind="ticket" word="Hosting" on title="Anyone can host." body="No application, no gatekeeper. Connect a wallet, publish in four steps, and start selling the same afternoon — gas sponsored, so buyers never touch a faucet." list={["Permissionless — any wallet hosts", "Gasless checkout, sponsored on Sui", "Any coin: SUI, USDC and more", "Escrow-backed on-chain payouts"]} />
+            <Beat n="02" tag="Predict" kind="chart" word="Markets" title="Bet on the sellout." body="Every event opens native prediction markets — will it sell out, and how many seats go? They settle trustlessly from the contract's real ticket count. No oracle, no house, no fee. Impossible on a Web2 ticketing platform." list={["Parimutuel sellout & range markets", "Settles on the event's real mint count", "No oracle, no house, no cut"]} />
+            <Beat n="03" tag="Run" kind="door" word="Door" title="Run the day live." body="Watch sales land in real time, let attendees self-check-in gasless at the door, and turn every check-in into a collectible they keep." list={["Real-time sales dashboard", "Gasless self check-in at the door", "POAP collectibles after check-in"]} />
+            <Beat n="04" tag="Reach" kind="speaker" word="Reach" roadmap title="Fill every seat." body="Next: reach the people who actually buy. Built-in email, discount codes and referral links — every send measured against on-chain sales." list={["Email campaigns & discount codes", "Referral & affiliate links", "A public page built to convert"]} />
           </div>
         </div>
       </section>
@@ -242,23 +244,35 @@ export function LandingV2() {
       {/* PROOF */}
       <section className="lv-section" id="proof">
         <div className="lv-wrap">
-          <span className="lv-eyebrow rv"><span className="bar" />Trusted at scale</span>
+          <div className="lv-perf-rule" data-ground="ink" aria-hidden="true"><span className="lv-perf-notch s" /><span className="lv-perf-notch e" /></div>
+          <span className="lv-eyebrow rv"><span className="bar" />Proven in the wild</span>
           <div className="lv-logos rv" style={{ marginTop: 30 }}>
             <span className="lbl">Powering events like</span>
             <div className="lv-logo-row">
-              <span className="lv-logo lg-coachella">COACHELLA</span>
-              <span className="lv-logo lg-devcon">devcon</span>
-              <span className="lv-logo lg-fifa">FIFA</span>
-              <span className="lv-logo lg-token">TOKEN<b>2049</b></span>
-              <span className="lv-logo lg-basel">Art Basel</span>
-              <span className="lv-logo lg-lagos"><i className="w3-mark" aria-hidden="true" />Web3Lagos</span>
+              <span className="lv-logo lg-evt"><i className="w3-mark" aria-hidden="true" />Web3Lagos</span>
+              <span className="lv-logo lg-evt">Borderless</span>
+              <span className="lv-logo lg-evt">Anambra Web3</span>
+              <span className="lv-logo lg-evt">Blockchain @ Unilag</span>
+              <span className="lv-logo lg-evt">ProdFest</span>
+              <span className="lv-logo lg-evt">Fuel Africa</span>
             </div>
           </div>
+          <p className="lv-logo-aspire rv">We're building for the scale of a Coachella or a FIFA World Cup — earning it one real event at a time, starting with the gatherings shaping Web3 today.</p>
+          <div className="lv-moat rv">
+            <span className="lv-moat-item"><span className="bar" /><b>The moat</b> — sellout markets that settle on real ticket sales, on-chain. <span className="lv-accent">Impossible on a Web2 stack.</span></span>
+            <span className="lv-moat-item"><span className="bar" /><b>The track record</b> — the HostIt brand and crew that filled ~50K seats on EVM, now native on Sui.</span>
+          </div>
           <div className="lv-metrics">
-            <Metric n={240} prefix="$" suffix="M+" label="processed in ticket sales" />
-            <Metric n={10000} comma suffix="+" label="active organizers" />
-            <Metric n={1.8} decimals={1} suffix="M" label="tickets issued" />
-            <Metric n={98} suffix="%" label="payouts released on time" />
+            <Metric n={50} suffix="K+" label="attendees welcomed across our events" />
+            <Metric n={6} label="flagship events powered" />
+            <div className="lv-metric rv">
+              <div className="lv-stat-num">Gasless</div>
+              <div className="lv-stat-label">tickets &amp; check-in, sponsored on Sui</div>
+            </div>
+            <div className="lv-metric rv">
+              <div className="lv-stat-num">Escrow</div>
+              <div className="lv-stat-label">every payout backed on-chain</div>
+            </div>
           </div>
           <div className="lv-quote rv">
             <blockquote>Hosting Web3Lagos on HostIt was a <span className="lv-accent">smooth experience</span> — easy integrations, hands-on support, and great post-event data.</blockquote>
@@ -279,10 +293,15 @@ export function LandingV2() {
             <Lines lines={["Your next event", "starts the moment"]} />
             <span className="ln"><span className="ln-i" style={{ transitionDelay: ".24s" }}>you <em className="lv-accent" style={{ fontStyle: "italic" }}>press go.</em></span></span>
           </h2>
-          <div className="lv-close-row rv" style={{ transitionDelay: ".18s" }}>
-            <button className="lv-btn lv-btn-primary lv-btn-lg" onClick={host}>Host your event<Icon icon="ic:round-arrow-forward" size={19} /></button>
-            <button className="lv-btn lv-btn-quiet lv-btn-lg" onClick={demo}>Explore events</button>
-            <span className="lv-close-note">Free to start · No monthly fee · Escrow-backed</span>
+          <div className="lv-stub-band rv" style={{ transitionDelay: ".18s" }}>
+            <div className="lv-stub-main">
+              <button className="lv-btn lv-btn-primary lv-btn-lg" onClick={host}>Host your event<Icon icon="ic:round-arrow-forward" size={19} /></button>
+              <button className="lv-btn lv-btn-quiet lv-btn-lg" onClick={demo}>Explore events</button>
+            </div>
+            <div className="lv-stub-perf" aria-hidden="true"><span className="lv-perf-notch s" /><span className="lv-perf-notch e" /></div>
+            <div className="lv-stub-tail">
+              <span className="lv-close-note"><b className="lv-close-rate">3%</b> per ticket sold — that&rsquo;s it. No setup, no monthly, gas on us.</span>
+            </div>
           </div>
         </div>
       </section>
@@ -293,7 +312,7 @@ export function LandingV2() {
           <div className="lv-footer-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/logo-white.png" alt="HostIt" style={{ height: 26 }} />
-            <p>Everything to run your event, in one place. Sell, promote and manage — escrow-backed and on-chain ready.</p>
+            <p>Permissionless event ticketing on Sui — sell in any coin, settle in native prediction markets, pay out from on-chain escrow.</p>
             <div className="lv-socials">
               {[
                 ["ri:twitter-x-fill", "X", "https://x.com/hostit_events"],
@@ -310,18 +329,28 @@ export function LandingV2() {
               h="Platform"
               links={[
                 { label: "Overview", href: "#top" },
-                { label: "Pricing", href: "#problem" },
-                { label: "Check-in", href: "#solution" },
-                { label: "Changelog" },
+                { label: "Why HostIt", href: "#problem" },
+                { label: "Platform", href: "#solution" },
+                { label: "Proof", href: "#proof" },
               ]}
             />
             <FooterCol
-              h="Company"
-              links={[{ label: "About" }, { label: "Careers" }, { label: "Contact" }]}
+              h="Product"
+              links={[
+                { label: "Discover events", href: "/discover" },
+                { label: "Host an event", href: "/create" },
+                { label: "My tickets", href: "/wallet" },
+                { label: "Dashboard", href: "/dashboard" },
+              ]}
             />
             <FooterCol
-              h="Legal"
-              links={[{ label: "Terms" }, { label: "Privacy" }, { label: "Security" }, { label: "DMCA" }]}
+              h="Connect"
+              links={[
+                { label: "GitHub", href: "https://github.com/hostit-events" },
+                { label: "X (Twitter)", href: "https://x.com/hostit_events" },
+                { label: "Telegram", href: "https://t.me/hostitevents" },
+                { label: "LinkedIn", href: "https://www.linkedin.com/company/hostit-events" },
+              ]}
             />
           </div>
         </div>
@@ -338,30 +367,38 @@ function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
 }
 
-function FooterCol({ h, links }: { h: string; links: { label: string; href?: string }[] }) {
+function FooterCol({ h, links }: { h: string; links: { label: string; href: string }[] }) {
   return (
     <div className="lv-footer-col">
       <div className="lv-footer-h">{h}</div>
-      {links.map(({ label, href }) =>
-        href && href.startsWith("#") && href.length > 1 ? (
-          <a
-            key={label}
-            href={href}
-            onClick={(e) => { e.preventDefault(); scrollToId(href.slice(1)); }}
-          >
+      {links.map(({ label, href }) => {
+        // In-page section → smooth scroll.
+        if (href.startsWith("#")) {
+          return (
+            <a
+              key={label}
+              href={href}
+              onClick={(e) => { e.preventDefault(); scrollToId(href.slice(1)); }}
+            >
+              {label}
+            </a>
+          );
+        }
+        // External (socials, repo) → new tab.
+        if (href.startsWith("http")) {
+          return (
+            <a key={label} href={href} target="_blank" rel="noopener noreferrer">
+              {label}
+            </a>
+          );
+        }
+        // Internal app route → client navigation.
+        return (
+          <Link key={label} href={href}>
             {label}
-          </a>
-        ) : (
-          <a
-            key={label}
-            href="#"
-            aria-disabled="true"
-            onClick={(e) => e.preventDefault()}
-          >
-            {label}
-          </a>
-        ),
-      )}
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -430,14 +467,14 @@ function Counter({ n, decimals = 0, comma, prefix }: any) {
   return <span ref={ref}>{prefix || ""}{fmt(val)}</span>;
 }
 
-function Beat({ n, tag, title, body, list, kind, word, on }: any) {
+function Beat({ n, tag, title, body, list, kind, word, on, roadmap }: any) {
   return (
     <article className={`lv-beat${on ? " on" : ""}`}>
       <div>
-        <div className="lv-beat-n">{n} — {tag}</div>
+        <div className="lv-beat-n">{n} — {tag}{roadmap && <span className="lv-beat-tag">On the roadmap</span>}</div>
         <h3 className="lv-display">{title}</h3>
         <p>{body}</p>
-        <div className="lv-beat-list">{list.map((l: string) => <span key={l}>{l}</span>)}</div>
+        <div className={`lv-beat-list${roadmap ? " soon" : ""}`}>{list.map((l: string) => <span key={l}>{l}</span>)}</div>
       </div>
       <div className="lv-beat-fig">
         <span className="word tl">{word}</span>
@@ -472,6 +509,23 @@ function BeatFig({ kind, word }: { kind: string; word: string }) {
           <i key={k} className="bt-seat" style={{ left: s.x + "%", top: s.y + "%", ["--r" as string]: s.r.toFixed(3) } as React.CSSProperties} />
         ))}
         <div className="bt-stage" />
+      </div>
+    );
+  }
+  if (kind === "door") {
+    // Door check-in pulse: a portal that "admits" as --tk rises — the check
+    // draws in, the centre dot resolves, and pulse rings ripple out. Same
+    // hand-built, accent-only, --tk-driven language as the gauge/amphitheater.
+    // Decorative: depicts gasless SELF check-in (no staff scanner is claimed).
+    return (
+      <div className="bt-door" aria-hidden="true">
+        <div className="bt-door-rings"><span /><span /><span /></div>
+        <svg className="bt-door-svg" viewBox="0 0 200 220" fill="none">
+          <rect className="bt-door-frame" x="58" y="36" width="84" height="148" rx="6" stroke="rgba(236,235,227,.18)" strokeWidth="2" />
+          <line x1="100" y1="36" x2="100" y2="184" stroke="rgba(236,235,227,.1)" strokeWidth="1" />
+          <path className="bt-door-check" d="M76 112 L94 132 L128 90" style={{ stroke: "var(--accent)" }} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+          <circle className="bt-door-dot" cx="100" cy="112" r="7" style={{ fill: "var(--accent)" }} />
+        </svg>
       </div>
     );
   }
