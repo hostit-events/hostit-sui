@@ -113,6 +113,7 @@ export function DoorScreen({ id }: { id: string }) {
         style={{ padding: "14px 18px", borderBottom: "1px solid var(--hair)" }}
       >
         <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/logo-white.png" alt="HostIt" style={{ height: 22, width: "auto", display: "block" }} />
           <span
             className="badge badge-green inline-flex items-center gap-1.5"
