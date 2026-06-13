@@ -34,7 +34,7 @@ import { catPalette, catGlyph } from "@/lib/data";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
-import { CopilotPanel } from "@/components/screens/CopilotPanel";
+import { CopilotLauncher } from "@/components/screens/CopilotLauncher";
 import type {
   GetObjectParams,
   GetOwnedObjectsParams,
@@ -181,7 +181,6 @@ export function EventManageScreen({ id }: { id: string }) {
 
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [actionDigest, setActionDigest] = useState<string | null>(null);
-  const [copilotOpen, setCopilotOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // === Gating / loading / error ===
@@ -632,20 +631,8 @@ export function EventManageScreen({ id }: { id: string }) {
         )}
       </section>
 
-      {/* === AI Co-pilot (collapsible) === */}
-      <section className="space-y-3">
-        <button
-          className="btn btn-block"
-          style={{ justifyContent: "space-between" }}
-          onClick={() => setCopilotOpen((o) => !o)}
-        >
-          <span className="flex items-center gap-2">
-            <Icon icon="solar:magic-stick-3-bold" size={16} /> AI Co-pilot
-          </span>
-          <Icon icon={copilotOpen ? "ic:round-expand-less" : "ic:round-expand-more"} size={18} />
-        </button>
-        {copilotOpen && <CopilotPanel event={copilotEvent} />}
-      </section>
+      {/* === AI Co-pilot (always-accessible floating launcher) === */}
+      <CopilotLauncher event={copilotEvent} />
     </div>
   );
 }
