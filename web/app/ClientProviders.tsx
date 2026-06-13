@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DAppKitProvider } from "@mysten/dapp-kit-react";
 import { EnokiFlowProvider } from "@mysten/enoki/react";
 import { getDAppKit } from "@/lib/dapp-kit";
-import { ENOKI_API_KEY } from "@/lib/config";
+import { ENOKI_API_KEY, ENOKI_SESSION_EPOCHS } from "@/lib/config";
 
 export function ClientProviders({ children }: { children: React.ReactNode }) {
   const [qc] = useState(() => new QueryClient());
@@ -15,8 +15,13 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
       {/* EnokiFlow powers Google zkLogin via a full-page redirect. Always
           mounted (even with an empty key when Enoki is off) so the zkLogin
           hooks have a provider; the Google entry points are gated on
-          ENOKI_ENABLED. */}
-      <EnokiFlowProvider apiKey={ENOKI_API_KEY}>
+          ENOKI_ENABLED.
+
+          additionalEpochs sets the zkLogin nonce's maxEpoch (= currentEpoch +
+          ENOKI_SESSION_EPOCHS) AND the locally-stored session TTL, so the
+          Google session lasts ~30 days on testnet (~24h epochs) instead of the
+          short Enoki default. See ENOKI_SESSION_EPOCHS in lib/config.ts. */}
+      <EnokiFlowProvider apiKey={ENOKI_API_KEY} additionalEpochs={ENOKI_SESSION_EPOCHS}>
         <DAppKitProvider dAppKit={dAppKit}>{children}</DAppKitProvider>
       </EnokiFlowProvider>
     </QueryClientProvider>

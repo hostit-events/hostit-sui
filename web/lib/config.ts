@@ -144,6 +144,30 @@ export const ENOKI_API_KEY = process.env.NEXT_PUBLIC_ENOKI_API_KEY ?? "";
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 export const ENOKI_ENABLED = ENOKI_API_KEY.length > 0;
 
+/**
+ * How long a Google (Enoki zkLogin) session stays valid, expressed in epochs.
+ *
+ * zkLogin caps the lifetime of an ephemeral key at the `maxEpoch` baked into
+ * the nonce at sign-in: `maxEpoch = currentEpoch + additionalEpochs`. Enoki
+ * also derives the locally-stored session TTL (`estimatedExpiration`) from this
+ * same value, so setting it once extends BOTH the on-chain key validity and the
+ * local session — there is no separate JWT/local TTL to change.
+ *
+ * 30 is the protocol/Enoki maximum (`additionalEpochs` range is 0..=30). On
+ * Sui **testnet** epochs are ~24h, so 30 epochs ≈ 30 days, which is the target.
+ * Epoch duration is a live network parameter — if testnet epoch cadence drifts
+ * from ~24h, the effective wall-clock lifetime shifts with it; confirm against
+ * the live network (e.g. `getLatestSuiSystemState().epochDurationMs`) if exact
+ * days matter. We use the constant rather than computing from the live value
+ * because 30 is already the hard ceiling — we cannot extend further regardless
+ * of epoch duration, and asking for more would be rejected by the Enoki API.
+ *
+ * Security note: this only lengthens the session lifetime; the ephemeral key is
+ * still single-use-per-session, generated fresh at each sign-in, and bound to
+ * the zkLogin proof — extending `maxEpoch` does not weaken that.
+ */
+export const ENOKI_SESSION_EPOCHS = 30;
+
 // Move type identifiers — for getOwnedObjects filters (both non-generic now).
 export const TICKET_TYPE = `${PACKAGE_ID}::ticket::Ticket`;
 export const EVENT_TYPE = `${PACKAGE_ID}::event::Event`;

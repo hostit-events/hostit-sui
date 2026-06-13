@@ -16,8 +16,37 @@ export function LandingV2() {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const host = () => router.push("/create");
-  const login = () => router.push("/auth");
   const demo = () => router.push("/discover");
+  // "Open app" → the public app home (discover). It's the route group's public
+  // landing, so it's what "open the app" naturally means for a visitor.
+  const openApp = () => router.push("/discover");
+
+  // Mobile section-links menu (the inline `.lv-nav-links` are hidden under 880px).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  const menuPanelRef = useRef<HTMLDivElement>(null);
+
+  // Close the mobile menu on Escape; move focus into the panel when it opens and
+  // back to the toggle when it closes.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const firstLink = menuPanelRef.current?.querySelector<HTMLElement>("a, button");
+    firstLink?.focus();
+    return () => document.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  const closeMenu = () => {
+    setMenuOpen(false);
+    menuToggleRef.current?.focus();
+  };
+  const goSection = (id: string) => {
+    setMenuOpen(false);
+    scrollToId(id);
+  };
 
   const reduced =
     typeof window !== "undefined" &&
@@ -159,11 +188,53 @@ export function LandingV2() {
             <a href="#proof" onClick={(e) => { e.preventDefault(); scrollToId("proof"); }}>Proof</a>
           </nav>
           <div className="lv-nav-cta">
-            <button className="lv-btn lv-btn-quiet" onClick={login}>Log in</button>
-            <button className="lv-btn lv-btn-primary" onClick={host}>Host your event</button>
+            <button className="lv-btn lv-btn-primary" onClick={openApp}>Open app</button>
+            <button
+              ref={menuToggleRef}
+              type="button"
+              className="lv-nav-burger"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+              aria-controls="lv-nav-menu"
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              <Icon icon={menuOpen ? "ic:round-close" : "ic:round-menu"} size={24} />
+            </button>
           </div>
         </div>
       </header>
+
+      {/* MOBILE MENU — section links + Open app, shown where inline links hide */}
+      <div
+        className={`lv-nav-sheet${menuOpen ? " open" : ""}`}
+        hidden={!menuOpen}
+      >
+        <button
+          type="button"
+          className="lv-nav-scrim"
+          aria-label="Close menu"
+          tabIndex={-1}
+          onClick={closeMenu}
+        />
+        <div
+          id="lv-nav-menu"
+          ref={menuPanelRef}
+          className="lv-nav-menu"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation"
+        >
+          <a href="#problem" onClick={(e) => { e.preventDefault(); goSection("problem"); }}>Why HostIt</a>
+          <a href="#solution" onClick={(e) => { e.preventDefault(); goSection("solution"); }}>Platform</a>
+          <a href="#proof" onClick={(e) => { e.preventDefault(); goSection("proof"); }}>Proof</a>
+          <button
+            className="lv-btn lv-btn-primary lv-nav-menu-cta"
+            onClick={() => { setMenuOpen(false); openApp(); }}
+          >
+            Open app<Icon icon="ic:round-arrow-forward" size={19} />
+          </button>
+        </div>
+      </div>
 
       {/* HERO */}
       <section className="lv-hero" id="top">
@@ -257,7 +328,7 @@ export function LandingV2() {
               <span className="lv-logo lg-evt">Fuel Africa</span>
             </div>
           </div>
-          <p className="lv-logo-aspire rv">We're building for the scale of a Coachella or a FIFA World Cup — earning it one real event at a time, starting with the gatherings shaping Web3 today.</p>
+          <p className="lv-logo-aspire rv">We&apos;re building for the scale of a Coachella or a FIFA World Cup — earning it one real event at a time, starting with the gatherings shaping Web3 today.</p>
           <div className="lv-moat rv">
             <span className="lv-moat-item"><span className="bar" /><b>The moat</b> — sellout markets that settle on real ticket sales, on-chain. <span className="lv-accent">Impossible on a Web2 stack.</span></span>
             <span className="lv-moat-item"><span className="bar" /><b>The track record</b> — the HostIt brand and crew that filled ~50K seats on EVM, now native on Sui.</span>
