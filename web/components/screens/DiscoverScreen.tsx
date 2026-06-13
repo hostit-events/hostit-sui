@@ -6,7 +6,6 @@ import { useCurrentAccount } from "@/lib/hooks";
 import { useEventList } from "@/lib/events";
 import { useEventsWithMarkets } from "@/lib/markets";
 import { useSuiNSNames } from "@/lib/verification";
-import { getEventMetadata } from "@/lib/metadata";
 import { CATEGORIES } from "@/lib/data";
 import { EventCard } from "@/components/EventCard";
 import { Icon } from "@/components/Icon";
@@ -30,7 +29,7 @@ export function DiscoverScreen() {
     let alive = true;
     (async () => {
       const uris = await Promise.all(
-        events.map(async (e) => {
+        events.map(async () => {
           // we only have the on-chain uri via getObject elsewhere; metadata cache
           // keyed by uri. Here we resolve category best-effort via the event uri.
           return null;

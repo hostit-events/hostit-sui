@@ -1,10 +1,10 @@
-// HostIt Co-pilot — Anthropic Claude grounded in the organizer's live event
-// numbers. Falls back to a deterministic, data-aware answer when no API key is
-// set, so the feature is functional out of the box.
+// HostIt Co-pilot — Groq (OpenAI-compatible API) grounded in the organizer's
+// live event numbers. Falls back to a deterministic, data-aware answer when no
+// API key is set, so the feature is functional out of the box.
 
 export const dynamic = "force-dynamic";
 
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001";
+const MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
 interface EventCtx {
   name?: string;
@@ -52,7 +52,7 @@ function fallback(ev: EventCtx, messages: Msg[]): string {
   if (q.includes("describ") || q.includes("polish")) {
     return `Punchier description (<60 words):\n\n"${ev.name ?? "An unmissable night"} lands ${ev.date ?? "soon"} at ${ev.venue ?? "the venue"}${ev.city ? `, ${ev.city}` : ""}. ${ev.category ?? "A standout"} experience, on-chain tickets, instant entry. Limited capacity — secure yours."`;
   }
-  return `Here's where ${ev.name ?? "your event"} stands: **${pct}% sold** (${sold.toLocaleString()}/${cap.toLocaleString()})${ev.revenue ? `, ${ev.revenue} gross` : ""}. Ask me to draft an announcement, analyze slow sales, suggest pricing, or polish your description.\n\n(Set ANTHROPIC_API_KEY for full AI answers.)`;
+  return `Here's where ${ev.name ?? "your event"} stands: **${pct}% sold** (${sold.toLocaleString()}/${cap.toLocaleString()})${ev.revenue ? `, ${ev.revenue} gross` : ""}. Ask me to draft an announcement, analyze slow sales, suggest pricing, or polish your description.\n\n(Set GROQ_API_KEY for full AI answers.)`;
 }
 
 export async function POST(req: Request) {
@@ -64,31 +64,32 @@ export async function POST(req: Request) {
   }
   const ev = body.event ?? {};
   const messages = (body.messages ?? []).slice(-12);
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) return Response.json({ reply: fallback(ev, messages), sourced: "fallback" });
 
   try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 800,
-        system: systemPrompt(ev),
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: [
+          { role: "system", content: systemPrompt(ev) },
+          ...messages.map((m) => ({ role: m.role, content: m.content })),
+        ],
       }),
     });
     if (!r.ok) {
       return Response.json({ reply: fallback(ev, messages), sourced: "fallback", error: await r.text() });
     }
-    const j = (await r.json()) as { content?: { type: string; text?: string }[] };
-    const reply = (j.content ?? []).map((c) => c.text ?? "").join("").trim();
-    return Response.json({ reply: reply || fallback(ev, messages), sourced: "claude" });
+    const j = (await r.json()) as { choices?: { message?: { content?: string } }[] };
+    const reply = (j.choices?.[0]?.message?.content ?? "").trim();
+    return Response.json({ reply: reply || fallback(ev, messages), sourced: "groq" });
   } catch (e: unknown) {
     return Response.json({ reply: fallback(ev, messages), sourced: "fallback", error: String(e) });
   }

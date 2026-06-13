@@ -61,6 +61,13 @@ const MAP: Record<string, Record<number, string>> = {
     5: "This market isn't settled yet — nothing to claim.",
     6: "You have no winning stake to claim here.",
   },
+  policy_rules: {
+    1: "This ticket doesn't match the one being sold.",
+    2: "This ticket has already been used (checked in) and can't be resold.",
+    3: "Royalty rate is too high (must be 100% or less).",
+    4: "Not enough to cover the resale royalty fee.",
+    5: "The ticket must be locked into a kiosk to complete this sale.",
+  },
 };
 
 export function humanizeError(e: unknown): string {

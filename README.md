@@ -11,7 +11,7 @@ HostIt is a faithful Sui Move port of the HostIt EVM Diamond, paired with a Next
 ## Features
 
 - **Events & tickets** — permissionless `create_event`; one shared `Event` per event, generic `Coin<T>` payments, a 3% protocol fee, refunds, organizer payouts.
-- **Check-in** — staff scan an **ed25519 voucher** at the door; optional self check-in within the event window. Multi-day attendance supported.
+- **Check-in** — at the door a staff device scans the ticket and signs an **ed25519 voucher** that gates an attendee-submitted on-chain check-in; optional self check-in within the event window. Multi-day attendance supported.
 - **POAP** — checked-in holders mint a proof-of-attendance NFT (once per ticket).
 - **Ticket-gated forum** — encrypted, on-chain-anchored event chat (Walrus + Seal), readable only by ticket holders.
 - **Prediction markets** — native parimutuel "Sellout Clock" (binary) and "final tickets-sold" (range) markets that **settle trustlessly on-chain** by reading the event's mint counter.

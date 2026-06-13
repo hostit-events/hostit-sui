@@ -66,6 +66,43 @@
 .lv-btn-quiet:hover { color: var(--paper); }
 .lv-btn-lg { padding: 19px 34px; font-size: 16.5px; }
 
+/* Hamburger toggle — hidden on desktop (inline links carry the sections there). */
+.lv-nav-burger {
+  display: none; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; border-radius: 10px;
+  background: transparent; border: 1px solid var(--hair-2); color: var(--paper);
+  cursor: pointer; transition: border-color .25s var(--ease), color .25s var(--ease);
+}
+.lv-nav-burger:hover { border-color: var(--paper); }
+
+/* Mobile menu sheet — fixed full-screen scrim + panel pinned below the nav bar. */
+.lv-nav-sheet { position: fixed; inset: 0; z-index: 130; }
+.lv-nav-scrim {
+  position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; margin: 0;
+  border: none; cursor: pointer; background: rgba(7,9,18,0.6);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity .35s var(--ease);
+}
+.lv-nav-sheet.open .lv-nav-scrim { opacity: 1; }
+.lv-nav-menu {
+  position: absolute; top: 64px; left: 0; right: 0;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 18px var(--gut) 26px;
+  background: rgba(7,9,18,0.94); backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border-bottom: 1px solid var(--hair);
+  transform: translateY(-12px); opacity: 0;
+  transition: transform .4s var(--ease), opacity .4s var(--ease);
+}
+.lv-nav-sheet.open .lv-nav-menu { transform: translateY(0); opacity: 1; }
+.lv-nav-menu a {
+  font-size: 17px; color: var(--paper-dim); letter-spacing: .01em;
+  padding: 15px 2px; border-bottom: 1px solid var(--hair);
+  transition: color .25s var(--ease);
+}
+.lv-nav-menu a:hover, .lv-nav-menu a:focus-visible { color: var(--paper); }
+.lv-nav-menu-cta { margin-top: 18px; justify-content: center; }
+
 .lv-hero { position: relative; min-height: 100svh; display: flex; align-items: flex-end; padding-bottom: clamp(40px, 7vh, 90px); padding-top: 120px; overflow: hidden; }
 .lv-hero-bg { position: absolute; inset: -10% -10% 0 -10%; z-index: 0; will-change: transform; }
 .lv-grid-lines { position: absolute; inset: 0; background-image: linear-gradient(var(--hair) 1px, transparent 1px), linear-gradient(90deg, var(--hair) 1px, transparent 1px); background-size: clamp(60px, 7vw, 110px) clamp(60px, 7vw, 110px); mask-image: radial-gradient(120% 100% at 70% 30%, #000 30%, transparent 78%); -webkit-mask-image: radial-gradient(120% 100% at 70% 30%, #000 30%, transparent 78%); opacity: .5; }
@@ -198,6 +235,7 @@
 
 @media (max-width: 880px) {
   .lv-nav-links { display: none; }
+  .lv-nav-burger { display: inline-flex; }
   .lv-nav-in { height: 64px; }
   .lv-hero { align-items: center; padding-top: 100px; }
   .lv-hero-foot { flex-direction: column; align-items: flex-start; gap: 30px; }
