@@ -252,7 +252,7 @@ fun place_bet<T>(
     stake: Coin<T>,
     yes: bool,
     clock: &Clock,
-    ctx: &mut TxContext,
+    ctx: &TxContext,
 ) {
     assert!(!market.settled, E_ALREADY_SETTLED);
     let now = clock::timestamp_ms(clock);
