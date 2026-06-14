@@ -52,7 +52,7 @@
 .lv-nav-links { display: flex; gap: 34px; margin-left: 52px; flex: 1; }
 .lv-nav-links a { font-size: 14px; color: var(--paper-dim); letter-spacing: .01em; transition: color .3s var(--ease); cursor: pointer; }
 .lv-nav-links a:hover { color: var(--paper); }
-.lv-nav-cta { display: flex; align-items: center; gap: 8px; }
+.lv-nav-cta { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
 .lv-btn { font-family: var(--font-sans); font-weight: 600; font-size: 15px; letter-spacing: -.01em; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; padding: 15px 26px; border-radius: 10px; transition: background .35s var(--ease), color .35s var(--ease), transform .5s var(--ease), border-color .35s var(--ease); }
 .lv-btn iconify-icon { font-size: 1.15em; transition: transform .5s var(--ease); }
