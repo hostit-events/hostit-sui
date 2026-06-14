@@ -13,7 +13,7 @@ use sui::transfer_policy::{Self as policy, TransferPolicy, TransferPolicyCap};
 use std::string;
 use hostit_ticket::hub::{Self, Hub};
 use hostit_ticket::event::{Self, Event, OrganizerCap};
-use hostit_ticket::ticket::{Ticket};
+use hostit_ticket::ticket::{Self, Ticket};
 use hostit_ticket::market;
 use hostit_ticket::checkin;
 use hostit_ticket::policy_rules;
@@ -163,6 +163,41 @@ fun not_used_blocks_mismatched_item() {
     sc.end();
 }
 
+#[test]
+/// Edge / documented behavior: a REFUNDED ticket is ALLOWED through
+/// `prove_not_used` (it does NOT abort). The rule checks ONLY `is_checked_in`;
+/// REFUNDED is terminal and the refund path moves the ticket out of the holder's
+/// hands, so it can't reach a Kiosk resale in practice. This test pins that
+/// decision — if the refund lifecycle ever lets REFUNDED tickets re-circulate,
+/// `prove_not_used` must add an `is_refunded` guard and this flips to a failure.
+fun not_used_allows_refunded_ticket() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_free_event(&mut sc, &clock);
+    clock.set_for_testing(BUY_NOW);
+    let mut t = claim_ticket(&mut sc, &clock);
+
+    // drive the ticket to the terminal REFUNDED status (same set_refunded the
+    // real market::refund calls, reached directly via the test-only wrapper)
+    ticket::set_refunded_for_testing(&mut t);
+    assert!(ticket::is_refunded(&t), 0);
+
+    sc.next_tx(BUYER);
+    let (mut tp, tp_cap) = policy::new_for_testing<Ticket>(sc.ctx());
+    policy_rules::add_not_used_rule(&mut tp, &tp_cap);
+
+    let mut req = policy::new_request<Ticket>(object::id(&t), 0, object::id(&t));
+    policy_rules::prove_not_used(&mut req, &t); // ALLOWED: REFUNDED != CHECKED_IN
+    policy::confirm_request(&tp, req);
+
+    destroy(t);
+    destroy(cap);
+    let profits = tp.destroy_and_withdraw(tp_cap, sc.ctx());
+    coin::burn_for_testing(profits);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
 // === royalty rule (#5) ===
 
 #[test]
@@ -188,6 +223,60 @@ fun royalty_charges_fee() {
     sc.next_tx(ADMIN);
     let profits = tp.destroy_and_withdraw(tp_cap, sc.ctx());
     assert!(coin::value(&profits) == 5_000, 2);
+    coin::burn_for_testing(profits);
+    _clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test]
+/// Edge: a ZERO-bps royalty (0% fee) leaves the payment untouched, accrues
+/// nothing to the policy, and still adds the receipt so `confirm_request`
+/// succeeds. Guards the "free-but-still-required" path the doc promises.
+fun royalty_zero_bps_leaves_payment_unchanged() {
+    let (mut sc, _clock) = begin();
+    sc.next_tx(ADMIN);
+    let (mut tp, tp_cap) = policy::new_for_testing<Ticket>(sc.ctx());
+    policy_rules::add_royalty_rule(&mut tp, &tp_cap, 0); // 0% royalty
+    assert!(policy_rules::royalty_amount_bp(&tp) == 0, 0);
+
+    let item = object::id_from_address(@0xABC);
+    let mut req = policy::new_request<Ticket>(item, 100_000, item); // fee = 0
+    let mut pay = coin::mint_for_testing<SUI>(10_000, sc.ctx());
+    policy_rules::pay_royalty(&mut tp, &mut req, &mut pay, sc.ctx());
+    assert!(coin::value(&pay) == 10_000, 1); // unchanged: nothing split off
+
+    policy::confirm_request(&tp, req); // receipt was still added
+    coin::burn_for_testing(pay);
+
+    sc.next_tx(ADMIN);
+    let profits = tp.destroy_and_withdraw(tp_cap, sc.ctx());
+    assert!(coin::value(&profits) == 0, 2); // nothing accrued
+    coin::burn_for_testing(profits);
+    _clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test]
+/// Boundary: payment EXACTLY equal to the required fee succeeds, leaving a
+/// zero-value remainder (the `>=` check in `pay_royalty` includes equality).
+fun royalty_exact_payment_succeeds() {
+    let (mut sc, _clock) = begin();
+    sc.next_tx(ADMIN);
+    let (mut tp, tp_cap) = policy::new_for_testing<Ticket>(sc.ctx());
+    policy_rules::add_royalty_rule(&mut tp, &tp_cap, 500); // 5%
+
+    let item = object::id_from_address(@0xABC);
+    let mut req = policy::new_request<Ticket>(item, 100_000, item); // fee = 5_000
+    let mut pay = coin::mint_for_testing<SUI>(5_000, sc.ctx()); // exactly the fee
+    policy_rules::pay_royalty(&mut tp, &mut req, &mut pay, sc.ctx());
+    assert!(coin::value(&pay) == 0, 0); // remainder is exactly zero
+
+    policy::confirm_request(&tp, req);
+    coin::burn_for_testing(pay);
+
+    sc.next_tx(ADMIN);
+    let profits = tp.destroy_and_withdraw(tp_cap, sc.ctx());
+    assert!(coin::value(&profits) == 5_000, 1);
     coin::burn_for_testing(profits);
     _clock.destroy_for_testing();
     sc.end();
@@ -335,5 +424,63 @@ fun full_ruleset_confirms() {
     assert!(coin::value(&profits) == 5_000, 1); // 5% of 100_000
     coin::burn_for_testing(profits);
     clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test, expected_failure(abort_code = sui::transfer_policy::EPolicyNotSatisfied)]
+/// Negative end-to-end: with all three rules attached via `setup_ticket_policy`,
+/// a request that supplies only TWO receipts (pay_royalty + prove_not_used,
+/// skipping prove_locked) fails `confirm_request` — the framework requires one
+/// receipt per attached rule. Proves the rule set is enforced as a complete set.
+fun full_ruleset_missing_receipt_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_free_event(&mut sc, &clock);
+    clock.set_for_testing(BUY_NOW);
+    let t = claim_ticket(&mut sc, &clock);
+    let item = object::id(&t);
+
+    sc.next_tx(BUYER);
+    let mut hub = sc.take_shared<Hub>();
+    let (mut tp, tp_cap) = policy::new_for_testing<Ticket>(sc.ctx());
+    policy_rules::setup_ticket_policy(&mut tp, &tp_cap, &hub); // all three rules
+    ts::return_shared(hub);
+
+    // only pay_royalty + prove_not_used; deliberately SKIP prove_locked
+    let mut req = policy::new_request<Ticket>(item, 100_000, item);
+    let mut pay = coin::mint_for_testing<SUI>(100_000, sc.ctx());
+    policy_rules::pay_royalty(&mut tp, &mut req, &mut pay, sc.ctx());
+    policy_rules::prove_not_used(&mut req, &t);
+
+    policy::confirm_request(&tp, req); // aborts: missing the lock receipt
+
+    destroy(t);
+    coin::burn_for_testing(pay);
+    destroy(cap);
+    let profits = tp.destroy_and_withdraw(tp_cap, sc.ctx());
+    coin::burn_for_testing(profits);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test, expected_failure(abort_code = hostit_ticket::policy_rules::E_RULES_ALREADY_SET)]
+/// Negative: `setup_ticket_policy` is all-or-nothing — re-running it (or running
+/// it on a policy that already has one of the three rules) aborts rather than
+/// partially/double-attaching. Here a single pre-attached rule trips the guard.
+fun setup_ticket_policy_rejects_preexisting_rule() {
+    let (mut sc, _clock) = begin();
+    sc.next_tx(ADMIN);
+    let mut hub = sc.take_shared<Hub>();
+    let (mut tp, tp_cap) = policy::new_for_testing<Ticket>(sc.ctx());
+
+    // pre-attach just one of the three rules
+    policy_rules::add_lock_rule(&mut tp, &tp_cap);
+
+    policy_rules::setup_ticket_policy(&mut tp, &tp_cap, &hub); // aborts: already set
+
+    ts::return_shared(hub);
+    let profits = tp.destroy_and_withdraw(tp_cap, sc.ctx());
+    coin::burn_for_testing(profits);
+    _clock.destroy_for_testing();
     sc.end();
 }
