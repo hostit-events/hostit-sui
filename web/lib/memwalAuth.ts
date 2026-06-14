@@ -33,15 +33,13 @@ import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
 import { NETWORK } from "@/lib/config";
 import { canonicalizeSuiAddress } from "@/lib/memwal";
-
-/** Domain/intent tag for the personal-message challenge. Bump the suffix to
- * invalidate all previously-signed challenges. */
-export const MEMORY_CHALLENGE_DOMAIN = "HostIt-MemWal:auth:v1";
-
-/** Replay window: a signed challenge older than this is rejected. */
-export const MEMORY_CHALLENGE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
-/** Reject timestamps too far in the future (clock skew tolerance). */
-const MEMORY_CHALLENGE_FUTURE_SKEW_MS = 60 * 1000; // 1 minute
+// Challenge format lives in a client-safe module (no `server-only`) so the
+// browser (lib/memoryClient.ts) and this server module share one builder.
+import {
+  MEMORY_CHALLENGE_DOMAIN,
+  MEMORY_CHALLENGE_MAX_AGE_MS,
+  MEMORY_CHALLENGE_FUTURE_SKEW_MS,
+} from "@/lib/memwalChallenge";
 
 /** Typed auth error so route handlers can map it to HTTP 401. */
 export class MemoryAuthError extends Error {
@@ -54,15 +52,6 @@ export class MemoryAuthError extends Error {
 
 export function isMemoryAuthError(e: unknown): e is MemoryAuthError {
   return e instanceof MemoryAuthError;
-}
-
-/**
- * Build the canonical challenge string a client must sign. Kept here (not just in
- * a comment) so client code can import the exact same builder once GH#19 lands —
- * the server and client MUST agree byte-for-byte.
- */
-export function buildMemoryChallenge(owner: string, tsMs: number): string {
-  return `${MEMORY_CHALLENGE_DOMAIN}\nowner=${owner}\nts=${tsMs}`;
 }
 
 // One shared read-only client for signature verification. zkLogin verification

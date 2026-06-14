@@ -395,7 +395,6 @@ export function CreateEventScreen() {
       // swallowed/logged and never surfaced as a publish error.
       if (rememberOnPublish && memoryEnabled) {
         const summary = buildCreateSummary({
-          name: name.trim(),
           category,
           city,
           venue,

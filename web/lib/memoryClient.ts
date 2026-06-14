@@ -26,7 +26,7 @@ import {
 } from "@mysten/dapp-kit-react";
 import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
 import { useEnokiFlow, useZkLogin } from "@mysten/enoki/react";
-import { buildMemoryChallenge } from "@/lib/memwalAuth";
+import { buildMemoryChallenge } from "@/lib/memwalChallenge";
 import { ENOKI_NETWORK } from "@/lib/auth";
 
 /** A single recalled organizer memory (mirrors the relayer's RecallMemory). */

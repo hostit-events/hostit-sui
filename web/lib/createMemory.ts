@@ -32,7 +32,6 @@ export interface CreatePrefs {
 
 /** Inputs the wizard hands us to build a one-line memory on publish. */
 export interface CreateSummaryInput {
-  name: string; // used only to make the line human-readable; not a suggestion
   category: string;
   city?: string;
   venue?: string;
@@ -44,8 +43,8 @@ export interface CreateSummaryInput {
 
 /**
  * Build the concise one-line summary stored on an opt-in publish. Example:
- *   "Event creation preferences (Sui Builders Night) — category: tech;
- *    city: Lisbon; venue: The Glasshouse; price: 25 SUI; capacity: 100"
+ *   "Event creation preferences — category: tech; city: Lisbon;
+ *    venue: The Glasshouse; price: 25 SUI; capacity: 100"
  * Only non-empty fields are included. Returns null if there's nothing useful to
  * remember (so callers can skip the write entirely).
  */
@@ -62,11 +61,9 @@ export function buildCreateSummary(i: CreateSummaryInput): string | null {
   if (price) parts.push(`price: ${price}`);
   if (i.maxTickets.trim()) parts.push(`capacity: ${i.maxTickets.trim()}`);
   if (!parts.length) return null;
-  const name = i.name.trim();
-  const head = name
-    ? `${CREATE_MEMORY_PREFIX} (${name})`
-    : CREATE_MEMORY_PREFIX;
-  return `${head} — ${parts.join("; ")}`;
+  // The event name is intentionally NOT persisted (privacy; it's not a reusable
+  // preference) — matches the opt-in consent shown in the wizard.
+  return `${CREATE_MEMORY_PREFIX} — ${parts.join("; ")}`;
 }
 
 // Match `key: value` up to the next `;`, `—`, `|` or end of line. Forgiving on
