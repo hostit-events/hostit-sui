@@ -2,6 +2,8 @@
 // live event numbers. Falls back to a deterministic, data-aware answer when no
 // API key is set, so the feature is functional out of the box.
 
+import { rateLimit, clientIpFromHeaders } from "@/lib/rateLimit";
+
 export const dynamic = "force-dynamic";
 
 const MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
@@ -25,14 +27,23 @@ interface Msg {
   content: string;
 }
 
-function systemPrompt(ev: EventCtx): string {
-  return [
+function systemPrompt(ev: EventCtx, memory: string[]): string {
+  const lines = [
     "You are HostIt Co-pilot, an expert assistant for event organizers on the HostIt platform.",
     "You are grounded in this event's LIVE numbers. Never invent data beyond what is provided.",
     "Be practical, specific and actionable. Prefer short paragraphs and tight bullet lists. No emoji.",
     "",
     `EVENT CONTEXT: ${JSON.stringify(ev)}`,
-  ].join("\n");
+  ];
+  if (memory.length) {
+    lines.push(
+      "",
+      "PAST CONTEXT (facts this organizer chose to remember from earlier sessions —",
+      "treat as helpful background, not as live event data; defer to EVENT CONTEXT on conflict):",
+      ...memory.map((m) => `- ${m}`),
+    );
+  }
+  return lines.join("\n");
 }
 
 function fallback(ev: EventCtx, messages: Msg[]): string {
@@ -55,15 +66,120 @@ function fallback(ev: EventCtx, messages: Msg[]): string {
   return `Here's where ${ev.name ?? "your event"} stands: **${pct}% sold** (${sold.toLocaleString()}/${cap.toLocaleString()})${ev.revenue ? `, ${ev.revenue} gross` : ""}. Ask me to draft an announcement, analyze slow sales, suggest pricing, or polish your description.\n\n(Set GROQ_API_KEY for full AI answers.)`;
 }
 
+// Cap injected memory so a large recall can't blow up the prompt / token cost.
+const MAX_MEMORY_ITEMS = 6;
+const MAX_MEMORY_ITEM_LEN = 500;
+
+// Per-IP rate limit (this route is unauthenticated and fans out to Groq's LLM,
+// so it is a cost-amplification surface). Mirrors the /api/memory limiter usage,
+// but keyed on IP only since there is no verified identity here.
+const RL_LIMIT = 20;
+const RL_WINDOW_MS = 60_000;
+// Body byte cap: reject oversized payloads before parsing/LLM (413). The prompt
+// is dominated by the messages array + event context; 32 KB is generous for chat.
+const MAX_BODY_BYTES = 32 * 1024;
+
+// String fields on EventCtx are truncated to this length to bound prompt-injection
+// blast radius (an attacker can't smuggle a long instruction via a context field).
+const MAX_EV_STR_LEN = 200;
+
+function clampStr(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  return v.slice(0, MAX_EV_STR_LEN);
+}
+function clampNum(v: unknown): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// Coerce/whitelist the client-supplied event into a fresh object containing ONLY
+// the known EventCtx fields, so unknown keys (and overlong/typed-wrong values)
+// never reach systemPrompt(). Undefined fields are dropped to keep the prompt JSON
+// tight.
+function sanitizeEvent(raw: unknown): EventCtx {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const out: EventCtx = {};
+  const name = clampStr(r.name);
+  if (name !== undefined) out.name = name;
+  const status = clampStr(r.status);
+  if (status !== undefined) out.status = status;
+  const date = clampStr(r.date);
+  if (date !== undefined) out.date = date;
+  const city = clampStr(r.city);
+  if (city !== undefined) out.city = city;
+  const venue = clampStr(r.venue);
+  if (venue !== undefined) out.venue = venue;
+  const category = clampStr(r.category);
+  if (category !== undefined) out.category = category;
+  const revenue = clampStr(r.revenue);
+  if (revenue !== undefined) out.revenue = revenue;
+  const priceLabel = clampStr(r.priceLabel);
+  if (priceLabel !== undefined) out.priceLabel = priceLabel;
+  const sold = clampNum(r.sold);
+  if (sold !== undefined) out.sold = sold;
+  const cap = clampNum(r.cap);
+  if (cap !== undefined) out.cap = cap;
+  const pct = clampNum(r.pct);
+  if (pct !== undefined) out.pct = pct;
+  const views = clampNum(r.views);
+  if (views !== undefined) out.views = views;
+  return out;
+}
+
 export async function POST(req: Request) {
-  let body: { event?: EventCtx; messages?: Msg[] };
+  // Byte cap the raw payload BEFORE parsing (413 on oversize). A Content-Length
+  // header lets us short-circuit; otherwise we measure the decoded body.
+  const declaredLen = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
+    return Response.json(
+      { error: `body exceeds ${MAX_BODY_BYTES} bytes` },
+      { status: 413 },
+    );
+  }
+  let rawBody: string;
   try {
-    body = await req.json();
+    rawBody = await req.text();
+  } catch {
+    return Response.json({ error: "Invalid body" }, { status: 400 });
+  }
+  if (new TextEncoder().encode(rawBody).length > MAX_BODY_BYTES) {
+    return Response.json(
+      { error: `body exceeds ${MAX_BODY_BYTES} bytes` },
+      { status: 413 },
+    );
+  }
+
+  let body: { event?: EventCtx; messages?: Msg[]; memory?: unknown };
+  try {
+    body = JSON.parse(rawBody);
   } catch {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const ev = body.event ?? {};
+
+  // Per-IP rate limit before any LLM fan-out (429 + Retry-After on breach).
+  const ip = clientIpFromHeaders(req.headers);
+  const rl = rateLimit(`copilot:ip:${ip}`, RL_LIMIT, RL_WINDOW_MS);
+  if (!rl.ok) {
+    return Response.json(
+      { error: "Rate limit exceeded" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
+
+  // Prompt-injection hardening: coerce/whitelist the client event into a fresh
+  // object of ONLY the known EventCtx fields (numerics via Number(), strings
+  // truncated) before it reaches systemPrompt().
+  const ev = sanitizeEvent(body.event);
   const messages = (body.messages ?? []).slice(-12);
+  // Recalled organizer memory passed by the client (already namespace-scoped &
+  // signature-verified server-side at /api/memory/recall). Sanitize defensively.
+  const memory = Array.isArray(body.memory)
+    ? body.memory
+        .filter((m): m is string => typeof m === "string" && m.trim().length > 0)
+        .slice(0, MAX_MEMORY_ITEMS)
+        .map((m) => m.trim().slice(0, MAX_MEMORY_ITEM_LEN))
+    : [];
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) return Response.json({ reply: fallback(ev, messages), sourced: "fallback" });
@@ -79,7 +195,7 @@ export async function POST(req: Request) {
         model: MODEL,
         max_tokens: 800,
         messages: [
-          { role: "system", content: systemPrompt(ev) },
+          { role: "system", content: systemPrompt(ev, memory) },
           ...messages.map((m) => ({ role: m.role, content: m.content })),
         ],
       }),
