@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import type { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
@@ -393,8 +393,19 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
   const [ticketInput, setTicketInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Camera/decode errors live in a SEPARATE slot from admit/tx errors so the
+  // scanner's onError can't clobber a real check-in error (`err`).
+  const [camErr, setCamErr] = useState<string | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
   const [lastTicket, setLastTicket] = useState<string | null>(null);
+
+  // Dedup + cooldown: a QR scanner re-fires the same value many times a second.
+  // Without a guard, one successful admit would loop forever. Track the last
+  // ticket we successfully admitted and when, and ignore re-scans of it within
+  // the cooldown window.
+  const lastAdmittedId = useRef<string | null>(null);
+  const lastAdmittedAt = useRef<number>(0);
+  const ADMIT_COOLDOWN_MS = 4000;
 
   // Admit a ticket: sign the voucher with the staff key, submit the check-in.
   async function admit(rawTicket: string) {
@@ -428,6 +439,8 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
         : await regular.mutateAsync({ transaction: tx });
       setDigest(out.digest);
       setTicketInput("");
+      lastAdmittedId.current = ticketId;
+      lastAdmittedAt.current = Date.now();
       onAdmitted();
     } catch (e: unknown) {
       setErr(humanizeError(e));
@@ -446,6 +459,7 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
             className={`chip ${useCamera ? "on" : ""}`}
             onClick={() => {
               setErr(null);
+              setCamErr(null);
               setUseCamera((v) => !v);
             }}
             title="Toggle the camera QR scanner"
@@ -459,10 +473,27 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
             <QrScanner
               paused={busy}
               onDecode={(v) => {
-                if (!busy) admit(v);
+                if (busy) return;
+                // Dedup + cooldown: ignore re-scans of the ticket we just
+                // admitted within the cooldown window so the same QR can't be
+                // re-admitted in a loop.
+                const ticketId = extractTicketId(v);
+                if (
+                  ticketId &&
+                  ticketId === lastAdmittedId.current &&
+                  Date.now() - lastAdmittedAt.current < ADMIT_COOLDOWN_MS
+                ) {
+                  return;
+                }
+                admit(v);
               }}
-              onError={(m) => setErr(m)}
+              onError={(m) => setCamErr(m)}
             />
+            {camErr && (
+              <div className="text-xs break-words" style={{ color: "var(--color-danger)", marginTop: 6 }}>
+                {camErr}
+              </div>
+            )}
             <p className="text-xs" style={{ color: "var(--fg3)", marginTop: 6 }}>
               Point the camera at the attendee&apos;s ticket QR. Requires camera permission and HTTPS.
             </p>
