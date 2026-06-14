@@ -25,14 +25,23 @@ interface Msg {
   content: string;
 }
 
-function systemPrompt(ev: EventCtx): string {
-  return [
+function systemPrompt(ev: EventCtx, memory: string[]): string {
+  const lines = [
     "You are HostIt Co-pilot, an expert assistant for event organizers on the HostIt platform.",
     "You are grounded in this event's LIVE numbers. Never invent data beyond what is provided.",
     "Be practical, specific and actionable. Prefer short paragraphs and tight bullet lists. No emoji.",
     "",
     `EVENT CONTEXT: ${JSON.stringify(ev)}`,
-  ].join("\n");
+  ];
+  if (memory.length) {
+    lines.push(
+      "",
+      "PAST CONTEXT (facts this organizer chose to remember from earlier sessions —",
+      "treat as helpful background, not as live event data; defer to EVENT CONTEXT on conflict):",
+      ...memory.map((m) => `- ${m}`),
+    );
+  }
+  return lines.join("\n");
 }
 
 function fallback(ev: EventCtx, messages: Msg[]): string {
@@ -55,8 +64,12 @@ function fallback(ev: EventCtx, messages: Msg[]): string {
   return `Here's where ${ev.name ?? "your event"} stands: **${pct}% sold** (${sold.toLocaleString()}/${cap.toLocaleString()})${ev.revenue ? `, ${ev.revenue} gross` : ""}. Ask me to draft an announcement, analyze slow sales, suggest pricing, or polish your description.\n\n(Set GROQ_API_KEY for full AI answers.)`;
 }
 
+// Cap injected memory so a large recall can't blow up the prompt / token cost.
+const MAX_MEMORY_ITEMS = 6;
+const MAX_MEMORY_ITEM_LEN = 500;
+
 export async function POST(req: Request) {
-  let body: { event?: EventCtx; messages?: Msg[] };
+  let body: { event?: EventCtx; messages?: Msg[]; memory?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -64,6 +77,14 @@ export async function POST(req: Request) {
   }
   const ev = body.event ?? {};
   const messages = (body.messages ?? []).slice(-12);
+  // Recalled organizer memory passed by the client (already namespace-scoped &
+  // signature-verified server-side at /api/memory/recall). Sanitize defensively.
+  const memory = Array.isArray(body.memory)
+    ? body.memory
+        .filter((m): m is string => typeof m === "string" && m.trim().length > 0)
+        .slice(0, MAX_MEMORY_ITEMS)
+        .map((m) => m.trim().slice(0, MAX_MEMORY_ITEM_LEN))
+    : [];
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) return Response.json({ reply: fallback(ev, messages), sourced: "fallback" });
@@ -79,7 +100,7 @@ export async function POST(req: Request) {
         model: MODEL,
         max_tokens: 800,
         messages: [
-          { role: "system", content: systemPrompt(ev) },
+          { role: "system", content: systemPrompt(ev, memory) },
           ...messages.map((m) => ({ role: m.role, content: m.content })),
         ],
       }),

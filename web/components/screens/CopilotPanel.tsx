@@ -1,11 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { useOrganizerMemory } from "@/lib/memoryClient";
 
 interface Msg {
+  id: string;
   role: "user" | "assistant";
   content: string;
+}
+
+// Per-message "Remember this" status, keyed by stable message id.
+type RememberState = "idle" | "saving" | "saved" | "error";
+
+let msgSeq = 0;
+function nextMsgId(): string {
+  msgSeq += 1;
+  return `m${msgSeq}`;
 }
 
 // Live event context handed to the Co-pilot. Mirrors the EventCtx contract in
@@ -126,10 +137,75 @@ function Sparkle({ size = 14 }: { size?: number }) {
   );
 }
 
+// Small, low-emphasis affordance under an assistant reply. Writes that fact to
+// the organizer's memory only on click — never automatically. Signing prompt
+// behaviour depends on the wallet (silent for zkLogin, popup for external).
+function RememberButton({
+  state,
+  onClick,
+}: {
+  state: RememberState;
+  onClick: () => void;
+}) {
+  const saving = state === "saving";
+  const saved = state === "saved";
+  const error = state === "error";
+  const label = saving
+    ? "Saving…"
+    : saved
+      ? "Remembered"
+      : error
+        ? "Retry remember"
+        : "Remember this";
+  const icon = saving
+    ? "ph:circle-notch-bold"
+    : saved
+      ? "ph:check-bold"
+      : error
+        ? "ph:warning-circle-fill"
+        : "ph:bookmark-simple-bold";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={saving || saved}
+      title={
+        saved
+          ? "Saved to your private organizer memory"
+          : "Save this to your private organizer memory (you'll sign to confirm)"
+      }
+      style={{
+        alignSelf: "flex-start",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "3px 8px",
+        borderRadius: 7,
+        border: "1px solid var(--hair)",
+        background: "transparent",
+        color: error ? "var(--color-danger)" : saved ? "var(--color-success)" : "var(--fg3)",
+        fontSize: 11.5,
+        fontWeight: 600,
+        cursor: saving || saved ? "default" : "pointer",
+        opacity: saving ? 0.7 : 1,
+      }}
+    >
+      <Icon
+        icon={icon}
+        size={12}
+        style={saving ? { animation: "hi-cp-spin .8s linear infinite" } : undefined}
+      />
+      {label}
+      <style>{`@keyframes hi-cp-spin{to{transform:rotate(360deg)}}`}</style>
+    </button>
+  );
+}
+
 export function CopilotPanel({ event }: { event: CopilotEvent }) {
   const evName = event?.name ?? "your event";
   const [messages, setMessages] = useState<Msg[]>([
     {
+      id: nextMsgId(),
       role: "assistant",
       content: `Hi — I'm your **Event Co-pilot** for ${evName}. I'm grounded in your live numbers. Ask me to draft an announcement, analyze slow sales, suggest pricing, or polish your description.`,
     },
@@ -139,16 +215,62 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
   const [err, setErr] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  // Organizer memory (MemWal). Recalled once on open from the event context and
+  // sent to /api/copilot as grounding "past context". No-ops cleanly when there
+  // is no connected wallet or the server-side layer is disabled.
+  const { enabled: memoryEnabled, recall, remember } = useOrganizerMemory();
+  const [recalled, setRecalled] = useState<string[]>([]);
+  const [rememberState, setRememberState] = useState<Record<string, RememberState>>({});
+
+  // Recall a few relevant organizer memories once per open. The query is built
+  // from the event's identity so hits are scoped to this kind of event/context.
+  // Best-effort: failures (incl. a declined wallet signature) just leave memory
+  // empty and the co-pilot behaves exactly as before.
+  const recallRanRef = useRef(false);
+  useEffect(() => {
+    if (!memoryEnabled || recallRanRef.current) return;
+    recallRanRef.current = true;
+    const query = [event?.name, event?.category, event?.city, event?.venue]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    let alive = true;
+    (async () => {
+      const hits = await recall(query || "event organizing", 5);
+      if (!alive || !hits) return;
+      setRecalled(hits.map((h) => h.text));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [memoryEnabled, recall, event?.name, event?.category, event?.city, event?.venue]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, busy]);
 
+  // Explicit "Remember this" — writes one assistant fact to the organizer's
+  // memory. Never auto-fires; only on a user click.
+  const onRemember = useCallback(
+    async (m: Msg) => {
+      if (!memoryEnabled) return;
+      setRememberState((s) => ({ ...s, [m.id]: "saving" }));
+      try {
+        const ok = await remember(m.content);
+        setRememberState((s) => ({ ...s, [m.id]: ok ? "saved" : "idle" }));
+      } catch {
+        setRememberState((s) => ({ ...s, [m.id]: "error" }));
+      }
+    },
+    [memoryEnabled, remember],
+  );
+
   async function send(text: string) {
     const content = text.trim();
     if (!content || busy) return;
     setErr(null);
-    const history = [...messages, { role: "user" as const, content }];
+    const history = [...messages, { id: nextMsgId(), role: "user" as const, content }];
     setMessages(history);
     setInput("");
     setBusy(true);
@@ -160,6 +282,8 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
         body: JSON.stringify({
           event,
           messages: history.map((m) => ({ role: m.role, content: m.content })),
+          // Recalled organizer memory as grounding "past context" (may be empty).
+          memory: recalled,
         }),
       });
       if (!res.ok) throw new Error(`Co-pilot request failed (${res.status})`);
@@ -167,13 +291,13 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
       const reply = (j.reply ?? "").trim();
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: reply || "I couldn't generate a response. Try rephrasing." },
+        { id: nextMsgId(), role: "assistant", content: reply || "I couldn't generate a response. Try rephrasing." },
       ]);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Something went wrong reaching the Co-pilot. Please try again." },
+        { id: nextMsgId(), role: "assistant", content: "Something went wrong reaching the Co-pilot. Please try again." },
       ]);
     } finally {
       setBusy(false);
@@ -205,25 +329,34 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
       <div ref={scrollRef} role="log" aria-live="polite" aria-label="Co-pilot conversation" style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
         {messages.map((m, i) =>
           m.role === "assistant" ? (
-            <div key={i} className="flex gap-2.5" style={{ alignItems: "flex-start" }}>
+            <div key={m.id} className="flex gap-2.5" style={{ alignItems: "flex-start" }}>
               <Sparkle />
-              <div
-                style={{
-                  background: "var(--raise)",
-                  border: "1px solid var(--hair)",
-                  borderRadius: "4px 14px 14px 14px",
-                  padding: "10px 13px",
-                  maxWidth: "86%",
-                  fontSize: 14,
-                  lineHeight: 1.5,
-                  color: "var(--fg2)",
-                }}
-              >
-                <Markdown content={m.content} />
+              <div style={{ maxWidth: "86%", display: "flex", flexDirection: "column", gap: 4 }}>
+                <div
+                  style={{
+                    background: "var(--raise)",
+                    border: "1px solid var(--hair)",
+                    borderRadius: "4px 14px 14px 14px",
+                    padding: "10px 13px",
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    color: "var(--fg2)",
+                  }}
+                >
+                  <Markdown content={m.content} />
+                </div>
+                {/* Explicit "Remember this" — only on real replies (not the
+                    greeting) and only when a wallet is connected (memory on). */}
+                {memoryEnabled && i > 0 && (
+                  <RememberButton
+                    state={rememberState[m.id] ?? "idle"}
+                    onClick={() => onRemember(m)}
+                  />
+                )}
               </div>
             </div>
           ) : (
-            <div key={i} className="flex" style={{ justifyContent: "flex-end" }}>
+            <div key={m.id} className="flex" style={{ justifyContent: "flex-end" }}>
               <div
                 style={{
                   background: "var(--hi-blue)",
