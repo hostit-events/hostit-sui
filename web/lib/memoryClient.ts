@@ -19,7 +19,7 @@
 // layer is off (missing MEMWAL_* env). Callers treat that as "memory off" and
 // no-op. With no connected wallet we never sign or call at all.
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   useCurrentAccount as useDAppKitAccount,
   useDAppKit,
@@ -67,10 +67,25 @@ interface SignedEnvelope {
   signature: string;
 }
 
+// Cheap, UNSIGNED probe of whether the SERVER memory layer is configured
+// (MEMWAL_* env present). Lets the UI avoid prompting for a signature when memory
+// is off. Memoized so it runs at most once per page load, shared across hooks.
+let serverEnabledPromise: Promise<boolean> | null = null;
+function fetchServerEnabled(): Promise<boolean> {
+  if (!serverEnabledPromise) {
+    serverEnabledPromise = fetch("/api/memory/status")
+      .then((r) => (r.ok ? r.json() : { enabled: false }))
+      .then((j) => !!(j as { enabled?: boolean }).enabled)
+      .catch(() => false);
+  }
+  return serverEnabledPromise;
+}
+
 /**
  * Client hook for the organizer memory routes. Returns:
- *  - `enabled`: a wallet is connected (a necessary precondition; the SERVER may
- *    still have memory disabled, surfaced as a { disabled:true } response).
+ *  - `enabled`: memory features are live — a wallet is connected AND the server
+ *    layer is configured (unsigned /api/memory/status probe). Gating on this means
+ *    the UI never prompts for a wasted signature (e.g. recall-on-open) when off.
  *  - `recall(query, limit?)`: sign + POST /api/memory/recall. Returns the recalled
  *    memories, or `null` when memory is off / no wallet / on error (callers treat
  *    null as "no memory available" and degrade gracefully).
@@ -90,7 +105,21 @@ export function useOrganizerMemory() {
   const zk = useZkLogin();
 
   const owner = zk.address ?? wallet?.address ?? null;
-  const enabled = !!owner;
+
+  // `enabled` requires BOTH a connected wallet AND the server layer actually being
+  // on (unsigned /api/memory/status probe) — so the UI (recall-on-open, "Remember")
+  // never prompts the user for a signature when memory is disabled server-side.
+  const [serverEnabled, setServerEnabled] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetchServerEnabled().then((e) => {
+      if (live) setServerEnabled(e);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const enabled = !!owner && serverEnabled;
 
   /**
    * Build + sign the canonical challenge for `owner`. Mirrors lib/hooks.ts:
