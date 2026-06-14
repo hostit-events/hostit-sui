@@ -99,6 +99,28 @@ export const DUSDC_COIN_TYPE = process.env.NEXT_PUBLIC_DUSDC_COIN_TYPE ?? "";
 /** True only when the deferred DeepBook Predict path is explicitly configured. */
 export const DEEPBOOK_PREDICT_ENABLED = PREDICT_PACKAGE_ID.length > 0;
 
+// === MemWal (organizer memory — Phase 1, GH#15) — NON-SECRET config only ===
+// The "organizer memory" layer talks to a MemWal relayer (TEE) that does
+// embedding + SEAL encryption + Walrus storage server-side. The wiring lives in
+// the SERVER-ONLY module lib/memwal.ts and the /api/memory/* route handlers.
+//
+// SECRETS ARE NOT EXPORTED HERE. config.ts is imported by client code, so the
+// two secret values are read via process.env ONLY inside server code:
+//   - MEMWAL_DELEGATE_KEY — Ed25519 delegate private key (hex). SERVER-ONLY,
+//     never NEXT_PUBLIC_-prefixed, never exported from this file.
+//   - MEMWAL_ACCOUNT_ID    — on-chain MemWalAccount object id. SERVER-ONLY
+//     (REQUIRED for the layer to be enabled; Phase 0 creates it — may be UNSET
+//     today, in which case the layer gracefully disables).
+//
+// Only the relayer host (non-secret) gets a default here.
+//
+// UNRESOLVED HOST MISMATCH (flag, do not silently pick one): the ops env has
+// historically used `relayer.memory.walrus.xyz`, while the SDK's built-in
+// default is `relayer.memwal.ai`. Set MEMWAL_RELAYER_URL explicitly to the
+// correct relayer once confirmed; until then this stays empty and lib/memwal.ts
+// falls through to the SDK default.
+export const MEMWAL_RELAYER_URL = process.env.MEMWAL_RELAYER_URL ?? "";
+
 // === Coins ===
 export const SUI_COIN_TYPE = "0x2::sui::SUI";
 // Circle native USDC (testnet). Override via env for mainnet
