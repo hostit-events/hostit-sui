@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { DAY_MS, ENOKI_ENABLED, COINS, coinInfo, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, setPriceTx } from "@/lib/ticketing";
@@ -16,6 +16,14 @@ import {
 import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
+import { useOrganizerMemory } from "@/lib/memoryClient";
+import {
+  CREATE_MEMORY_QUERY,
+  buildCreateSummary,
+  mergeCreatePrefs,
+  hasAnyPref,
+  type CreatePrefs,
+} from "@/lib/createMemory";
 
 // ── inline helpers ──────────────────────────────────────────────────────────
 // datetime-local needs a "YYYY-MM-DDTHH:mm" string in the user's local zone.
@@ -103,6 +111,37 @@ export function CreateEventScreen() {
   const [coverCache, setCoverCache] = useState<{ file: File; blobId: string } | null>(null);
   const [metaCache, setMetaCache] = useState<{ key: string; blobId: string } | null>(null);
 
+  // ── AI-assisted creation: organizer memory (MemWal, GH#19) ──
+  // `enabled` is true only when a wallet is connected AND the server memory layer
+  // is configured, so everything below cleanly no-ops (and never prompts for a
+  // signature) when memory is off / no wallet.
+  const { enabled: memoryEnabled, recall, remember } = useOrganizerMemory();
+  // Read-only suggestions derived from past events; null until recall resolves.
+  const [suggested, setSuggested] = useState<CreatePrefs | null>(null);
+  const [suggestDismissed, setSuggestDismissed] = useState(false);
+  // EXPLICIT opt-in: remember these details on a successful publish. Default OFF
+  // (privacy-conservative) — we never write to memory unless the user ticks this.
+  const [rememberOnPublish, setRememberOnPublish] = useState(false);
+
+  // Recall the organizer's past creation preferences once on open. Best-effort:
+  // a failure (incl. a declined wallet signature) just leaves suggestions empty
+  // and the wizard behaves exactly as before. The once-guard mirrors CopilotPanel.
+  const recallRanRef = useRef(false);
+  useEffect(() => {
+    if (!memoryEnabled || recallRanRef.current) return;
+    recallRanRef.current = true;
+    let alive = true;
+    (async () => {
+      const hits = await recall(CREATE_MEMORY_QUERY, 5);
+      if (!alive || !hits || !hits.length) return;
+      const prefs = mergeCreatePrefs(hits.map((h) => h.text));
+      if (hasAnyPref(prefs)) setSuggested(prefs);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [memoryEnabled, recall]);
+
   const [p1, p2] = catPalette(category);
   const ci = coinInfo(coinType);
 
@@ -180,6 +219,45 @@ export function CreateEventScreen() {
   }
   function removeTier(i: number) {
     setTiers((t) => t.filter((_, j) => j !== i));
+  }
+
+  // ── Suggestion appliers (NO-CLOBBER) ──────────────────────────────────────
+  // Each "Use" fills its field ONLY when the field is still empty/untouched.
+  // A field the user has already typed into is never overwritten. Category maps
+  // to a real, pickable category id (case-insensitive) or is ignored.
+  function useSuggestedCategory(value: string) {
+    const match = PICKABLE.find(
+      (c) => c.id.toLowerCase() === value.toLowerCase() || c.label.toLowerCase() === value.toLowerCase(),
+    );
+    if (!match) return;
+    // Only fill if the user is still on the default (first) category, untouched.
+    if (category === PICKABLE[0].id) {
+      setCategory(match.id);
+      if (match.id === "web3") setWeb3(true);
+    }
+  }
+  function useSuggestedCity(value: string) {
+    if (!city.trim()) setCity(value);
+  }
+  function useSuggestedVenue(value: string) {
+    if (!venue.trim()) setVenue(value);
+  }
+  function useSuggestedCapacity(value: string) {
+    // maxTickets defaults to "100"; only apply a suggestion if it's still that
+    // default (i.e. the user hasn't set their own capacity) and the value parses.
+    const n = Number(value);
+    if (Number.isInteger(n) && n > 0 && maxTickets === "100") {
+      setMaxTickets(String(n));
+    }
+  }
+  function useSuggestedPrice(value: string) {
+    // Stored as a label like "25 SUI" or "Free". Conservatively fill ONLY the
+    // numeric base price, and only when the event isn't free and the field is
+    // still empty. Coin type is left untouched (the symbol isn't applied).
+    if (isFree || basePrice.trim()) return;
+    const num = value.match(/[\d.]+/)?.[0];
+    const n = num ? Number(num) : NaN;
+    if (Number.isFinite(n) && n > 0) setBasePrice(num as string);
   }
 
   async function publish() {
@@ -308,6 +386,31 @@ export function CreateEventScreen() {
         } else {
           // Couldn't derive ids (or no resolvable price) — fall back to the CTA.
           setPriceSet(false);
+        }
+      }
+
+      // 5) EXPLICIT opt-in memory write (GH#19). Only when the user ticked the
+      // "Remember these details" box AND memory is on. Best-effort and strictly
+      // non-blocking: the event is already live, so any memory failure is
+      // swallowed/logged and never surfaced as a publish error.
+      if (rememberOnPublish && memoryEnabled) {
+        const summary = buildCreateSummary({
+          name: name.trim(),
+          category,
+          city,
+          venue,
+          isFree,
+          basePrice,
+          coinSymbol: ci.symbol,
+          maxTickets,
+        });
+        if (summary) {
+          try {
+            await remember(summary);
+          } catch (memErr) {
+            // Never block or fail the publish on a memory error.
+            console.warn("[create] remember() failed (non-fatal):", memErr);
+          }
         }
       }
     } catch (e: unknown) {
@@ -490,6 +593,28 @@ export function CreateEventScreen() {
           {ENOKI_ENABLED && <span style={{ color: "var(--color-success)" }}> Gas is sponsored.</span>}
         </p>
       </header>
+
+      {/* AI-assisted creation: read-only suggestions from past events (GH#19).
+          Renders nothing when memory is off / no wallet / no usable memories, or
+          once dismissed. Suggestions never overwrite a field the user has typed. */}
+      {memoryEnabled && suggested && !suggestDismissed && (
+        <SuggestionBanner
+          prefs={suggested}
+          currentCategory={category}
+          defaultCategoryId={PICKABLE[0].id}
+          city={city}
+          venue={venue}
+          basePrice={basePrice}
+          maxTickets={maxTickets}
+          isFree={isFree}
+          onUseCategory={useSuggestedCategory}
+          onUseCity={useSuggestedCity}
+          onUseVenue={useSuggestedVenue}
+          onUsePrice={useSuggestedPrice}
+          onUseCapacity={useSuggestedCapacity}
+          onDismiss={() => setSuggestDismissed(true)}
+        />
+      )}
 
       {/* step rail */}
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -885,6 +1010,32 @@ export function CreateEventScreen() {
                   event on Sui.
                 </span>
               </label>
+
+              {/* EXPLICIT opt-in memory write (GH#19). Default UNCHECKED. Only
+                  shown when memory is on (wallet connected + server layer live). */}
+              {memoryEnabled && (
+                <label
+                  className="flex items-start gap-3 card"
+                  style={{ cursor: "pointer", padding: 14, background: "rgba(0,124,250,.04)" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={rememberOnPublish}
+                    onChange={(e) => setRememberOnPublish(e.target.checked)}
+                    style={{ marginTop: 3, accentColor: "var(--hi-blue)", width: 16, height: 16 }}
+                  />
+                  <span className="text-sm" style={{ color: "var(--fg2)" }}>
+                    <span className="font-semibold" style={{ color: "var(--fg1)" }}>
+                      <Icon icon="ph:sparkle-fill" size={13} style={{ color: "var(--hi-blue)" }} />{" "}
+                      Remember these details to speed up my next event
+                    </span>
+                    <span style={{ display: "block", marginTop: 3, color: "var(--fg3)" }}>
+                      Saves your category, city, venue, price and capacity to your private organizer
+                      memory (not the event name). Off by default — you&apos;ll sign to confirm.
+                    </span>
+                  </span>
+                </label>
+              )}
             </div>
           )}
 
@@ -1044,6 +1195,178 @@ function Review({ label, value }: { label: string; value: string }) {
       <div className="stat-label">{label}</div>
       <div className="text-sm font-semibold" style={{ marginTop: 3, wordBreak: "break-word" }}>
         {value}
+      </div>
+    </div>
+  );
+}
+
+// A single read-only suggestion + a "Use" button. The button fills the matching
+// field ONLY when that field is still empty/default (no-clobber) — when the user
+// has already filled it, the button shows "In use elsewhere" and is disabled.
+function SuggestionRow({
+  label,
+  value,
+  fillable,
+  onUse,
+}: {
+  label: string;
+  value: string;
+  fillable: boolean;
+  onUse: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-2"
+      style={{
+        padding: "6px 10px",
+        borderRadius: 9,
+        border: "1px solid var(--hair)",
+        background: "var(--raise)",
+      }}
+    >
+      <div className="text-sm" style={{ minWidth: 0 }}>
+        <span className="mono" style={{ color: "var(--fg3)" }}>
+          {label}
+        </span>{" "}
+        <span className="font-semibold" style={{ color: "var(--fg1)", wordBreak: "break-word" }}>
+          {value}
+        </span>
+      </div>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={onUse}
+        disabled={!fillable}
+        title={fillable ? `Use this ${label.toLowerCase()}` : "You've already set this field"}
+        style={{ flexShrink: 0, opacity: fillable ? 1 : 0.5 }}
+      >
+        {fillable ? (
+          <>
+            <Icon icon="ph:arrow-down-left-bold" size={12} /> Use
+          </>
+        ) : (
+          "Set"
+        )}
+      </button>
+    </div>
+  );
+}
+
+// Non-intrusive, dismissible banner surfacing READ-ONLY suggestions derived from
+// the organizer's past events. Each per-field "Use" fills an EMPTY field only —
+// it never overwrites something the user has already typed.
+function SuggestionBanner({
+  prefs,
+  currentCategory,
+  defaultCategoryId,
+  city,
+  venue,
+  basePrice,
+  maxTickets,
+  isFree,
+  onUseCategory,
+  onUseCity,
+  onUseVenue,
+  onUsePrice,
+  onUseCapacity,
+  onDismiss,
+}: {
+  prefs: CreatePrefs;
+  currentCategory: string;
+  defaultCategoryId: string;
+  city: string;
+  venue: string;
+  basePrice: string;
+  maxTickets: string;
+  isFree: boolean;
+  onUseCategory: (v: string) => void;
+  onUseCity: (v: string) => void;
+  onUseVenue: (v: string) => void;
+  onUsePrice: (v: string) => void;
+  onUseCapacity: (v: string) => void;
+  onDismiss: () => void;
+}) {
+  // Fillability mirrors the no-clobber rules in the appliers above.
+  const categoryFillable = currentCategory === defaultCategoryId;
+  const cityFillable = !city.trim();
+  const venueFillable = !venue.trim();
+  const priceFillable = !isFree && !basePrice.trim();
+  const capacityFillable = maxTickets === "100";
+
+  return (
+    <div
+      className="card screen-in"
+      style={{
+        background: "rgba(0,124,250,.06)",
+        borderColor: "rgba(0,124,250,.4)",
+        padding: 16,
+      }}
+    >
+      <div className="flex items-start gap-2">
+        <Icon icon="ph:sparkle-fill" size={18} style={{ color: "var(--hi-blue)", flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="text-sm font-semibold" style={{ color: "var(--fg1)" }}>
+            From your past events
+          </div>
+          <p className="text-xs" style={{ color: "var(--fg2)", marginTop: 3 }}>
+            Suggestions from your private organizer memory. Tap{" "}
+            <span className="font-semibold">Use</span> to fill an empty field — we never overwrite
+            anything you&apos;ve already typed.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={onDismiss}
+          aria-label="Dismiss suggestions"
+          title="Dismiss"
+          style={{ flexShrink: 0 }}
+        >
+          <Icon icon="ph:x-bold" size={13} />
+        </button>
+      </div>
+
+      <div className="space-y-2" style={{ marginTop: 12 }}>
+        {prefs.category && (
+          <SuggestionRow
+            label="Category"
+            value={prefs.category}
+            fillable={categoryFillable}
+            onUse={() => onUseCategory(prefs.category as string)}
+          />
+        )}
+        {prefs.city && (
+          <SuggestionRow
+            label="City"
+            value={prefs.city}
+            fillable={cityFillable}
+            onUse={() => onUseCity(prefs.city as string)}
+          />
+        )}
+        {prefs.venue && (
+          <SuggestionRow
+            label="Venue"
+            value={prefs.venue}
+            fillable={venueFillable}
+            onUse={() => onUseVenue(prefs.venue as string)}
+          />
+        )}
+        {prefs.price && (
+          <SuggestionRow
+            label="Price"
+            value={prefs.price}
+            fillable={priceFillable}
+            onUse={() => onUsePrice(prefs.price as string)}
+          />
+        )}
+        {prefs.capacity && (
+          <SuggestionRow
+            label="Capacity"
+            value={prefs.capacity}
+            fillable={capacityFillable}
+            onUse={() => onUseCapacity(prefs.capacity as string)}
+          />
+        )}
       </div>
     </div>
   );
