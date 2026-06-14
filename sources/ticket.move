@@ -117,3 +117,13 @@ public fun is_refunded(t: &Ticket): bool { t.status == STATUS_REFUNDED }
 public fun status_issued(): u8 { STATUS_ISSUED }
 public fun status_checked_in(): u8 { STATUS_CHECKED_IN }
 public fun status_refunded(): u8 { STATUS_REFUNDED }
+
+// === Test-only ===
+
+/// Mark a ticket REFUNDED without standing up the full refund/escrow machinery.
+/// Wraps the same package-internal `set_refunded` the real `market::refund` uses,
+/// so the resulting status is the genuine terminal state — just reached directly.
+#[test_only]
+public fun set_refunded_for_testing(t: &mut Ticket) {
+    set_refunded(t);
+}

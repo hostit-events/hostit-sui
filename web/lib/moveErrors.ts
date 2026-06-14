@@ -67,6 +67,7 @@ const MAP: Record<string, Record<number, string>> = {
     3: "Royalty rate is too high (must be 100% or less).",
     4: "Not enough to cover the resale royalty fee.",
     5: "The ticket must be locked into a kiosk to complete this sale.",
+    6: "The ticket resale policy is already set up — its rules can't be re-attached.",
   },
 };
 

@@ -23,13 +23,23 @@
 /// (`sui::transfer_policy`, `sui::kiosk`) — no external `kiosk-rules`
 /// dependency — to keep the package dependency-light and unit-testable.
 ///
-/// Standard Kiosk resale flow once these are attached:
+/// Standard Kiosk resale flow once these are attached. ORDER MATTERS:
+/// `prove_not_used` borrows `&ticket`, but `kiosk::lock` consumes the ticket *by
+/// value* — so the not-used proof MUST run BEFORE the lock, otherwise the ticket
+/// is already gone and can't be referenced:
 ///   `(ticket, request) = kiosk::purchase(...)`
-///   `royalty::pay(policy, &mut request, &mut sui_payment, ctx)`
-///   `kiosk::lock(buyer_kiosk, buyer_cap, policy, ticket)`
-///   `lock::prove(&mut request, buyer_kiosk)`
-///   `not_used::prove(&mut request, &ticket_ref)`  // before lock consumes it
+///   `pay_royalty(policy, &mut request, &mut sui_payment, ctx)`
+///   `prove_not_used(&mut request, &ticket)`  // borrows &ticket — must precede lock
+///   `kiosk::lock(buyer_kiosk, buyer_cap, policy, ticket)`  // consumes ticket by value
+///   `prove_locked(&mut request, buyer_kiosk)`
 ///   `transfer_policy::confirm_request(policy, request)`
+///
+/// SCOPE CAVEAT: these rules bind ONLY the Kiosk purchase/confirm path. `Ticket`
+/// has `key + store`, so an owner can `transfer` it peer-to-peer (or `kiosk::take`
+/// an unlocked, listed-then-delisted item) WITHOUT producing a `TransferRequest`
+/// — bypassing not_used, royalty, and lock entirely. This is an accepted property
+/// of the permissionless `key + store` design: the rules raise the floor for
+/// Kiosk-mediated resale, they are NOT an absolute, unbypassable transfer gate.
 module hostit_ticket::policy_rules;
 
 use sui::coin::{Self, Coin};
@@ -56,6 +66,11 @@ const E_BPS_TOO_HIGH: u64 = 3;
 const E_INSUFFICIENT_ROYALTY: u64 = 4;
 /// The purchased item was not locked back into a Kiosk.
 const E_NOT_IN_KIOSK: u64 = 5;
+/// `setup_ticket_policy` ran against a policy that already has one or more of the
+/// HostIt rules attached. The one-shot bootstrap is all-or-nothing: it refuses to
+/// partially/double-attach. Remove the existing rules (or attach individually)
+/// before re-seeding.
+const E_RULES_ALREADY_SET: u64 = 6;
 
 const MAX_BPS: u16 = 10_000;
 
@@ -115,6 +130,15 @@ public fun setup_ticket_policy(
     cap: &TransferPolicyCap<Ticket>,
     hub: &Hub,
 ) {
+    // All-or-nothing: refuse to run if ANY of the three rules is already present,
+    // so a re-run can't partially/double-attach (the per-rule `add_rule` aborts
+    // mid-way, leaving the policy in an inconsistent, half-seeded state).
+    assert!(
+        !policy::has_rule<Ticket, NotUsedRule>(policy)
+            && !policy::has_rule<Ticket, RoyaltyRule>(policy)
+            && !policy::has_rule<Ticket, LockRule>(policy),
+        E_RULES_ALREADY_SET,
+    );
     add_not_used_rule(policy, cap);
     let bps = hub::royalty_bps(hub);
     add_royalty_rule(policy, cap, (bps as u16));
@@ -125,9 +149,16 @@ public fun setup_ticket_policy(
 
 /// #6: prove the ticket being transferred has not been used (CHECKED_IN).
 /// `ticket` must be the same object referenced by the `request`. Aborts if the
-/// ticket is CHECKED_IN — a used ticket cannot be resold. REFUNDED tickets are
-/// already terminal and never re-enter circulation, so only CHECKED_IN is
-/// blocked here.
+/// ticket is CHECKED_IN — a used ticket cannot be resold.
+///
+/// DECISION (REFUNDED): this rule deliberately checks ONLY `is_checked_in`, so a
+/// REFUNDED ticket is ALLOWED through `prove_not_used` (it does NOT abort). The
+/// refund path (`market::refund`) consumes/locks the ticket out of the buyer's
+/// hands as part of returning funds, so a REFUNDED ticket cannot in practice
+/// reach a Kiosk resale; gating it here would be dead weight. The
+/// `not_used_allows_refunded_ticket` test pins this behavior — if the refund
+/// lifecycle ever changes so REFUNDED tickets can re-enter circulation, add
+/// `&& !ticket::is_refunded(t)` here and flip that test to expected_failure.
 public fun prove_not_used(request: &mut TransferRequest<Ticket>, t: &Ticket) {
     assert!(object::id(t) == policy::item(request), E_WRONG_ITEM);
     assert!(!ticket::is_checked_in(t), E_TICKET_USED);
