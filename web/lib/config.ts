@@ -20,18 +20,17 @@ export const PACKAGE_ID =
   "0x423336143d4e5a810d24b97762bfa10be56b7d5dc86b75e831cb0897264b1e8d";
 
 /**
- * Latest UPGRADED package version (2026-06-07 upgrade of 0x4233…1e8d that added
- * the `predict` module). Sui anchors a type's identity to the package version
- * where it was INTRODUCED: existing modules (event/ticket/market/…) keep the
- * original PACKAGE_ID, but everything in `predict` — its struct/event TYPES *and*
- * its move-call targets — lives at this upgraded id (verified on-chain: created
- * markets report `0x4829…::predict::SelloutMarket`). So the predict `*_TYPE` /
- * `EV_*` constants and `targetLatest('predict', …)` use PACKAGE_ID_LATEST, while
- * every proven existing flow keeps using PACKAGE_ID.
+ * Latest UPGRADED package version (v8, 2026-06-14 — adds the `policy_rules`
+ * module; v6/v7 added `predict`). Sui anchors a type's identity to the package
+ * version where it was INTRODUCED: existing modules (event/ticket/market/…) keep
+ * the original PACKAGE_ID, and each predict struct stays pinned to the version
+ * that introduced it (SelloutMarket → PREDICT_SELLOUT_PKG, RangeMarket →
+ * PREDICT_RANGE_PKG). Move-call targets for predict + policy_rules use the latest
+ * via `targetLatest`, while every proven existing flow keeps using PACKAGE_ID.
  */
 export const PACKAGE_ID_LATEST =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_LATEST_ID ??
-  "0xb5c95242b1a2acc8a2561246f95f8de182b3cbc67d71a370ee413c9dcdffcc0f";
+  "0xf6ebcba4e9c661c9bdbf6dc75fa44db3095dc35566d7cf246862f76603e56c12";
 
 /**
  * Type-origin pin for `predict::SelloutMarket` (+ its events). Sui anchors a
@@ -44,6 +43,15 @@ export const PACKAGE_ID_LATEST =
 export const PREDICT_SELLOUT_PKG =
   process.env.NEXT_PUBLIC_HOSTIT_PREDICT_SELLOUT_PKG ??
   "0x4829706d16be235a2c3fbe86a1f7449100d39a46e3dd8105a5db3762a8ce1848";
+
+/**
+ * Type-origin pin for `predict::RangeMarket` (+ its events). RangeMarket shipped
+ * in the v7 upgrade (0xb5c952…), so its `*_TYPE`/`EV_*` constants stay pinned
+ * there even though PACKAGE_ID_LATEST has since rolled to v8 (policy_rules).
+ */
+export const PREDICT_RANGE_PKG =
+  process.env.NEXT_PUBLIC_HOSTIT_PREDICT_RANGE_PKG ??
+  "0xb5c95242b1a2acc8a2561246f95f8de182b3cbc67d71a370ee413c9dcdffcc0f";
 
 /** Shared protocol Hub (config + 3% fee treasury). Every paid sale needs it. */
 export const HUB_ID =
@@ -198,11 +206,11 @@ export const ORGANIZER_CAP_TYPE = `${PACKAGE_ID}::event::OrganizerCap`;
 export const SELLOUT_MARKET_TYPE = `${PREDICT_SELLOUT_PKG}::predict::SelloutMarket`;
 /**
  * Generic struct head (no type arg) for filtering parimutuel RANGE markets.
- * Introduced in the Phase-2 upgrade, so its type origin is PACKAGE_ID_LATEST
- * (NOT the SelloutMarket pin at PREDICT_SELLOUT_PKG/0x4829). The human bumps
- * PACKAGE_ID_LATEST to the Phase-2 upgrade id post-deploy.
+ * RangeMarket was introduced in the v7 upgrade, so its type origin is pinned to
+ * PREDICT_RANGE_PKG (0xb5c952…) — NOT PACKAGE_ID_LATEST, which has since rolled
+ * to v8 (policy_rules).
  */
-export const RANGE_MARKET_TYPE = `${PACKAGE_ID_LATEST}::predict::RangeMarket`;
+export const RANGE_MARKET_TYPE = `${PREDICT_RANGE_PKG}::predict::RangeMarket`;
 
 // Event (log) type strings for queryEvents
 export const EV_EVENT_CREATED = `${PACKAGE_ID}::event::EventCreated`;
@@ -213,7 +221,7 @@ export const EV_MARKET_CREATED = `${PREDICT_SELLOUT_PKG}::predict::MarketCreated
 export const EV_BET = `${PREDICT_SELLOUT_PKG}::predict::Bet`;
 export const EV_SETTLED = `${PREDICT_SELLOUT_PKG}::predict::Settled`;
 // predict (parimutuel RANGE market) log type strings for queryEvents.
-// Introduced in the Phase-2 upgrade -> type origin is PACKAGE_ID_LATEST.
-export const EV_RANGE_MARKET_CREATED = `${PACKAGE_ID_LATEST}::predict::RangeMarketCreated`;
-export const EV_RANGE_BET = `${PACKAGE_ID_LATEST}::predict::RangeBet`;
-export const EV_RANGE_SETTLED = `${PACKAGE_ID_LATEST}::predict::RangeSettled`;
+// RangeMarket shipped in v7 -> type origin pinned to PREDICT_RANGE_PKG (not LATEST).
+export const EV_RANGE_MARKET_CREATED = `${PREDICT_RANGE_PKG}::predict::RangeMarketCreated`;
+export const EV_RANGE_BET = `${PREDICT_RANGE_PKG}::predict::RangeBet`;
+export const EV_RANGE_SETTLED = `${PREDICT_RANGE_PKG}::predict::RangeSettled`;
