@@ -37,23 +37,58 @@ export function CopilotLauncher({ event }: { event: CopilotEvent }) {
 
   const close = useCallback(() => setOpen(false), []);
 
-  // Escape closes and returns focus to the FAB.
+  // Escape closes (returning focus to the FAB) and Tab is trapped within the
+  // dialog so focus can't escape to the page behind the modal surface.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         close();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const el = surfaceRef.current;
+      if (!el) return;
+      // Tabbable elements within the dialog, in DOM order.
+      const focusables = Array.from(
+        el.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((n) => n.offsetParent !== null || n === document.activeElement);
+      if (focusables.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      // Cycle: wrap forward off the last element, backward off the first, and
+      // pull focus back in if it has somehow drifted outside the dialog.
+      if (e.shiftKey) {
+        if (active === first || !el.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !el.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, close]);
 
-  // Move focus into the panel on open; restore to the FAB on close.
+  // Move focus into the panel on open; restore to the FAB on close. While open,
+  // lock background scroll (prevents the page behind the modal sheet from
+  // scrolling) and restore the prior overflow on close/unmount.
   useEffect(() => {
     if (open) {
       hasOpened.current = true;
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
       // Defer so the dialog has mounted.
       const t = window.setTimeout(() => {
         const el = surfaceRef.current;
@@ -63,7 +98,10 @@ export function CopilotLauncher({ event }: { event: CopilotEvent }) {
           el.querySelector<HTMLElement>("input, button, [tabindex]");
         focusTarget?.focus();
       }, 0);
-      return () => window.clearTimeout(t);
+      return () => {
+        window.clearTimeout(t);
+        document.body.style.overflow = prevOverflow;
+      };
     }
     // Return focus to the FAB only after a real close (not on initial mount).
     if (hasOpened.current) fabRef.current?.focus();
@@ -300,7 +338,9 @@ const CP_LAUNCHER_CSS = `
 .cp-surface-body { flex: 1; min-height: 0; display: flex; }
 .cp-surface-body > .panel {
   flex: 1;
-  min-height: 0;
+  /* CopilotPanel hard-codes an inline minHeight:480 which can clip inside the
+     88dvh mobile sheet; defeat it here so the panel shrinks to its surface. */
+  min-height: 0 !important;
   border: none;
   border-radius: 0;
   background: transparent;
