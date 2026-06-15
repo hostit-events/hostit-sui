@@ -464,3 +464,13 @@ button[class*="connect" i] {
   background: var(--primary); color: var(--primary-foreground);
   box-shadow: 0 8px 22px rgba(0, 0, 0, .4);
 }
+
+/* Geist (shadcn's interface fonts) scoped to the app shell. The landing keeps
+   the brand Hanken Grotesk / Space Mono via the global --font-sans/--font-mono;
+   the font-* utilities resolve var(--font-*) at runtime, so overriding the vars
+   on this subtree re-points Button/Card/etc. without touching the global theme. */
+.app-shell {
+  font-family: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
