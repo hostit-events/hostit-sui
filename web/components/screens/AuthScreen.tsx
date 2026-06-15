@@ -8,6 +8,8 @@ import { useCurrentAccount } from "@/lib/hooks";
 import { ENOKI_ENABLED } from "@/lib/config";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { Icon } from "@/components/Icon";
+import { Card } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // Web-component button → load client-only so its window-touching polyfill
 // isn't evaluated during SSR.
@@ -63,7 +65,7 @@ export function AuthScreen() {
       <div className="glow" style={{ width: 460, height: 460, background: "rgba(0,124,250,.45)", top: -120, left: "50%", transform: "translateX(-50%)", opacity: 0.28 }} />
       <div className="glow" style={{ width: 340, height: 340, background: "rgba(250,0,212,.35)", bottom: -140, right: -40, opacity: 0.2 }} />
 
-      <div className="card" style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 480, padding: 32 }}>
+      <Card style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 480, padding: 32 }}>
         <div className="space-y-6">
           <div style={{ textAlign: "center" }}>
             <span className="eyebrow"><Icon icon="ion:ticket" size={14} /> HostIt</span>
@@ -75,19 +77,11 @@ export function AuthScreen() {
           </div>
 
           {callbackError && (
-            <div
-              role="alert"
-              style={{
-                padding: "10px 14px",
-                border: "1px solid var(--hair-2)",
-                borderRadius: "var(--r-md)",
-                background: "rgba(250,0,84,.08)",
-                color: "var(--fg1)",
-                fontSize: 14,
-              }}
-            >
-              Google sign-in didn’t complete. Please try again.
-            </div>
+            <Alert variant="destructive">
+              <AlertDescription>
+                Google sign-in didn’t complete. Please try again.
+              </AlertDescription>
+            </Alert>
           )}
 
           {ENOKI_ENABLED && (
@@ -101,21 +95,9 @@ export function AuthScreen() {
             <ConnectButton />
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
-              padding: "12px 14px",
-              border: "1px solid var(--hair-2)",
-              borderRadius: "var(--r-md)",
-              background: "rgba(255,255,255,.02)",
-            }}
-          >
-            <span style={{ color: "var(--hi-blue)", flex: "none", marginTop: 1 }}>
-              <Icon icon="ic:round-fingerprint" size={18} />
-            </span>
-            <p className="text-sm" style={{ color: "var(--fg2)", margin: 0 }}>
+          <Alert>
+            <Icon icon="ic:round-fingerprint" size={18} />
+            <AlertDescription>
               {ENOKI_ENABLED ? (
                 <>
                   Sign in with <strong style={{ color: "var(--fg1)" }}>Google</strong> via zkLogin —
@@ -128,14 +110,14 @@ export function AuthScreen() {
                   approve actions by signing, never by typing a secret.
                 </>
               )}
-            </p>
-          </div>
+            </AlertDescription>
+          </Alert>
 
           <p className="mono" style={{ textAlign: "center" }}>
             By continuing you agree there are no custodians — your keys, your tickets.
           </p>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { DAY_MS, ENOKI_ENABLED, COINS, coinInfo, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, setPriceTx } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
@@ -24,6 +25,23 @@ import {
   hasAnyPref,
   type CreatePrefs,
 } from "@/lib/createMemory";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ── inline helpers ──────────────────────────────────────────────────────────
 // datetime-local needs a "YYYY-MM-DDTHH:mm" string in the user's local zone.
@@ -349,6 +367,9 @@ export function CreateEventScreen() {
         : await regular.mutateAsync({ transaction: tx });
       // Event is live regardless of what happens with pricing below.
       setDigest(out.digest);
+      toast.success("Your event is live", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
 
       // 4) CREATE-PRICE-DROPPED fix: pricing is a separate cap-gated call (the
       // Event is shared on creation), so the Step-2 price must be applied with a
@@ -413,7 +434,7 @@ export function CreateEventScreen() {
         }
       }
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     } finally {
       setBusy(null);
     }
@@ -470,7 +491,7 @@ export function CreateEventScreen() {
   if (digest) {
     return (
       <div className="space-y-6 screen-in" style={{ maxWidth: 560, margin: "0 auto" }}>
-        <div className="card text-center" style={{ padding: 36 }}>
+        <Card className="text-center" style={{ padding: 36 }}>
           <div
             className="poster"
             style={
@@ -499,11 +520,11 @@ export function CreateEventScreen() {
             <TxLink digest={digest} chars={12} className="mono" />
           </div>
           {!isFree && priceSet === true && (
-            <div
-              className="card"
+            <Card
               style={{
                 marginTop: 18,
                 textAlign: "left",
+                padding: 16,
                 background: "rgba(0,200,120,.08)",
                 borderColor: "var(--color-success)",
               }}
@@ -520,14 +541,14 @@ export function CreateEventScreen() {
                 </Link>
                 .
               </p>
-            </div>
+            </Card>
           )}
           {!isFree && priceSet !== true && (
-            <div
-              className="card"
+            <Card
               style={{
                 marginTop: 18,
                 textAlign: "left",
+                padding: 16,
                 background: "rgba(245,166,35,.08)",
                 borderColor: "var(--hi-amber)",
               }}
@@ -541,21 +562,21 @@ export function CreateEventScreen() {
                 price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} before the sale opens —
                 buyers can&apos;t purchase until a price is set.
               </p>
-              <Link
-                href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}
-                className="btn btn-primary"
-                style={{ marginTop: 10 }}
-              >
-                <Icon icon="ph:tag-fill" size={16} /> Set your ticket price
-              </Link>
-            </div>
+              <Button asChild style={{ marginTop: 10 }}>
+                <Link href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}>
+                  <Icon icon="ph:tag-fill" size={16} /> Set your ticket price
+                </Link>
+              </Button>
+            </Card>
           )}
           <div className="flex gap-2 justify-center" style={{ marginTop: 22, flexWrap: "wrap" }}>
-            <Link href="/dashboard" className="btn btn-primary btn-lg">
-              <Icon icon="material-symbols-light:analytics-rounded" size={18} /> Go to dashboard
-            </Link>
-            <button
-              className="btn"
+            <Button asChild size="lg">
+              <Link href="/dashboard">
+                <Icon icon="material-symbols-light:analytics-rounded" size={18} /> Go to dashboard
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => {
                 setDigest(null);
                 setCreatedEventId(null);
@@ -566,9 +587,9 @@ export function CreateEventScreen() {
               }}
             >
               Create another
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -618,9 +639,10 @@ export function CreateEventScreen() {
       {/* step rail */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {STEPS.map((s) => (
-          <button
+          <Button
             key={s.id}
-            className={`chip ${step === s.id ? "on" : ""}`}
+            variant={step === s.id ? "default" : "outline"}
+            size="sm"
             onClick={() => {
               if (s.id <= step) return setStep(s.id);
               const e = stepError(step);
@@ -630,63 +652,63 @@ export function CreateEventScreen() {
             }}
           >
             <Icon icon={step > s.id ? "ph:check-bold" : s.icon} size={14} /> {s.id + 1}. {s.label}
-          </button>
+          </Button>
         ))}
       </div>
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
         {/* ── form column ── */}
-        <div className="card space-y-5">
+        <Card className="space-y-5" style={{ padding: 20 }}>
           {step === 0 && (
             <div className="space-y-4">
               <span className="section-label">Step 1 — Details</span>
-              <div>
-                <label className="label" htmlFor="ce-event-name">Event name</label>
-                <input
+              <div className="space-y-1.5">
+                <Label htmlFor="ce-event-name">Event name</Label>
+                <Input
                   id="ce-event-name"
-                  className="input"
                   placeholder="e.g. Sui Builders Night"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
 
-              <div role="group" aria-label="Category">
-                <div className="label" aria-hidden="true">Category</div>
-                <div className="flex gap-2 flex-wrap">
+              <div role="group" aria-label="Category" className="space-y-1.5">
+                <div className="text-sm font-medium" aria-hidden="true">Category</div>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={category}
+                  onValueChange={(v) => {
+                    if (!v) return;
+                    setCategory(v);
+                    if (v === "web3") setWeb3(true);
+                  }}
+                  className="flex-wrap"
+                >
                   {PICKABLE.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className={`chip ${category === c.id ? "on" : ""}`}
-                      onClick={() => {
-                        setCategory(c.id);
-                        if (c.id === "web3") setWeb3(true);
-                      }}
-                    >
+                    <ToggleGroupItem key={c.id} value={c.id}>
                       <Icon icon={c.icon} size={14} /> {c.label}
-                    </button>
+                    </ToggleGroupItem>
                   ))}
-                </div>
+                </ToggleGroup>
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="label" htmlFor="ce-start">Event starts</label>
-                  <input
+                <div className="space-y-1.5">
+                  <Label htmlFor="ce-start">Event starts</Label>
+                  <Input
                     id="ce-start"
-                    className="input"
                     type="datetime-local"
                     min={isoLocal()}
                     value={start}
                     onChange={(e) => setStart(e.target.value)}
                   />
                 </div>
-                <div>
-                  <label className="label" htmlFor="ce-end">Event ends</label>
-                  <input
+                <div className="space-y-1.5">
+                  <Label htmlFor="ce-end">Event ends</Label>
+                  <Input
                     id="ce-end"
-                    className="input"
                     type="datetime-local"
                     min={start}
                     value={end}
@@ -701,21 +723,19 @@ export function CreateEventScreen() {
               )}
 
               <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="label" htmlFor="ce-venue">Venue</label>
-                  <input
+                <div className="space-y-1.5">
+                  <Label htmlFor="ce-venue">Venue</Label>
+                  <Input
                     id="ce-venue"
-                    className="input"
                     placeholder="e.g. The Glasshouse"
                     value={venue}
                     onChange={(e) => setVenue(e.target.value)}
                   />
                 </div>
-                <div>
-                  <label className="label" htmlFor="ce-city">City</label>
-                  <input
+                <div className="space-y-1.5">
+                  <Label htmlFor="ce-city">City</Label>
+                  <Input
                     id="ce-city"
-                    className="input"
                     placeholder="e.g. Lisbon"
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
@@ -723,33 +743,30 @@ export function CreateEventScreen() {
                 </div>
               </div>
 
-              <div>
-                <label className="label" htmlFor="ce-tag">Tag (optional)</label>
-                <input
+              <div className="space-y-1.5">
+                <Label htmlFor="ce-tag">Tag (optional)</Label>
+                <Input
                   id="ce-tag"
-                  className="input"
                   placeholder="e.g. Conference, Festival, Meetup"
                   value={tag}
                   onChange={(e) => setTag(e.target.value)}
                 />
               </div>
 
-              <div>
-                <label className="label" htmlFor="ce-description">Description</label>
-                <textarea
+              <div className="space-y-1.5">
+                <Label htmlFor="ce-description">Description</Label>
+                <Textarea
                   id="ce-description"
-                  className="textarea"
                   placeholder="What is this event about? Who is it for?"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
 
-              <div>
-                <label className="label" htmlFor="ce-cover">Cover image (stored on Walrus on publish)</label>
-                <input
+              <div className="space-y-1.5">
+                <Label htmlFor="ce-cover">Cover image (stored on Walrus on publish)</Label>
+                <Input
                   id="ce-cover"
-                  className="input"
                   type="file"
                   accept="image/*"
                   onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
@@ -774,23 +791,19 @@ export function CreateEventScreen() {
                     Attendees claim for free — no on-chain price.
                   </div>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isFree}
+                <Switch
                   aria-label="Free event"
-                  className={`switch ${isFree ? "on" : ""}`}
-                  onClick={() => setIsFree((v) => !v)}
+                  checked={isFree}
+                  onCheckedChange={(v) => setIsFree(Boolean(v))}
                 />
               </div>
 
               {!isFree && (
                 <div className="grid sm:grid-cols-[1fr_140px] gap-3">
-                  <div>
-                    <label className="label" htmlFor="ce-base-price">Base price</label>
-                    <input
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ce-base-price">Base price</Label>
+                    <Input
                       id="ce-base-price"
-                      className="input"
                       type="number"
                       min={0}
                       step="any"
@@ -799,20 +812,20 @@ export function CreateEventScreen() {
                       onChange={(e) => setBasePrice(e.target.value)}
                     />
                   </div>
-                  <div>
-                    <label className="label" htmlFor="ce-coin">Coin</label>
-                    <select
-                      id="ce-coin"
-                      className="select"
-                      value={coinType}
-                      onChange={(e) => setCoinType(e.target.value)}
-                    >
-                      {COINS.map((c) => (
-                        <option key={c.type} value={c.type}>
-                          {c.symbol}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ce-coin">Coin</Label>
+                    <Select value={coinType} onValueChange={(v) => setCoinType(v)}>
+                      <SelectTrigger id="ce-coin" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COINS.map((c) => (
+                          <SelectItem key={c.type} value={c.type}>
+                            {c.symbol}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               )}
@@ -824,11 +837,10 @@ export function CreateEventScreen() {
               )}
 
               <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="label" htmlFor="ce-max-tickets">Max tickets</label>
-                  <input
+                <div className="space-y-1.5">
+                  <Label htmlFor="ce-max-tickets">Max tickets</Label>
+                  <Input
                     id="ce-max-tickets"
-                    className="input"
                     type="number"
                     min={1}
                     step="1"
@@ -836,11 +848,10 @@ export function CreateEventScreen() {
                     onChange={(e) => setMaxTickets(e.target.value)}
                   />
                 </div>
-                <div>
-                  <label className="label" htmlFor="ce-max-per-user">Max per attendee</label>
-                  <input
+                <div className="space-y-1.5">
+                  <Label htmlFor="ce-max-per-user">Max per attendee</Label>
+                  <Input
                     id="ce-max-per-user"
-                    className="input"
                     type="number"
                     min={1}
                     step="1"
@@ -857,12 +868,12 @@ export function CreateEventScreen() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="label" style={{ margin: 0 }}>
+                  <div className="text-sm font-medium">
                     Additional tiers (optional)
                   </div>
-                  <button type="button" className="btn btn-sm" onClick={addTier}>
+                  <Button type="button" variant="outline" size="sm" onClick={addTier}>
                     <Icon icon="ph:plus-bold" size={13} /> Add tier
-                  </button>
+                  </Button>
                 </div>
                 <p className="text-xs" style={{ color: "var(--fg3)" }}>
                   Extra tiers are saved in event metadata (Walrus) for display. Set their on-chain
@@ -873,18 +884,16 @@ export function CreateEventScreen() {
                   return (
                     <div key={i} className="space-y-1">
                       <div className="grid sm:grid-cols-[1fr_120px_1fr_auto] gap-2 items-start">
-                        <input
+                        <Input
                           id={`ce-tier-name-${i}`}
                           aria-label="Tier name"
-                          className="input"
                           placeholder="Tier name (e.g. VIP)"
                           value={t.name}
                           onChange={(e) => updateTier(i, { name: e.target.value })}
                         />
-                        <input
+                        <Input
                           id={`ce-tier-price-${i}`}
                           aria-label="Tier price"
-                          className="input"
                           type="number"
                           min={0}
                           step="any"
@@ -892,23 +901,27 @@ export function CreateEventScreen() {
                           value={t.price}
                           onChange={(e) => updateTier(i, { price: e.target.value })}
                         />
-                        <input
+                        <Input
                           id={`ce-tier-note-${i}`}
                           aria-label="Tier note"
-                          className="input"
                           placeholder="Note (optional)"
                           value={t.note}
                           onChange={(e) => updateTier(i, { note: e.target.value })}
                         />
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => removeTier(i)}
-                          title="Remove tier"
-                          aria-label="Remove tier"
-                        >
-                          <Icon icon="ph:trash-fill" size={14} />
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon-sm"
+                              onClick={() => removeTier(i)}
+                              aria-label="Remove tier"
+                            >
+                              <Icon icon="ph:trash-fill" size={14} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Remove tier</TooltipContent>
+                        </Tooltip>
                       </div>
                       {st === "drop" && (
                         <p className="text-xs" style={{ color: "var(--hi-amber)" }}>
@@ -982,9 +995,8 @@ export function CreateEventScreen() {
                 />
               </div>
 
-              <div
-                className="card"
-                style={{ background: "rgba(0,124,250,.06)", borderColor: "rgba(0,124,250,.4)" }}
+              <Card
+                style={{ padding: 16, background: "rgba(0,124,250,.06)", borderColor: "rgba(0,124,250,.4)" }}
               >
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <Icon icon="ph:database-fill" size={16} style={{ color: "var(--hi-blue)" }} />
@@ -995,14 +1007,13 @@ export function CreateEventScreen() {
                   (description, category, venue, tiers) to Walrus, then write the resulting blob id
                   on-chain as the event URI.
                 </p>
-              </div>
+              </Card>
 
               <label className="flex items-start gap-3" style={{ cursor: "pointer" }}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={agreed}
-                  onChange={(e) => setAgreed(e.target.checked)}
-                  style={{ marginTop: 3, accentColor: "var(--hi-blue)", width: 16, height: 16 }}
+                  onCheckedChange={(v) => setAgreed(Boolean(v))}
+                  style={{ marginTop: 3 }}
                 />
                 <span className="text-sm" style={{ color: "var(--fg2)" }}>
                   I confirm the details are accurate and accept that I become the organizer of this
@@ -1013,27 +1024,28 @@ export function CreateEventScreen() {
               {/* EXPLICIT opt-in memory write (GH#19). Default UNCHECKED. Only
                   shown when memory is on (wallet connected + server layer live). */}
               {memoryEnabled && (
-                <label
-                  className="flex items-start gap-3 card"
-                  style={{ cursor: "pointer", padding: 14, background: "rgba(0,124,250,.04)" }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={rememberOnPublish}
-                    onChange={(e) => setRememberOnPublish(e.target.checked)}
-                    style={{ marginTop: 3, accentColor: "var(--hi-blue)", width: 16, height: 16 }}
-                  />
-                  <span className="text-sm" style={{ color: "var(--fg2)" }}>
-                    <span className="font-semibold" style={{ color: "var(--fg1)" }}>
-                      <Icon icon="ph:sparkle-fill" size={13} style={{ color: "var(--hi-blue)" }} />{" "}
-                      Remember these details to speed up my next event
+                <Card style={{ padding: 0, background: "rgba(0,124,250,.04)" }}>
+                  <label
+                    className="flex items-start gap-3"
+                    style={{ cursor: "pointer", padding: 14 }}
+                  >
+                    <Checkbox
+                      checked={rememberOnPublish}
+                      onCheckedChange={(v) => setRememberOnPublish(Boolean(v))}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span className="text-sm" style={{ color: "var(--fg2)" }}>
+                      <span className="font-semibold" style={{ color: "var(--fg1)" }}>
+                        <Icon icon="ph:sparkle-fill" size={13} style={{ color: "var(--hi-blue)" }} />{" "}
+                        Remember these details to speed up my next event
+                      </span>
+                      <span style={{ display: "block", marginTop: 3, color: "var(--fg3)" }}>
+                        Saves your category, city, venue, price and capacity to your private organizer
+                        memory (not the event name). Off by default — you&apos;ll sign to confirm.
+                      </span>
                     </span>
-                    <span style={{ display: "block", marginTop: 3, color: "var(--fg3)" }}>
-                      Saves your category, city, venue, price and capacity to your private organizer
-                      memory (not the event name). Off by default — you&apos;ll sign to confirm.
-                    </span>
-                  </span>
-                </label>
+                  </label>
+                </Card>
               )}
             </div>
           )}
@@ -1051,27 +1063,27 @@ export function CreateEventScreen() {
 
           {/* nav */}
           <div className="flex items-center justify-between gap-3 pt-1">
-            <button className="btn" onClick={back} disabled={step === 0 || !!busy}>
+            <Button variant="outline" onClick={back} disabled={step === 0 || !!busy}>
               <Icon icon="ph:arrow-left-bold" size={14} /> Back
-            </button>
+            </Button>
             {step < 3 ? (
-              <button className="btn btn-primary" onClick={next}>
+              <Button onClick={next}>
                 Next <Icon icon="ph:arrow-right-bold" size={14} />
-              </button>
+              </Button>
             ) : !addr ? (
-              <span className="badge badge-line">Connect a wallet to publish</span>
+              <Badge variant="outline">Connect a wallet to publish</Badge>
             ) : (
-              <button
-                className="btn btn-primary btn-lg"
+              <Button
+                size="lg"
                 onClick={publish}
                 disabled={!agreed || !!busy || txPending}
               >
                 <Icon icon="mdi:rocket-launch" size={18} />
                 {busy || txPending ? "Publishing…" : "Publish event"}
-              </button>
+              </Button>
             )}
           </div>
-        </div>
+        </Card>
 
         {/* ── live preview column ── */}
         <aside className="space-y-3" style={{ position: "sticky", top: 20 }}>
@@ -1096,17 +1108,9 @@ export function CreateEventScreen() {
                 <Icon icon={catGlyph(category)} size={64} />
               </span>
               <div className="absolute flex gap-1.5" style={{ top: 12, left: 12, flexWrap: "wrap" }}>
-                {isFree && <span className="badge badge-green">Free</span>}
-                {web3 && (
-                  <span className="badge" style={{ background: "rgba(0,0,0,.4)", color: "#fff" }}>
-                    Web3
-                  </span>
-                )}
-                {tag.trim() && (
-                  <span className="badge" style={{ background: "rgba(0,0,0,.4)", color: "#fff" }}>
-                    {tag.trim()}
-                  </span>
-                )}
+                {isFree && <Badge variant="secondary">Free</Badge>}
+                {web3 && <Badge variant="secondary">Web3</Badge>}
+                {tag.trim() && <Badge variant="secondary">{tag.trim()}</Badge>}
               </div>
             </div>
             <div className="ev-body">
@@ -1127,18 +1131,18 @@ export function CreateEventScreen() {
               </div>
               <div className="ev-foot" style={{ flexWrap: "wrap" }}>
                 {isFree ? (
-                  <span className="badge badge-green">Claim free</span>
+                  <Badge variant="secondary">Claim free</Badge>
                 ) : basePrice.trim() ? (
-                  <span className="badge badge-blue">
+                  <Badge variant="secondary">
                     {basePrice} {ci.symbol}
-                  </span>
+                  </Badge>
                 ) : (
-                  <span className="badge badge-line">Price not set</span>
+                  <Badge variant="outline">Price not set</Badge>
                 )}
                 {poap && (
-                  <span className="badge badge-magenta">
+                  <Badge variant="secondary">
                     <Icon icon="ph:seal-check-fill" size={11} /> POAP
-                  </span>
+                  </Badge>
                 )}
               </div>
             </div>
@@ -1166,7 +1170,7 @@ function Toggle({
   desc: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 card" style={{ padding: 16 }}>
+    <Card className="flex flex-row items-center justify-between gap-3" style={{ padding: 16 }}>
       <div className="flex items-start gap-3">
         <Icon icon={icon} size={20} style={{ color: on ? "var(--hi-blue)" : "var(--fg3)" }} />
         <div>
@@ -1176,15 +1180,12 @@ function Toggle({
           </div>
         </div>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
+      <Switch
         aria-label={title}
-        className={`switch ${on ? "on" : ""}`}
-        onClick={() => set(!on)}
+        checked={on}
+        onCheckedChange={(v) => set(Boolean(v))}
       />
-    </div>
+    </Card>
   );
 }
 
@@ -1231,22 +1232,29 @@ function SuggestionRow({
           {value}
         </span>
       </div>
-      <button
-        type="button"
-        className="btn btn-sm"
-        onClick={onUse}
-        disabled={!fillable}
-        title={fillable ? `Use this ${label.toLowerCase()}` : "You've already set this field"}
-        style={{ flexShrink: 0, opacity: fillable ? 1 : 0.5 }}
-      >
-        {fillable ? (
-          <>
-            <Icon icon="ph:arrow-down-left-bold" size={12} /> Use
-          </>
-        ) : (
-          "Set"
-        )}
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onUse}
+            disabled={!fillable}
+            style={{ flexShrink: 0 }}
+          >
+            {fillable ? (
+              <>
+                <Icon icon="ph:arrow-down-left-bold" size={12} /> Use
+              </>
+            ) : (
+              "Set"
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {fillable ? `Use this ${label.toLowerCase()}` : "You've already set this field"}
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -1293,12 +1301,12 @@ function SuggestionBanner({
   const capacityFillable = maxTickets === "100";
 
   return (
-    <div
-      className="card screen-in"
+    <Card
+      className="screen-in"
       style={{
+        padding: 16,
         background: "rgba(0,124,250,.06)",
         borderColor: "rgba(0,124,250,.4)",
-        padding: 16,
       }}
     >
       <div className="flex items-start gap-2">
@@ -1313,16 +1321,21 @@ function SuggestionBanner({
             anything you&apos;ve already typed.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={onDismiss}
-          aria-label="Dismiss suggestions"
-          title="Dismiss"
-          style={{ flexShrink: 0 }}
-        >
-          <Icon icon="ph:x-bold" size={13} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={onDismiss}
+              aria-label="Dismiss suggestions"
+              style={{ flexShrink: 0 }}
+            >
+              <Icon icon="ph:x-bold" size={13} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Dismiss</TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="space-y-2" style={{ marginTop: 12 }}>
@@ -1367,6 +1380,6 @@ function SuggestionBanner({
           />
         )}
       </div>
-    </div>
+    </Card>
   );
 }

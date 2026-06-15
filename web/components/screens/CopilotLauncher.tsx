@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { CopilotPanel, type CopilotEvent } from "@/components/screens/CopilotPanel";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 /**
  * Floating, always-accessible launcher for the event AI Co-pilot.
@@ -11,6 +19,11 @@ import { CopilotPanel, type CopilotEvent } from "@/components/screens/CopilotPan
  *  - Desktop (md+): a docked card anchored bottom-right, above the FAB.
  *  - Mobile (< md): a bottom sheet with a dim backdrop, sitting ABOVE the
  *    MobileTabBar (z-index 60) in z-order.
+ *
+ * The modal mechanics (overlay/backdrop, focus trap, scroll lock, Escape to
+ * close, and focus restoration to the FAB) are provided by the shadcn <Sheet>
+ * (Radix Dialog) shell — replacing the previously hand-rolled equivalents. Only
+ * the surface's bespoke dual-mode positioning + layering is kept in scoped CSS.
  *
  * Layering (matches globals.css conventions — mtabbar=60, header=50):
  *  - FAB:                  z 70  (above the tab bar, below modal surfaces)
@@ -26,150 +39,62 @@ import { CopilotPanel, type CopilotEvent } from "@/components/screens/CopilotPan
  */
 export function CopilotLauncher({ event }: { event: CopilotEvent }) {
   const [open, setOpen] = useState(false);
-  const fabRef = useRef<HTMLButtonElement | null>(null);
-  const surfaceRef = useRef<HTMLDivElement | null>(null);
-  // Tracks whether the surface has been opened at least once, so we only
-  // restore focus to the FAB on a genuine close — never steal it on mount.
-  const hasOpened = useRef(false);
-  const uid = useId();
-  const dialogId = `cp-dialog-${uid}`;
-  const titleId = `cp-title-${uid}`;
-
-  const close = useCallback(() => setOpen(false), []);
-
-  // Escape closes (returning focus to the FAB) and Tab is trapped within the
-  // dialog so focus can't escape to the page behind the modal surface.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        close();
-        return;
-      }
-      if (e.key !== "Tab") return;
-      const el = surfaceRef.current;
-      if (!el) return;
-      // Tabbable elements within the dialog, in DOM order.
-      const focusables = Array.from(
-        el.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((n) => n.offsetParent !== null || n === document.activeElement);
-      if (focusables.length === 0) {
-        e.preventDefault();
-        return;
-      }
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      const active = document.activeElement as HTMLElement | null;
-      // Cycle: wrap forward off the last element, backward off the first, and
-      // pull focus back in if it has somehow drifted outside the dialog.
-      if (e.shiftKey) {
-        if (active === first || !el.contains(active)) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (active === last || !el.contains(active)) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, close]);
-
-  // Move focus into the panel on open; restore to the FAB on close. While open,
-  // lock background scroll (prevents the page behind the modal sheet from
-  // scrolling) and restore the prior overflow on close/unmount.
-  useEffect(() => {
-    if (open) {
-      hasOpened.current = true;
-      const prevOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      // Defer so the dialog has mounted.
-      const t = window.setTimeout(() => {
-        const el = surfaceRef.current;
-        if (!el) return;
-        const focusTarget =
-          el.querySelector<HTMLElement>("[data-cp-close]") ??
-          el.querySelector<HTMLElement>("input, button, [tabindex]");
-        focusTarget?.focus();
-      }, 0);
-      return () => {
-        window.clearTimeout(t);
-        document.body.style.overflow = prevOverflow;
-      };
-    }
-    // Return focus to the FAB only after a real close (not on initial mount).
-    if (hasOpened.current) fabRef.current?.focus();
-  }, [open]);
 
   return (
-    <>
+    <Sheet open={open} onOpenChange={setOpen}>
       <style>{CP_LAUNCHER_CSS}</style>
 
       {/* Floating launcher FAB (bottom-right, clears the mobile tab bar). */}
-      <button
-        ref={fabRef}
-        type="button"
-        className={`cp-fab ${open ? "is-open" : ""}`}
-        aria-label="Open AI Co-pilot"
-        aria-expanded={open}
-        aria-controls={dialogId}
-        aria-haspopup="dialog"
-        onClick={() => setOpen((o) => !o)}
+      <SheetTrigger asChild>
+        <Button
+          type="button"
+          className={`cp-fab ${open ? "is-open" : ""}`}
+          aria-label="Open AI Co-pilot"
+        >
+          <span className="cp-fab-glow" aria-hidden="true" />
+          <Icon
+            icon={open ? "ic:round-close" : "solar:magic-stick-3-bold"}
+            size={22}
+            className="cp-fab-icon"
+          />
+          {!open && <span className="cp-fab-label">Co-pilot</span>}
+        </Button>
+      </SheetTrigger>
+
+      {/* The Co-pilot surface: docked card on desktop, bottom sheet on mobile.
+          We keep the bespoke cp-surface positioning/layering CSS and neutralize
+          the Sheet's default side-anchored layout via the cp-surface override. */}
+      <SheetContent
+        side="bottom"
+        showCloseButton={false}
+        className="cp-surface"
       >
-        <span className="cp-fab-glow" aria-hidden="true" />
-        <Icon
-          icon={open ? "ic:round-close" : "solar:magic-stick-3-bold"}
-          size={22}
-          className="cp-fab-icon"
-        />
-        {!open && <span className="cp-fab-label">Co-pilot</span>}
-      </button>
+        {/* Surface header with the close control. CopilotPanel keeps its own
+            header (brand + "Grounded in …"); we add only a thin top bar with
+            an accessible name + ✕ so we don't double up the brand title. */}
+        <div className="cp-surface-head">
+          <SheetTitle className="cp-surface-title">
+            <Icon icon="ph:sparkle-fill" size={13} /> AI Co-pilot
+          </SheetTitle>
+          <SheetClose asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              data-cp-close
+              className="cp-close"
+              aria-label="Close AI Co-pilot"
+            >
+              <Icon icon="ic:round-close" size={18} />
+            </Button>
+          </SheetClose>
+        </div>
 
-      {open && (
-        <>
-          {/* Mobile-only dim backdrop; click closes. Hidden on md+. */}
-          <div className="cp-backdrop md:hidden" onClick={close} aria-hidden="true" />
-
-          {/* The Co-pilot surface: docked card on desktop, bottom sheet on mobile. */}
-          <div
-            ref={surfaceRef}
-            id={dialogId}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            className="cp-surface"
-          >
-            {/* Surface header with the close control. CopilotPanel keeps its own
-                header (brand + "Grounded in …"); we add only a thin top bar with
-                an accessible name + ✕ so we don't double up the brand title. */}
-            <div className="cp-surface-head">
-              <span id={titleId} className="cp-surface-title">
-                <Icon icon="ph:sparkle-fill" size={13} /> AI Co-pilot
-              </span>
-              <button
-                type="button"
-                data-cp-close
-                className="cp-close"
-                aria-label="Close AI Co-pilot"
-                onClick={close}
-              >
-                <Icon icon="ic:round-close" size={18} />
-              </button>
-            </div>
-
-            <div className="cp-surface-body">
-              <CopilotPanel event={event} />
-            </div>
-          </div>
-        </>
-      )}
-    </>
+        <div className="cp-surface-body">
+          <CopilotPanel event={event} />
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -243,17 +168,24 @@ const CP_LAUNCHER_CSS = `
   .cp-fab, .cp-fab:hover, .cp-fab:active { transition: background .16s ease; transform: none; }
 }
 
-/* ---- Desktop docked card (md+) ---- */
+/* ---- Surface frame ---- */
+/* Neutralize the Sheet's default side-anchored layout so our bespoke
+   dual-mode placement (docked card on md+, bottom sheet on < md) wins. */
 .cp-surface {
   position: fixed;
+  inset: auto;
   z-index: 75;
   display: flex;
   flex-direction: column;
+  width: auto;
+  max-width: none;
+  height: auto;
   background: var(--brand-card);
   border: 1px solid var(--hair);
   overflow: hidden;
-  animation: cpCardIn .22s cubic-bezier(.2,.7,.3,1);
 }
+
+/* ---- Desktop docked card (md+) ---- */
 @media (min-width: 768px) {
   .cp-surface {
     right: var(--cp-fab-right);
@@ -265,22 +197,11 @@ const CP_LAUNCHER_CSS = `
     box-shadow: 0 24px 60px rgba(0, 0, 0, .55), 0 0 0 1px var(--hair);
   }
 }
-@keyframes cpCardIn { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---- Mobile bottom sheet (< md) ---- */
-.cp-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  background: rgba(7, 9, 18, .6);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  animation: cpFade .2s ease;
-}
-@keyframes cpFade { from { opacity: 0; } to { opacity: 1; } }
 @media (max-width: 767px) {
   .cp-surface {
-    z-index: 81; /* above the backdrop (80) and the tab bar (60) */
+    z-index: 81; /* above the overlay (50) and the tab bar (60) */
     left: 0;
     right: 0;
     bottom: 0;
@@ -291,12 +212,7 @@ const CP_LAUNCHER_CSS = `
     border-radius: 18px 18px 0 0;
     border-bottom: none;
     box-shadow: 0 -16px 40px rgba(0, 0, 0, .5);
-    animation: cpSheetIn .26s cubic-bezier(.2,.7,.3,1);
   }
-}
-@keyframes cpSheetIn { from { transform: translateY(100%); } to { transform: none; } }
-@media (prefers-reduced-motion: reduce) {
-  .cp-surface, .cp-backdrop { animation: none; }
 }
 
 .cp-surface-head {
@@ -320,18 +236,8 @@ const CP_LAUNCHER_CSS = `
 }
 .cp-surface-title iconify-icon { color: var(--hi-blue); }
 .cp-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
   color: var(--fg2);
-  transition: background .15s ease, color .15s ease;
 }
-.cp-close:hover { background: rgba(255, 255, 255, .07); color: var(--fg1); }
 
 /* The body hosts the reused CopilotPanel. We strip the panel's own border/radius
    so it fills the surface cleanly (the surface already provides the frame). */

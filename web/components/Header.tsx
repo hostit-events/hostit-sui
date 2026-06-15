@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AuthControl } from "./AuthControl";
 import { Icon } from "./Icon";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const NAV = [
   { href: "/discover", label: "Discover", icon: "ic:round-explore" },
@@ -40,18 +42,22 @@ export function Header() {
           })}
         </nav>
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
-          <Link
-            href="/create"
-            className="btn btn-primary btn-sm"
-            aria-label="Create event"
-            style={{ minHeight: 44 }}
-          >
-            <Icon icon="ic:round-add" size={16} />
-            <span className="hidden sm:inline">Create event</span>
-          </Link>
-          <Link href="/settings" className="btn btn-sm" aria-label="Settings" title="Settings">
-            <Icon icon="ic:round-settings" size={18} />
-          </Link>
+          <Button asChild size="sm">
+            <Link href="/create" aria-label="Create event">
+              <Icon icon="ic:round-add" size={16} />
+              <span className="hidden sm:inline">Create event</span>
+            </Link>
+          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/settings" aria-label="Settings">
+                  <Icon icon="ic:round-settings" size={18} />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Settings</TooltipContent>
+          </Tooltip>
           <AuthControl />
         </div>
       </div>

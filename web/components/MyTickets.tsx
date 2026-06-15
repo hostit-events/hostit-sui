@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   COINS,
   ENOKI_ENABLED,
@@ -16,6 +17,10 @@ import { humanizeError } from "@/lib/moveErrors";
 import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { Icon } from "./Icon";
 import { TxLink } from "./TxLink";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   GetObjectParams,
   GetOwnedObjectsParams,
@@ -99,19 +104,20 @@ export function MyTickets({ address }: { address: string }) {
 
   if (q.isLoading)
     return (
-      <div className="card mono" role="status" aria-live="polite">
+      <Card className="mono p-4" role="status" aria-live="polite">
         Loading your tickets…
-      </div>
+      </Card>
     );
   if (q.error)
     return (
-      <div className="card" style={{ color: "var(--color-danger)" }}>
-        Couldn&apos;t load your tickets. <button className="btn btn-sm" onClick={() => q.refetch()}>Retry</button>
-      </div>
+      <Card className="flex flex-row flex-wrap items-center gap-2 p-4" style={{ color: "var(--color-danger)" }}>
+        Couldn&apos;t load your tickets.{" "}
+        <Button variant="outline" size="sm" onClick={() => q.refetch()}>Retry</Button>
+      </Card>
     );
   if (tickets.length === 0)
     return (
-      <div className="card" style={{ color: "var(--fg3)" }}>
+      <Card className="p-4" style={{ color: "var(--fg3)" }}>
         <span className="eyebrow">
           <Icon icon="ion:ticket" size={14} /> Wallet
         </span>
@@ -119,7 +125,7 @@ export function MyTickets({ address }: { address: string }) {
           No tickets yet. Tickets you buy or claim show up here.{" "}
           <Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover events</Link>.
         </p>
-      </div>
+      </Card>
     );
 
   return (
@@ -171,8 +177,6 @@ function TicketStub({
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
   const isPending = regular.isPending || sponsored.isPending;
-  const [err, setErr] = useState<string | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
 
   const issued = status === TICKET_STATUS.ISSUED;
   const checkedIn = status === TICKET_STATUS.CHECKED_IN;
@@ -192,17 +196,18 @@ function TicketStub({
   const now = Date.now();
   const inRefundWindow = now >= refundOpensMs && now <= refundClosesMs;
 
-  async function send(build: () => ReturnType<typeof selfCheckInTx>) {
-    setErr(null);
+  async function send(build: () => ReturnType<typeof selfCheckInTx>, success: string) {
     try {
       const tx = build();
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: address })
         : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
+      toast.success(success, {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       onChange();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
@@ -221,11 +226,11 @@ function TicketStub({
         </div>
         <div className="relative">
           {checkedIn ? (
-            <span className="badge badge-green">Checked in</span>
+            <Badge variant="secondary">Checked in</Badge>
           ) : (
-            <span className="badge" style={{ background: "rgba(255,255,255,.18)", color: "#fff" }}>
+            <Badge variant="secondary" style={{ background: "rgba(255,255,255,.18)", color: "#fff" }}>
               Valid
-            </span>
+            </Badge>
           )}
         </div>
       </div>
@@ -243,48 +248,57 @@ function TicketStub({
             event {eventId.slice(0, 10)}…
           </Link>
           {paid > 0n && (
-            <span className="badge badge-soft" style={{ alignSelf: "flex-start" }}>
+            <Badge variant="secondary" className="self-start">
               paid {ci.symbol}
-            </span>
+            </Badge>
           )}
           <div className="flex gap-2 flex-wrap" style={{ marginTop: 2 }}>
             {(issued || checkedIn) && (
-              <button
-                className="btn btn-primary btn-sm"
-                disabled={isPending}
-                onClick={() => send(() => selfCheckInTx({ eventId, ticketId }))}
-                title="Self check-in (organizer must enable it, within the event window). Staffed gates use an ed25519 voucher."
-              >
-                <Icon icon="zondicons:inbox-check" size={15} /> Check in
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => send(() => selfCheckInTx({ eventId, ticketId }), "Checked in")}
+                  >
+                    <Icon icon="zondicons:inbox-check" size={15} /> Check in
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Self check-in (organizer must enable it, within the event window). Staffed gates use an ed25519 voucher.
+                </TooltipContent>
+              </Tooltip>
             )}
             {issued && paid > 0n && ef && (
               isRefundable && inRefundWindow ? (
-                <button
-                  className="btn btn-sm"
-                  disabled={isPending}
-                  onClick={() => send(() => refundTx({ eventId, ticketId, coinType: refundCoin, recipient: address }))}
-                  title={`Refund window closes ${fmtRefundDate(refundClosesMs)}.`}
-                >
-                  Refund
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending}
+                      onClick={() => send(() => refundTx({ eventId, ticketId, coinType: refundCoin, recipient: address }), "Refund requested")}
+                    >
+                      Refund
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Refund window closes {fmtRefundDate(refundClosesMs)}.</TooltipContent>
+                </Tooltip>
               ) : !isRefundable ? (
-                <span className="badge badge-soft" style={{ alignSelf: "flex-start" }}>
+                <Badge variant="secondary" className="self-start">
                   Non-refundable
-                </span>
+                </Badge>
               ) : now < refundOpensMs ? (
-                <span className="badge badge-soft" style={{ alignSelf: "flex-start" }}>
+                <Badge variant="secondary" className="self-start">
                   Refundable {fmtRefundDate(refundOpensMs)} – {fmtRefundDate(refundClosesMs)}
-                </span>
+                </Badge>
               ) : (
-                <span className="badge badge-soft" style={{ alignSelf: "flex-start" }}>
+                <Badge variant="secondary" className="self-start">
                   Refund window closed
-                </span>
+                </Badge>
               )
             )}
           </div>
-          {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
-          {digest && <TxLink digest={digest} className="mono text-xs" style={{ color: "var(--color-success)" }} />}
         </div>
         <Qr seed={ticketId} />
       </div>

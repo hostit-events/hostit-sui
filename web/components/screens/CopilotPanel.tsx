@@ -1,8 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Icon } from "@/components/Icon";
 import { useOrganizerMemory } from "@/lib/memoryClient";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Msg {
   id: string;
@@ -165,39 +171,31 @@ function RememberButton({
         ? "ph:warning-circle-fill"
         : "ph:bookmark-simple-bold";
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={saving || saved}
-      title={
-        saved
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onClick}
+          disabled={saving || saved}
+          className="h-7 self-start px-2 text-[11.5px]"
+        >
+          <Icon
+            icon={icon}
+            size={12}
+            style={saving ? { animation: "hi-cp-spin .8s linear infinite" } : undefined}
+          />
+          {label}
+          <style>{`@keyframes hi-cp-spin{to{transform:rotate(360deg)}}`}</style>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {saved
           ? "Saved to your private organizer memory"
-          : "Save this to your private organizer memory (you'll sign to confirm)"
-      }
-      style={{
-        alignSelf: "flex-start",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "3px 8px",
-        borderRadius: 7,
-        border: "1px solid var(--hair)",
-        background: "transparent",
-        color: error ? "var(--color-danger)" : saved ? "var(--color-success)" : "var(--fg3)",
-        fontSize: 11.5,
-        fontWeight: 600,
-        cursor: saving || saved ? "default" : "pointer",
-        opacity: saving ? 0.7 : 1,
-      }}
-    >
-      <Icon
-        icon={icon}
-        size={12}
-        style={saving ? { animation: "hi-cp-spin .8s linear infinite" } : undefined}
-      />
-      {label}
-      <style>{`@keyframes hi-cp-spin{to{transform:rotate(360deg)}}`}</style>
-    </button>
+          : "Save this to your private organizer memory (you'll sign to confirm)"}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -212,7 +210,6 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Organizer memory (MemWal). Recalled once on open from the event context and
@@ -269,7 +266,6 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
   async function send(text: string) {
     const content = text.trim();
     if (!content || busy) return;
-    setErr(null);
     const history = [...messages, { id: nextMsgId(), role: "user" as const, content }];
     setMessages(history);
     setInput("");
@@ -294,7 +290,7 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
         { id: nextMsgId(), role: "assistant", content: reply || "I couldn't generate a response. Try rephrasing." },
       ]);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
       setMessages((prev) => [
         ...prev,
         { id: nextMsgId(), role: "assistant", content: "Something went wrong reaching the Co-pilot. Please try again." },
@@ -305,7 +301,7 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
   }
 
   return (
-    <div className="panel screen-in" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 480 }}>
+    <Card className="screen-in gap-0 overflow-hidden py-0" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 480 }}>
       {/* Header */}
       <div
         className="flex items-center gap-2"
@@ -319,9 +315,9 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
           </div>
         </div>
         {busy && (
-          <span className="badge badge-soft" style={{ marginLeft: "auto" }}>
+          <Badge variant="secondary" style={{ marginLeft: "auto" }}>
             <Icon icon="ph:sparkle-fill" size={11} /> Thinking
-          </span>
+          </Badge>
         )}
       </div>
 
@@ -413,15 +409,16 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
       {/* Quick-prompt chips */}
       <div className="flex gap-2 overflow-x-auto" style={{ padding: "0 18px 10px" }}>
         {QUICK_PROMPTS.map((p) => (
-          <button
+          <Button
             key={p.label}
-            className="chip"
+            variant="outline"
+            size="sm"
+            className="shrink-0 rounded-full"
             disabled={busy}
             onClick={() => send(p.prompt)}
-            style={{ flexShrink: 0 }}
           >
             <Icon icon={p.icon} size={13} /> {p.label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -434,24 +431,18 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
         className="flex gap-2 items-center"
         style={{ padding: "12px 18px", borderTop: "1px solid var(--hair)" }}
       >
-        <input
-          className="input grow"
+        <Input
+          className="grow"
           placeholder="Ask your Co-pilot…"
           aria-label="Ask your Co-pilot"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={busy}
         />
-        <button type="submit" className="btn btn-primary" disabled={busy || !input.trim()} aria-label="Send">
+        <Button type="submit" size="icon" disabled={busy || !input.trim()} aria-label="Send">
           <Icon icon="ph:paper-plane-right-fill" size={16} />
-        </button>
+        </Button>
       </form>
-
-      {err && (
-        <div role="alert" className="text-xs" style={{ padding: "0 18px 12px", color: "var(--color-danger)" }}>
-          {err}
-        </div>
-      )}
-    </div>
+    </Card>
   );
 }

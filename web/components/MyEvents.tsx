@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { COINS, ENOKI_ENABLED, ORGANIZER_CAP_TYPE, coinInfo } from "@/lib/config";
 import { useEventList } from "@/lib/events";
 import {
@@ -14,6 +15,19 @@ import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hook
 import { humanizeError } from "@/lib/moveErrors";
 import { Icon } from "./Icon";
 import { TxLink } from "./TxLink";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   GetObjectParams,
   GetOwnedObjectsParams,
@@ -97,11 +111,9 @@ function MyEventRow({
   const isPending = regular.isPending || sponsored.isPending;
   const [coin, setCoin] = useState(COINS[0].type);
   const [priceStr, setPriceStr] = useState("1");
-  const [err, setErr] = useState<string | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
 
   const f = getFields(q.data ?? {});
-  if (!f) return <div className="card mono">{eventId.slice(0, 14)}… loading</div>;
+  if (!f) return <Card className="mono p-4">{eventId.slice(0, 14)}… loading</Card>;
   const name = String(f.name);
   const minted = String(f.minted);
   const maxTickets = String(f.max_tickets);
@@ -110,16 +122,17 @@ function MyEventRow({
   // All organizer actions here (toggle / set_price / withdraw) are on the sponsor
   // allowlist, so gas is sponsored when Enoki is on — organizers never need SUI.
   async function send(tx: ReturnType<typeof setPriceTx>) {
-    setErr(null);
     try {
       const out =
         ENOKI_ENABLED && address
           ? await sponsored.mutateAsync({ transaction: tx, sender: address })
           : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
+      toast.success("Updated", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       q.refetch();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
@@ -131,7 +144,7 @@ function MyEventRow({
   }
 
   return (
-    <div className="card space-y-3 text-sm">
+    <Card className="space-y-3 p-4 text-sm">
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="font-medium">{name}</div>
@@ -139,52 +152,58 @@ function MyEventRow({
             {eventId.slice(0, 12)}… · sold {minted}/{maxTickets}
           </div>
         </div>
-        <div
-          className="flex items-center gap-2.5"
-          title="Self check-in lets holders check themselves in within the event window (no staff voucher)."
-        >
-          <span className="text-[13px]" style={{ color: "var(--fg2)" }}>
-            Self check-in
-          </span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={allowSelf}
-            aria-label="Toggle self check-in"
-            disabled={isPending}
-            className={`switch ${allowSelf ? "on" : ""}`}
-            onClick={() => {
-              if (!isPending) send(setAllowSelfCheckinTx({ capId, eventId, allow: !allowSelf }));
-            }}
-          />
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-2.5">
+              <Label htmlFor={`self-checkin-${eventId}`} className="text-[13px]" style={{ color: "var(--fg2)" }}>
+                Self check-in
+              </Label>
+              <Switch
+                id={`self-checkin-${eventId}`}
+                aria-label="Toggle self check-in"
+                checked={allowSelf}
+                disabled={isPending}
+                onCheckedChange={() => {
+                  if (!isPending) send(setAllowSelfCheckinTx({ capId, eventId, allow: !allowSelf }));
+                }}
+              />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            Self check-in lets holders check themselves in within the event window (no staff voucher).
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Link href={`/manage/${eventId}`} className="btn btn-primary">
-          Manage
-        </Link>
-        <Link href={`/event/${eventId}`} className="btn">
-          View
-        </Link>
+        <Button asChild size="sm">
+          <Link href={`/manage/${eventId}`}>Manage</Link>
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/event/${eventId}`}>View</Link>
+        </Button>
       </div>
 
       {!isFree && (
         <div className="flex flex-wrap items-end gap-2">
-          <div>
-            <label className="label">Coin</label>
-            <select className="select" value={coin} onChange={(e) => setCoin(e.target.value)}>
-              {COINS.map((c) => (
-                <option key={c.type} value={c.type}>
-                  {c.symbol}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-col gap-1.5">
+            <Label>Coin</Label>
+            <Select value={coin} onValueChange={setCoin}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {COINS.map((c) => (
+                  <SelectItem key={c.type} value={c.type}>
+                    {c.symbol}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <div>
-            <label className="label">Price ({coinInfo(coin).symbol})</label>
-            <input
-              className="input"
+          <div className="flex flex-col gap-1.5">
+            <Label>Price ({coinInfo(coin).symbol})</Label>
+            <Input
               type="number"
               min={0}
               step="any"
@@ -192,27 +211,32 @@ function MyEventRow({
               onChange={(e) => setPriceStr(e.target.value)}
             />
           </div>
-          <button
-            className="btn btn-primary"
+          <Button
+            size="sm"
             disabled={isPending}
             onClick={() => send(setPriceTx({ capId, eventId, coinType: coin, price: priceUnits() }))}
           >
             Set price
-          </button>
-          <button
-            className="btn"
-            disabled={isPending}
-            onClick={() =>
-              send(withdrawEventBalanceTx({ capId, eventId, coinType: coin, recipient: address }))
-            }
-            title="Withdraw all accrued revenue in the selected coin (refundable events: only after the refund window)."
-          >
-            Withdraw {coinInfo(coin).symbol}
-          </button>
+          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isPending}
+                onClick={() =>
+                  send(withdrawEventBalanceTx({ capId, eventId, coinType: coin, recipient: address }))
+                }
+              >
+                Withdraw {coinInfo(coin).symbol}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Withdraw all accrued revenue in the selected coin (refundable events: only after the refund window).
+            </TooltipContent>
+          </Tooltip>
         </div>
       )}
-      {err && <div className="text-xs text-[var(--color-danger)] break-words">{err}</div>}
-      {digest && <TxLink digest={digest} className="mono text-xs" style={{ color: "var(--color-success)" }} />}
-    </div>
+    </Card>
   );
 }

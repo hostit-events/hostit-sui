@@ -14,6 +14,7 @@
 // and takes its marketId from useEventMarkets.
 
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import type { Transaction } from "@mysten/sui/transactions";
 import { ENOKI_ENABLED, USDC_COIN_TYPE, EV_MARKET_CREATED } from "@/lib/config";
 import {
@@ -42,6 +43,19 @@ import {
 } from "@/lib/hooks";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   CoinBalance,
   DynamicFieldName,
@@ -152,27 +166,6 @@ function NoUsdcHint() {
   );
 }
 
-// Shared TX feedback (success digest link + humanized error) for the market cards.
-function TxFeedback({ digest, err }: { digest: string | null; err: string | null }) {
-  return (
-    <>
-      {digest && (
-        <TxLink
-          digest={digest}
-          className="mono text-[12px]"
-          style={{ color: "var(--color-success)" }}
-          before={<><Icon icon="ph:check-circle-bold" size={13} />{" "}</>}
-        />
-      )}
-      {err && (
-        <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>
-          {err}
-        </div>
-      )}
-    </>
-  );
-}
-
 /**
  * "Sellout Clock" parimutuel prediction market for an event. Permissionless:
  * any connected wallet can open the market, bet YES/NO before doors, settle
@@ -197,8 +190,6 @@ function SelloutMarketCard({
   const isPending = regular.isPending || sponsored.isPending;
 
   const [amount, setAmount] = useState("1");
-  const [err, setErr] = useState<string | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
 
   // MarketCreated logs (newest first), filtered client-side to this event_seq.
   const created = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
@@ -261,19 +252,19 @@ function SelloutMarketCard({
 
   async function run(tx: Transaction) {
     if (!addr) return;
-    setErr(null);
-    setDigest(null);
     try {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
+      toast.success("Transaction confirmed", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       created.refetch();
       marketQ.refetch();
       balanceQ.refetch();
       winStakeQ.refetch();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
@@ -291,30 +282,27 @@ function SelloutMarketCard({
     </span>
   );
 
-  const txFeedback = <TxFeedback digest={digest} err={err} />;
-
   // ---- No market yet: permissionless create CTA. ----
   if (!loading && !marketId) {
     return (
       <div className="space-y-3">
         {header}
-        <div className="card space-y-3" style={{ padding: 16 }}>
+        <Card className="gap-3 p-4">
           <div className="text-sm" style={{ color: "var(--fg2)" }}>
             Will this event sell out (reach {String(maxTickets)} tickets) before doors?
           </div>
-          <button
-            className="btn btn-block"
+          <Button
+            className="w-full"
             disabled={!addr || isPending}
             onClick={() => run(createSelloutMarketTx(eventId, USDC_COIN_TYPE))}
           >
             <Icon icon="mdi:timer-sand" size={16} />
             {isPending ? "Opening…" : addr ? "Create Sellout Clock" : "Connect wallet to open"}
-          </button>
+          </Button>
           <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
             Anyone can open this market — it&apos;s a parimutuel pool settled on-chain.
           </div>
-          {txFeedback}
-        </div>
+        </Card>
       </div>
     );
   }
@@ -324,14 +312,14 @@ function SelloutMarketCard({
     return (
       <div className="space-y-3">
         {header}
-        <div className="card space-y-3" style={{ padding: 16 }}>
+        <Card className="gap-3 p-4">
           <div className="text-sm" style={{ color: "var(--color-danger)" }}>
             Couldn&apos;t load this market.
           </div>
-          <button className="btn btn-block" onClick={() => marketQ.refetch()}>
+          <Button variant="outline" className="w-full" onClick={() => marketQ.refetch()}>
             <Icon icon="ph:arrow-clockwise-bold" size={16} /> Retry
-          </button>
-        </div>
+          </Button>
+        </Card>
       </div>
     );
   }
@@ -341,9 +329,11 @@ function SelloutMarketCard({
     return (
       <div className="space-y-3">
         {header}
-        <div className="card mono text-sm" style={{ padding: 16, color: "var(--fg2)" }}>
-          Loading market…
-        </div>
+        <Card className="gap-2 p-4">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-8 w-full" />
+        </Card>
       </div>
     );
   }
@@ -357,7 +347,7 @@ function SelloutMarketCard({
   return (
     <div className="space-y-3">
       {header}
-      <div className="card space-y-4" style={{ padding: 16 }}>
+      <Card className="gap-4 p-4">
         <div className="text-sm" style={{ color: "var(--fg2)" }}>
           Will this event sell out (reach {String(market.strike)} tickets) before doors?
         </div>
@@ -365,11 +355,11 @@ function SelloutMarketCard({
         {/* Odds */}
         {hasBets ? (
           <div className="flex items-center justify-between text-sm">
-            <span className="badge badge-green">YES {odds.yesPct.toFixed(0)}%</span>
+            <Badge>YES {odds.yesPct.toFixed(0)}%</Badge>
             <span className="mono text-[12px]" style={{ color: "var(--fg3)" }}>
               {fmtAmount(market.totalYes + market.totalNo, 6)} USDC pooled
             </span>
-            <span className="badge badge-line">NO {odds.noPct.toFixed(0)}%</span>
+            <Badge variant="outline">NO {odds.noPct.toFixed(0)}%</Badge>
           </div>
         ) : (
           <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
@@ -380,31 +370,29 @@ function SelloutMarketCard({
         {/* Open: bet YES / NO */}
         {open && (
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm">
+            <Label htmlFor="market-bet-sellout" className="text-sm">
               <span style={{ color: "var(--fg2)" }}>Stake</span>
-              <input
+              <Input
                 id="market-bet-sellout"
                 aria-label="Bet amount (USDC)"
-                className="input mono"
+                className="mono w-[110px]"
                 type="number"
                 min="0"
                 step="0.01"
                 value={amount}
                 onChange={(e) => setAmount(clampUsdcInput(e.target.value))}
-                style={{ width: 110 }}
                 disabled={isPending}
               />
               <span style={{ color: "var(--fg3)" }}>USDC</span>
-            </label>
+            </Label>
             {parseUsdcUnits(amount) === null && (
               <div className="text-[11px]" style={{ color: "var(--hi-amber)" }}>
                 Enter an amount greater than 0 (up to 6 decimals).
               </div>
             )}
             <div className="flex gap-2">
-              <button
-                className="btn btn-primary"
-                style={{ flex: 1 }}
+              <Button
+                className="flex-1"
                 disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
                 onClick={() => {
                   const units = parseUsdcUnits(amount);
@@ -420,10 +408,10 @@ function SelloutMarketCard({
                 }}
               >
                 {isPending ? "…" : "Bet YES"}
-              </button>
-              <button
-                className="btn"
-                style={{ flex: 1 }}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
                 disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
                 onClick={() => {
                   const units = parseUsdcUnits(amount);
@@ -439,7 +427,7 @@ function SelloutMarketCard({
                 }}
               >
                 {isPending ? "…" : "Bet NO"}
-              </button>
+              </Button>
             </div>
             <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
               Betting closes at doors ({fmtDate(expiryMs)}, {fmtTime(expiryMs)}). Winners split the
@@ -471,14 +459,14 @@ function SelloutMarketCard({
                 once you&apos;re confident the final count is in.
               </span>
             </div>
-            <button
-              className="btn btn-block"
+            <Button
+              className="w-full"
               disabled={!addr || isPending}
               onClick={() => run(settleTx({ marketId: marketId!, eventId, coinType: USDC_COIN_TYPE }))}
             >
               <Icon icon="ph:gavel-bold" size={16} />
               {isPending ? "Settling…" : addr ? "Settle" : "Connect wallet to settle"}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -494,23 +482,23 @@ function SelloutMarketCard({
               <div className="flex items-center gap-2 text-sm">
                 <span style={{ color: "var(--fg2)" }}>Outcome:</span>
                 {market.outcomeYes ? (
-                  <span className="badge badge-green">Sold out</span>
+                  <Badge>Sold out</Badge>
                 ) : (
-                  <span className="badge badge-line">Did not sell out</span>
+                  <Badge variant="outline">Did not sell out</Badge>
                 )}
               </div>
               {!addr ? (
-                <button className="btn btn-primary btn-block" disabled>
+                <Button className="w-full" disabled>
                   <Icon icon="ph:coins-bold" size={16} /> Connect wallet to claim
-                </button>
+                </Button>
               ) : stakeLoading ? (
-                <button className="btn btn-primary btn-block" disabled>
+                <Button className="w-full" disabled>
                   <Icon icon="ph:coins-bold" size={16} /> Checking your stake…
-                </button>
+                </Button>
               ) : hasWinningStake ? (
                 <>
-                  <button
-                    className="btn btn-primary btn-block"
+                  <Button
+                    className="w-full"
                     disabled={isPending}
                     onClick={() =>
                       run(claimTx({ marketId: marketId!, coinType: USDC_COIN_TYPE, recipient: addr! }))
@@ -518,7 +506,7 @@ function SelloutMarketCard({
                   >
                     <Icon icon="ph:coins-bold" size={16} />
                     {isPending ? "Claiming…" : "Claim winnings"}
-                  </button>
+                  </Button>
                   <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
                     Your winning-side stake: {fmtAmount(winningStake!, 6)} USDC + a pro-rata share of
                     the losing pool.
@@ -536,9 +524,7 @@ function SelloutMarketCard({
             </div>
           );
         })()}
-
-        {txFeedback}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -589,8 +575,6 @@ function RangeMarketCard({
 
   const [amount, setAmount] = useState("1");
   const [picked, setPicked] = useState(0);
-  const [err, setErr] = useState<string | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
 
   // Reset the picked bucket when the market changes — a stale index from a
   // previously-viewed market could point at a non-existent bucket.
@@ -646,19 +630,19 @@ function RangeMarketCard({
 
   async function run(tx: Transaction) {
     if (!addr) return;
-    setErr(null);
-    setDigest(null);
     try {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
+      toast.success("Transaction confirmed", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       refetchMarkets();
       marketQ.refetch();
       balanceQ.refetch();
       winStakeQ.refetch();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
@@ -676,8 +660,6 @@ function RangeMarketCard({
     </span>
   );
 
-  const txFeedback = <TxFeedback digest={digest} err={err} />;
-
   // ---- No market yet: permissionless create CTA (quartile cutoffs). ----
   if (!loading && !marketId) {
     const cutoffs = defaultCutoffs(maxTickets);
@@ -685,20 +667,20 @@ function RangeMarketCard({
     return (
       <div className="space-y-3">
         {header}
-        <div className="card space-y-3" style={{ padding: 16 }}>
+        <Card className="gap-3 p-4">
           <div className="text-sm" style={{ color: "var(--fg2)" }}>
             How many tickets will this event ultimately sell? Open a pooled market over{" "}
             {previewBuckets} ranges.
           </div>
           <div className="flex flex-wrap gap-1.5">
             {Array.from({ length: previewBuckets }, (_, i) => (
-              <span key={i} className="badge badge-line mono">
+              <Badge key={i} variant="outline" className="mono">
                 {bucketLabel(cutoffs, i)}
-              </span>
+              </Badge>
             ))}
           </div>
-          <button
-            className="btn btn-block"
+          <Button
+            className="w-full"
             disabled={!addr || isPending}
             onClick={() => run(createRangeMarketTx(eventId, USDC_COIN_TYPE, cutoffs))}
           >
@@ -708,13 +690,12 @@ function RangeMarketCard({
               : addr
                 ? "Create final-tickets-sold market"
                 : "Connect wallet to open"}
-          </button>
+          </Button>
           <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
             Anyone can open this market — ranges default to quartiles of{" "}
             {String(maxTickets)} max tickets.
           </div>
-          {txFeedback}
-        </div>
+        </Card>
       </div>
     );
   }
@@ -724,14 +705,14 @@ function RangeMarketCard({
     return (
       <div className="space-y-3">
         {header}
-        <div className="card space-y-3" style={{ padding: 16 }}>
+        <Card className="gap-3 p-4">
           <div className="text-sm" style={{ color: "var(--color-danger)" }}>
             Couldn&apos;t load this market.
           </div>
-          <button className="btn btn-block" onClick={() => marketQ.refetch()}>
+          <Button variant="outline" className="w-full" onClick={() => marketQ.refetch()}>
             <Icon icon="ph:arrow-clockwise-bold" size={16} /> Retry
-          </button>
-        </div>
+          </Button>
+        </Card>
       </div>
     );
   }
@@ -741,9 +722,12 @@ function RangeMarketCard({
     return (
       <div className="space-y-3">
         {header}
-        <div className="card mono text-sm" style={{ padding: 16, color: "var(--fg2)" }}>
-          Loading market…
-        </div>
+        <Card className="gap-2 p-4">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-8 w-full" />
+        </Card>
       </div>
     );
   }
@@ -761,7 +745,7 @@ function RangeMarketCard({
   return (
     <div className="space-y-3">
       {header}
-      <div className="card space-y-4" style={{ padding: 16 }}>
+      <Card className="gap-4 p-4">
         <div className="text-sm" style={{ color: "var(--fg2)" }}>
           How many tickets will this event ultimately sell?
         </div>
@@ -823,47 +807,49 @@ function RangeMarketCard({
         {/* Open: pick a bucket + stake + bet */}
         {open && (
           <div className="space-y-2">
-            <label className="block text-sm">
-              <span style={{ color: "var(--fg2)" }}>Bucket</span>
-              <select
-                id="market-bet-bucket"
-                aria-label="Bucket"
-                className="select mono"
-                value={safePicked}
-                onChange={(e) => setPicked(Number(e.target.value))}
+            <div className="space-y-1.5 text-sm">
+              <Label htmlFor="market-bet-bucket" style={{ color: "var(--fg2)" }}>
+                Bucket
+              </Label>
+              <Select
+                value={String(safePicked)}
+                onValueChange={(v) => setPicked(Number(v))}
                 disabled={isPending}
-                style={{ marginTop: 6 }}
               >
-                {market.totals.map((_, i) => (
-                  <option key={i} value={i}>
-                    {bucketLabel(market.cutoffs, i)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
+                <SelectTrigger id="market-bet-bucket" aria-label="Bucket" className="mono w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {market.totals.map((_, i) => (
+                    <SelectItem key={i} value={String(i)} className="mono">
+                      {bucketLabel(market.cutoffs, i)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Label htmlFor="market-bet-range" className="text-sm">
               <span style={{ color: "var(--fg2)" }}>Stake</span>
-              <input
+              <Input
                 id="market-bet-range"
                 aria-label="Bet amount (USDC)"
-                className="input mono"
+                className="mono w-[110px]"
                 type="number"
                 min="0"
                 step="0.01"
                 value={amount}
                 onChange={(e) => setAmount(clampUsdcInput(e.target.value))}
-                style={{ width: 110 }}
                 disabled={isPending}
               />
               <span style={{ color: "var(--fg3)" }}>USDC</span>
-            </label>
+            </Label>
             {parseUsdcUnits(amount) === null && (
               <div className="text-[11px]" style={{ color: "var(--hi-amber)" }}>
                 Enter an amount greater than 0 (up to 6 decimals).
               </div>
             )}
-            <button
-              className="btn btn-primary btn-block"
+            <Button
+              className="w-full"
               disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
               onClick={() => {
                 const units = parseUsdcUnits(amount);
@@ -880,7 +866,7 @@ function RangeMarketCard({
             >
               <Icon icon="mdi:chart-bar" size={16} />
               {isPending ? "…" : `Bet ${bucketLabel(market.cutoffs, safePicked)}`}
-            </button>
+            </Button>
             <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
               Betting closes at doors ({fmtDate(expiryMs)}, {fmtTime(expiryMs)}). The winning bucket
               splits the losing pools pro-rata.
@@ -911,8 +897,8 @@ function RangeMarketCard({
                 settle once you&apos;re confident the final count is in.
               </span>
             </div>
-            <button
-              className="btn btn-block"
+            <Button
+              className="w-full"
               disabled={!addr || isPending}
               onClick={() =>
                 run(settleRangeTx({ marketId: marketId!, eventId, coinType: USDC_COIN_TYPE }))
@@ -920,7 +906,7 @@ function RangeMarketCard({
             >
               <Icon icon="ph:gavel-bold" size={16} />
               {isPending ? "Settling…" : addr ? "Settle" : "Connect wallet to settle"}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -941,22 +927,22 @@ function RangeMarketCard({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm">
                 <span style={{ color: "var(--fg2)" }}>Winning bucket:</span>
-                <span className="badge badge-green mono">
+                <Badge className="mono">
                   {bucketLabel(market.cutoffs, market.winningBucket)}
-                </span>
+                </Badge>
               </div>
               {!addr ? (
-                <button className="btn btn-primary btn-block" disabled>
+                <Button className="w-full" disabled>
                   <Icon icon="ph:coins-bold" size={16} /> Connect wallet to claim
-                </button>
+                </Button>
               ) : !refundPath && stakeLoading ? (
-                <button className="btn btn-primary btn-block" disabled>
+                <Button className="w-full" disabled>
                   <Icon icon="ph:coins-bold" size={16} /> Checking your stake…
-                </button>
+                </Button>
               ) : canClaim ? (
                 <>
-                  <button
-                    className="btn btn-primary btn-block"
+                  <Button
+                    className="w-full"
                     disabled={isPending}
                     onClick={() =>
                       run(claimRangeTx({ marketId: marketId!, coinType: USDC_COIN_TYPE, recipient: addr! }))
@@ -964,7 +950,7 @@ function RangeMarketCard({
                   >
                     <Icon icon="ph:coins-bold" size={16} />
                     {isPending ? "Claiming…" : refundPath ? "Refund stake" : "Claim winnings"}
-                  </button>
+                  </Button>
                   <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
                     {refundPath
                       ? "No one bet the winning bucket — each bettor refunds their own stake."
@@ -983,9 +969,7 @@ function RangeMarketCard({
             </div>
           );
         })()}
-
-        {txFeedback}
-      </div>
+      </Card>
     </div>
   );
 }

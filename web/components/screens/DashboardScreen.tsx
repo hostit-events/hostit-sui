@@ -8,6 +8,11 @@ import { COINS, PACKAGE_ID, EV_TICKET_MINTED, coinInfo, matchesCoinType } from "
 import { MyEvents } from "@/components/MyEvents";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { PaginatedEvents, QueryEventsParams } from "@mysten/sui/jsonRpc";
 
 // Inline event-type strings (built the same way config builds EV_TICKET_MINTED).
@@ -185,29 +190,31 @@ export function DashboardScreen() {
     return (
       <div className="space-y-8 screen-in">
         <Header />
-        <div className="card">
-          <div className="font-semibold flex items-center gap-2">
-            <Icon icon="solar:wallet-bold" size={18} /> Connect your wallet
-          </div>
-          <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
-            The dashboard aggregates on-chain activity for events you organize. Connect a wallet to
-            see your sales, attendees and analytics, or{" "}
-            <Link href="/create" style={{ color: "var(--hi-blue)" }}>
-              create your first event
-            </Link>
-            .
-          </p>
-        </div>
+        <Card>
+          <CardContent>
+            <div className="font-semibold flex items-center gap-2">
+              <Icon icon="solar:wallet-bold" size={18} /> Connect your wallet
+            </div>
+            <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+              The dashboard aggregates on-chain activity for events you organize. Connect a wallet to
+              see your sales, attendees and analytics, or{" "}
+              <Link href="/create" style={{ color: "var(--hi-blue)" }}>
+                create your first event
+              </Link>
+              .
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 screen-in">
+    <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="space-y-8 screen-in">
       <Header />
 
       {/* segmented tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <TabsList className="h-auto flex-wrap">
         {(
           [
             { id: "overview", label: "Overview", icon: "material-symbols-light:dashboard-rounded" },
@@ -215,20 +222,14 @@ export function DashboardScreen() {
             { id: "analytics", label: "Analytics", icon: "material-symbols-light:analytics-rounded" },
           ] as { id: Tab; label: string; icon: string }[]
         ).map((t) => (
-          <button
-            key={t.id}
-            className={`chip ${tab === t.id ? "on" : ""}`}
-            aria-current={tab === t.id ? "page" : undefined}
-            aria-pressed={tab === t.id}
-            onClick={() => setTab(t.id)}
-          >
+          <TabsTrigger key={t.id} value={t.id}>
             <Icon icon={t.icon} size={14} /> {t.label}
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
+      </TabsList>
 
       {/* ===================== OVERVIEW ===================== */}
-      {tab === "overview" && (
+      <TabsContent value="overview">
         <div className="space-y-8">
           <section className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))" }}>
             <StatTile
@@ -259,28 +260,33 @@ export function DashboardScreen() {
           </p>
 
           {eventsError ? (
-            <div className="card" style={{ color: "var(--color-danger)" }}>
-              Couldn&apos;t load your events. <button className="btn btn-sm" onClick={() => refetchEvents()}>Retry</button>
-            </div>
+            <Card>
+              <CardContent style={{ color: "var(--color-danger)" }} className="flex flex-wrap items-center gap-2">
+                Couldn&apos;t load your events.{" "}
+                <Button variant="outline" size="sm" onClick={() => refetchEvents()}>Retry</Button>
+              </CardContent>
+            </Card>
           ) : myEvents.length === 0 && !eventsLoading ? (
-            <div className="card">
-              <div className="font-semibold">You haven&apos;t created any events yet.</div>
-              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
-                <Link href="/create" style={{ color: "var(--hi-blue)" }}>
-                  Create an event
-                </Link>{" "}
-                to start selling tickets — sales, attendees and revenue will show up here.
-              </p>
-            </div>
+            <Card>
+              <CardContent>
+                <div className="font-semibold">You haven&apos;t created any events yet.</div>
+                <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+                  <Link href="/create" style={{ color: "var(--hi-blue)" }}>
+                    Create an event
+                  </Link>{" "}
+                  to start selling tickets — sales, attendees and revenue will show up here.
+                </p>
+              </CardContent>
+            </Card>
           ) : (
             // Full organizer console (set price, withdraw, self-checkin toggle).
             <MyEvents address={addr} />
           )}
         </div>
-      )}
+      </TabsContent>
 
       {/* ===================== ATTENDEES ===================== */}
-      {tab === "attendees" && (
+      <TabsContent value="attendees">
         <section className="space-y-5">
           <div>
             <span className="section-label">Buyers</span>
@@ -291,16 +297,24 @@ export function DashboardScreen() {
           </div>
 
           {minted.isLoading ? (
-            <div className="card mono">Loading sales…</div>
+            <Card>
+              <CardContent className="flex flex-col gap-2.5">
+                <Skeleton className="h-5 w-1/3" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+              </CardContent>
+            </Card>
           ) : mintRows.length === 0 ? (
-            <div className="card">
-              <div className="font-semibold">No tickets sold yet.</div>
-              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
-                When someone buys or claims a ticket to one of your events, they&apos;ll appear here.
-              </p>
-            </div>
+            <Card>
+              <CardContent>
+                <div className="font-semibold">No tickets sold yet.</div>
+                <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+                  When someone buys or claims a ticket to one of your events, they&apos;ll appear here.
+                </p>
+              </CardContent>
+            </Card>
           ) : (
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <Card className="py-0">
               <div style={{ overflowX: "auto" }}>
                 <table
                   className="w-full text-sm"
@@ -341,7 +355,7 @@ export function DashboardScreen() {
                             <AddressDisplay address={r.buyer} suffix={4} />
                           </Td>
                           <Td>
-                            <span className="badge badge-soft">{ci.symbol}</span>
+                            <Badge variant="secondary">{ci.symbol}</Badge>
                           </Td>
                           <Td>
                             <span className="mono">
@@ -366,17 +380,17 @@ export function DashboardScreen() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </Card>
           )}
           <p className="text-xs" style={{ color: "var(--fg3)" }}>
             Showing the most recent {minted.data?.data.length ?? 0} mint events across the network,
             filtered to your events.
           </p>
         </section>
-      )}
+      </TabsContent>
 
       {/* ===================== ANALYTICS ===================== */}
-      {tab === "analytics" && (
+      <TabsContent value="analytics">
         <section className="space-y-6">
           <div>
             <span className="section-label">Performance</span>
@@ -415,42 +429,51 @@ export function DashboardScreen() {
 
           {/* Per-event breakdown of gross by coin */}
           {grossByCoin.size > 0 && (
-            <div className="card space-y-2.5">
-              <div className="section-label">Gross by coin</div>
-              <div className="flex flex-col gap-2">
-                {Array.from(grossByCoin.entries())
-                  .filter(([, v]) => v > 0n)
-                  .map(([type, units]) => {
-                    const ci = coinInfo(type);
-                    return (
-                      <div key={type} className="flex items-center justify-between text-sm">
-                        <span className="badge badge-soft">{ci.symbol}</span>
-                        <span className="mono">{fmtAmount(units, ci.decimals)} {ci.symbol}</span>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
+            <Card>
+              <CardContent className="space-y-2.5">
+                <div className="section-label">Gross by coin</div>
+                <div className="flex flex-col gap-2">
+                  {Array.from(grossByCoin.entries())
+                    .filter(([, v]) => v > 0n)
+                    .map(([type, units]) => {
+                      const ci = coinInfo(type);
+                      return (
+                        <div key={type} className="flex items-center justify-between text-sm">
+                          <Badge variant="secondary">{ci.symbol}</Badge>
+                          <span className="mono">{fmtAmount(units, ci.decimals)} {ci.symbol}</span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
-          <div className="card text-sm" style={{ borderColor: "var(--hair-2)" }}>
-            <div className="font-semibold flex items-center gap-2">
-              <Icon icon="solar:safe-2-bold" size={18} /> Escrow &amp; settlement
-            </div>
-            <p style={{ color: "var(--fg2)", marginTop: 6 }}>
-              Ticket revenue is held in per-event on-chain escrow, net of the 3% protocol fee. For
-              refundable events, the proceeds become withdrawable only after the post-event refund
-              window closes; otherwise they&apos;re available immediately. Withdraw to your wallet,
-              per coin, from the{" "}
-              <button className="underline" style={{ color: "var(--hi-blue)" }} onClick={() => setTab("overview")}>
-                Overview
-              </button>{" "}
-              tab.
-            </p>
-          </div>
+          <Card className="text-sm">
+            <CardContent>
+              <div className="font-semibold flex items-center gap-2">
+                <Icon icon="solar:safe-2-bold" size={18} /> Escrow &amp; settlement
+              </div>
+              <p style={{ color: "var(--fg2)", marginTop: 6 }}>
+                Ticket revenue is held in per-event on-chain escrow, net of the 3% protocol fee. For
+                refundable events, the proceeds become withdrawable only after the post-event refund
+                window closes; otherwise they&apos;re available immediately. Withdraw to your wallet,
+                per coin, from the{" "}
+                <Button
+                  variant="link"
+                  className="h-auto p-0 align-baseline"
+                  style={{ color: "var(--hi-blue)" }}
+                  onClick={() => setTab("overview")}
+                >
+                  Overview
+                </Button>{" "}
+                tab.
+              </p>
+            </CardContent>
+          </Card>
         </section>
-      )}
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 

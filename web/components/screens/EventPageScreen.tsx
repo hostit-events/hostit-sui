@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import type { Transaction } from "@mysten/sui/transactions";
 import { ENOKI_ENABLED, REFUND_PERIOD_MS, coinInfo } from "@/lib/config";
 import { buyTx, claimFreeTx, getFields, totalWithFee } from "@/lib/ticketing";
@@ -21,6 +22,11 @@ import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
 import { EventMarketsScreen } from "@/components/screens/EventMarketsScreen";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { GetObjectParams, SuiObjectResponse } from "@mysten/sui/jsonRpc";
 
 // Inline amount formatter (mirrors EventCard; not exported from a lib).
@@ -56,14 +62,14 @@ function fmtTime(ms: number): string {
 
 function GoodToKnow({ icon, title, value }: { icon: string; title: string; value: string }) {
   return (
-    <div className="card" style={{ padding: 16 }}>
+    <Card style={{ padding: 16 }}>
       <div className="flex items-center gap-1.5 section-label" style={{ margin: 0 }}>
         <Icon icon={icon} size={14} /> {title}
       </div>
       <div className="text-sm" style={{ color: "var(--fg1)", marginTop: 6 }}>
         {value}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -83,8 +89,6 @@ export function EventPageScreen({ id }: { id: string }) {
   const isPending = regular.isPending || sponsored.isPending;
 
   const [meta, setMeta] = useState<EventMetadata | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
   // Re-render every ~30s so sale-window state (open/ended) stays fresh without a reload.
   const [, setNowTick] = useState(0);
   // Which coin button is mid-purchase, so only that one shows "Buying…".
@@ -117,17 +121,18 @@ export function EventPageScreen({ id }: { id: string }) {
   if (q.isLoading) {
     return (
       <div className="space-y-6 screen-in">
-        <div className="poster" style={{ height: 240 }}>
-          <div className="poster-noise" />
+        <Skeleton className="w-full" style={{ height: 240, borderRadius: "var(--r-lg)" }} />
+        <div className="space-y-3">
+          <Skeleton className="h-8 w-1/2" />
+          <Skeleton className="h-4 w-3/4" />
         </div>
-        <div className="card mono" role="status">Loading event…</div>
       </div>
     );
   }
   if (!f) {
     return (
       <div className="space-y-6 screen-in">
-        <div className="card" role="status">
+        <Card role="status" style={{ padding: 16 }}>
           <div className="font-semibold">Event not found.</div>
           <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
             This object isn&apos;t a HostIt event, or it failed to load.{" "}
@@ -136,7 +141,7 @@ export function EventPageScreen({ id }: { id: string }) {
             </Link>
             .
           </p>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -182,16 +187,17 @@ export function EventPageScreen({ id }: { id: string }) {
 
   async function run(tx: Transaction, coinKey?: string) {
     if (!addr) return;
-    setErr(null);
     setPendingCoin(coinKey ?? null);
     try {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
+      toast.success(isFree ? "Ticket claimed" : "Ticket purchased", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       q.refetch();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     } finally {
       setPendingCoin(null);
     }
@@ -238,16 +244,12 @@ export function EventPageScreen({ id }: { id: string }) {
           className="absolute flex gap-1.5"
           style={{ top: 14, left: 14, flexWrap: "wrap" }}
         >
-          {meta?.tag && (
-            <span className="badge" style={{ background: "rgba(0,0,0,.45)", color: "#fff" }}>
-              {meta.tag}
-            </span>
-          )}
-          {isFree && <span className="badge badge-green">Free</span>}
+          {meta?.tag && <Badge variant="secondary">{meta.tag}</Badge>}
+          {isFree && <Badge variant="secondary">Free</Badge>}
           {verified && (
-            <span className="badge badge-magenta">
+            <Badge variant="secondary">
               <Icon icon="streamline:star-badge-solid" size={11} /> Verified
-            </span>
+            </Badge>
           )}
         </div>
         <div
@@ -292,21 +294,23 @@ export function EventPageScreen({ id }: { id: string }) {
           </div>
 
           {/* Organizer row */}
-          <div className="card flex flex-wrap items-center justify-between gap-3" style={{ padding: 16 }}>
+          <Card className="flex flex-wrap flex-row items-center justify-between gap-3" style={{ padding: 16 }}>
             <div className="flex items-center gap-2 text-sm">
               <Icon icon="solar:user-rounded-bold" size={16} />
               <span style={{ color: "var(--fg2)" }}>Hosted by</span>
               <AddressDisplay address={organizer} suffix={4} />
               {verified && (
-                <span className="badge badge-magenta">
+                <Badge variant="secondary">
                   <Icon icon="streamline:star-badge-solid" size={11} /> Verified
-                </span>
+                </Badge>
               )}
             </div>
-            <Link href={`/forum/${id}`} className="btn btn-sm">
-              <Icon icon="ion:chatbubbles" size={15} /> Event chat
-            </Link>
-          </div>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/forum/${id}`}>
+                <Icon icon="ion:chatbubbles" size={15} /> Event chat
+              </Link>
+            </Button>
+          </Card>
 
           {/* About */}
           <div className="space-y-3">
@@ -364,7 +368,7 @@ export function EventPageScreen({ id }: { id: string }) {
 
         {/* ---- Sticky ticket panel ---- */}
         <div>
-          <div className="card space-y-4" style={{ position: "sticky", top: 24 }}>
+          <Card className="space-y-4" style={{ position: "sticky", top: 24, padding: 16 }}>
             <div>
               <h2 className="section-label flex items-center gap-1.5" style={{ margin: 0 }}>
                 <Icon icon="ion:ticket" size={14} /> Tickets
@@ -399,16 +403,16 @@ export function EventPageScreen({ id }: { id: string }) {
 
             {/* Buy / claim actions */}
             {isFree ? (
-              <button
-                className="btn btn-primary btn-block"
+              <Button
+                className="w-full"
                 disabled={!canAct || isPending}
                 onClick={() => run(claimFreeTx({ eventId: id, recipient: addr! }))}
               >
                 <Icon icon="ion:ticket" size={16} />
                 {isPending ? "Claiming…" : canAct ? "Claim free ticket" : statusLabel()}
-              </button>
+              </Button>
             ) : prices.length === 0 ? (
-              <span className="badge badge-line" role="status">Price not set by organizer</span>
+              <Badge variant="outline" role="status">Price not set by organizer</Badge>
             ) : (
               <div className="space-y-2">
                 {prices.map((p) => {
@@ -416,31 +420,36 @@ export function EventPageScreen({ id }: { id: string }) {
                   const total = totalWithFee(BigInt(p.price));
                   const buying = isPending && pendingCoin === p.coinType;
                   return (
-                    <button
-                      key={p.coinType}
-                      className="btn btn-primary btn-block"
-                      disabled={!canAct || isPending}
-                      title={`Total incl. 3% fee: ${fmtAmount(total, ci.decimals)} ${ci.symbol}`}
-                      onClick={() =>
-                        run(
-                          buyTx({
-                            eventId: id,
-                            coinType: p.coinType,
-                            priceUnits: BigInt(p.price),
-                            recipient: addr!,
-                            sponsored: ENOKI_ENABLED,
-                          }),
-                          p.coinType,
-                        )
-                      }
-                    >
-                      <Icon icon="ion:ticket" size={16} />
-                      {buying
-                        ? "Buying…"
-                        : canAct
-                          ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
-                          : statusLabel()}
-                    </button>
+                    <Tooltip key={p.coinType}>
+                      <TooltipTrigger asChild>
+                        <Button
+                          className="w-full"
+                          disabled={!canAct || isPending}
+                          onClick={() =>
+                            run(
+                              buyTx({
+                                eventId: id,
+                                coinType: p.coinType,
+                                priceUnits: BigInt(p.price),
+                                recipient: addr!,
+                                sponsored: ENOKI_ENABLED,
+                              }),
+                              p.coinType,
+                            )
+                          }
+                        >
+                          <Icon icon="ion:ticket" size={16} />
+                          {buying
+                            ? "Buying…"
+                            : canAct
+                              ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
+                              : statusLabel()}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Total incl. 3% fee: {fmtAmount(total, ci.decimals)} {ci.symbol}
+                      </TooltipContent>
+                    </Tooltip>
                   );
                 })}
                 <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
@@ -460,28 +469,14 @@ export function EventPageScreen({ id }: { id: string }) {
               </div>
             )}
 
-            {digest && (
-              <div role="status">
-                <TxLink
-                  digest={digest}
-                  className="mono text-[12px]"
-                  style={{ color: "var(--color-success)" }}
-                  before={<><Icon icon="ph:check-circle-bold" size={13} />{" "}</>}
-                />
-              </div>
-            )}
-            {err && (
-              <div className="text-xs break-words" role="alert" style={{ color: "var(--color-danger)" }}>
-                {err}
-              </div>
-            )}
-
             {isOrganizer && (
-              <Link href={`/manage/${id}`} className="btn btn-block">
-                <Icon icon="material-symbols-light:settings-rounded" size={16} /> Manage event
-              </Link>
+              <Button asChild variant="outline" className="w-full">
+                <Link href={`/manage/${id}`}>
+                  <Icon icon="material-symbols-light:settings-rounded" size={16} /> Manage event
+                </Link>
+              </Button>
             )}
-          </div>
+          </Card>
         </div>
       </div>
     </div>
