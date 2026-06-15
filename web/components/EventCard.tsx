@@ -24,7 +24,10 @@ interface EventCardProps {
   prices: PriceOption[];
   verified?: boolean;
   hasMarket?: boolean;
-  onCategory?: (cat: string) => void;
+  onMetadata?: (
+    eventId: string,
+    meta: Pick<EventMetadata, "category" | "city" | "venue">,
+  ) => void;
 }
 
 function fmtAmount(units: bigint, decimals: number): string {
@@ -52,7 +55,7 @@ export function EventCard({
   prices,
   verified = false,
   hasMarket = false,
-  onCategory,
+  onMetadata,
 }: EventCardProps) {
   const q = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>("getObject", {
     id: eventId,
@@ -81,13 +84,15 @@ export function EventCard({
       getEventMetadata(uri).then((m) => {
         if (!alive) return;
         setMeta(m);
-        if (m?.category && onCategory) onCategory(m.category);
+        if (m && onMetadata) {
+          onMetadata(eventId, { category: m.category, city: m.city, venue: m.venue });
+        }
       });
     }
     return () => {
       alive = false;
     };
-  }, [uri, onCategory]);
+  }, [eventId, uri, onMetadata]);
 
   if (!f) {
     const hue = hashHue(eventId);
