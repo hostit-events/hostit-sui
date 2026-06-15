@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body className="min-h-dvh flex flex-col">
         <Script
           src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"

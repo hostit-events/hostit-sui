@@ -6,6 +6,8 @@ import { DAppKitProvider } from "@mysten/dapp-kit-react";
 import { EnokiFlowProvider } from "@mysten/enoki/react";
 import { getDAppKit } from "@/lib/dapp-kit";
 import { ENOKI_API_KEY, ENOKI_SESSION_EPOCHS } from "@/lib/config";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 
 export function ClientProviders({ children }: { children: React.ReactNode }) {
   const [qc] = useState(() => new QueryClient());
@@ -22,7 +24,10 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
           Google session lasts ~30 days on testnet (~24h epochs) instead of the
           short Enoki default. See ENOKI_SESSION_EPOCHS in lib/config.ts. */}
       <EnokiFlowProvider apiKey={ENOKI_API_KEY} additionalEpochs={ENOKI_SESSION_EPOCHS}>
-        <DAppKitProvider dAppKit={dAppKit}>{children}</DAppKitProvider>
+        <DAppKitProvider dAppKit={dAppKit}>
+          <TooltipProvider delayDuration={150}>{children}</TooltipProvider>
+          <Toaster />
+        </DAppKitProvider>
       </EnokiFlowProvider>
     </QueryClientProvider>
   );

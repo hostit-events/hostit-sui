@@ -249,7 +249,7 @@ const CP_LAUNCHER_CSS = `
   z-index: 75;
   display: flex;
   flex-direction: column;
-  background: var(--card);
+  background: var(--brand-card);
   border: 1px solid var(--hair);
   overflow: hidden;
   animation: cpCardIn .22s cubic-bezier(.2,.7,.3,1);
