@@ -435,3 +435,32 @@ button[class*="connect" i] {
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
+
+/* ============================================================================
+   shadcn design-system overrides for the app zone (header → footer). Re-skins
+   the brand scaffold classes used ONLY by the (app)/(door) screens onto shadcn
+   tokens; the landing (landing-v2.css + its own classes) is unaffected. These
+   rules are unlayered, so they win over the @layer components originals above.
+   ========================================================================== */
+.glow { display: none; }
+.page-sub { color: var(--muted-foreground); }
+.section-label { color: var(--muted-foreground); }
+
+.stat-tile { border: 1px solid var(--border); background: var(--card); box-shadow: none; }
+.stat-tile.fill {
+  background: var(--primary); border-color: var(--primary);
+  color: var(--primary-foreground); box-shadow: none;
+}
+
+.topnav-item.active { background: var(--accent); color: var(--foreground); box-shadow: none; }
+
+.mtabbar {
+  background: color-mix(in oklch, var(--background) 92%, transparent);
+  border-top: 1px solid var(--border);
+}
+.mtab { color: var(--muted-foreground); }
+.mtab.active { color: var(--foreground); }
+.mtab-fab {
+  background: var(--primary); color: var(--primary-foreground);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .4);
+}
