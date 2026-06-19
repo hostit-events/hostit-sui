@@ -10,7 +10,9 @@ import {
   PACKAGE_ID,
   USDC_COIN_TYPE,
   coinInfo,
+  fmtAmount,
   matchesCoinType,
+  toUnits,
 } from "@/lib/config";
 import {
   addCheckinSignerTx,
@@ -46,15 +48,6 @@ import type {
 import type { Transaction } from "@mysten/sui/transactions";
 
 // === Inline helpers ===
-
-/** Format smallest-unit bigint into a human amount, trimming trailing zeros. */
-function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toString();
-  return `${whole}.${frac.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
-}
 
 /** Resolve a `type_name` coin string (no 0x, possibly padded) to a known coin type. */
 function resolveCoinType(typeName: string): string {
@@ -891,13 +884,7 @@ function PricePanel({
   // Parse the decimal string into smallest-unit bigint without float rounding.
   // Returns null on malformed input or excess fractional digits.
   function priceUnits(): bigint | null {
-    const dec = coinInfo(coin).decimals;
-    const s = priceStr.trim();
-    if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
-    const [whole, frac = ""] = s.split(".");
-    if (frac.length > dec) return null; // more precision than the coin supports
-    const padded = frac.padEnd(dec, "0");
-    return BigInt(whole || "0") * 10n ** BigInt(dec) + BigInt(padded || "0");
+    return toUnits(priceStr, coinInfo(coin).decimals);
   }
 
   async function submit() {

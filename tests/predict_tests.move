@@ -26,9 +26,10 @@ const START: u64 = 100_000_000; // == expiry_ms (betting closes here)
 const END: u64 = 186_400_000; // START + DAY
 const PSTART: u64 = 13_600_000; // START - DAY
 const BET_NOW: u64 = 50_000_000; // in [.., START); betting open
-const SETTLE_NOW: u64 = 150_000_000; // >= START; settle allowed
+const SETTLE_NOW: u64 = 200_000_000; // >= END; settle allowed (settle gated on end_ms)
 
 const MAX_TICKETS: u64 = 100;
+const DURING_EVENT: u64 = 150_000_000; // in [START, END); door-sales window
 
 // === Helpers ===
 
@@ -386,6 +387,116 @@ fun settle_wrong_event_aborts() {
 
     destroy(cap1);
     destroy(cap2);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+/// Mint `n` free tickets with the clock set to `when` (lets us mint AFTER
+/// betting closes but before `end_ms`, the door-sales case).
+fun mint_tickets_at(sc: &mut Scenario, clock: &mut Clock, n: u64, when: u64) {
+    clock.set_for_testing(when);
+    let mut i = 0;
+    while (i < n) {
+        sc.next_tx(ORG);
+        let mut ev = sc.take_shared<Event>();
+        let recipient = sui::address::from_u256((2000 + i) as u256);
+        market::claim_free(&mut ev, recipient, clock, sc.ctx());
+        ts::return_shared(ev);
+        i = i + 1;
+    };
+}
+
+// === Settle is illegal after betting closes but before the event ends ===
+#[test, expected_failure(abort_code = hostit_ticket::predict::E_NOT_EXPIRED)]
+fun settle_after_start_before_end_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE);
+    clock.set_for_testing(BET_NOW);
+    place_yes(&mut sc, &clock, ALICE, 10);
+    // now in [START, END): betting closed, but settle must still abort.
+    clock.set_for_testing(DURING_EVENT);
+    settle(&mut sc, &clock);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// === Door sales DURING the event are counted: under-strike at start,
+//     over-strike by end -> YES wins (the bug: old code settled NO on the
+//     start-time count). ===
+#[test]
+fun late_sales_during_event_decide_outcome() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE);
+    clock.set_for_testing(BET_NOW);
+    place_yes(&mut sc, &clock, ALICE, 50); // bets it WILL sell out
+    place_no(&mut sc, &clock, CAROL, 50);
+    // Before start: only a few sold (under strike). Old code would settle NO.
+    mint_tickets(&mut sc, &mut clock, 10);
+    // During the event: the rest sell out (crosses strike). 10 + 90 == MAX.
+    mint_tickets_at(&mut sc, &mut clock, MAX_TICKETS - 10, DURING_EVENT);
+    clock.set_for_testing(SETTLE_NOW); // >= END
+    settle(&mut sc, &clock);
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<SelloutMarket<USD>>();
+    assert!(predict::outcome_yes(&mkt), 0); // YES: final count hit strike
+    ts::return_shared(mkt);
+    assert!(claim_amount(&mut sc, ALICE) == 100, 1); // YES bettor wins the pot
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// Winning side has zero bettors -> losing-side bettors are refunded, not locked.
+// Everyone bets NO ("won't sell out"); the event sells out -> YES wins, but the
+// YES side is empty. Before this fix every claim aborted and the NO pool locked.
+#[test]
+fun winning_side_empty_refunds() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE);
+    clock.set_for_testing(BET_NOW);
+    place_no(&mut sc, &clock, CAROL, 50);
+    place_no(&mut sc, &clock, BOB, 30); // only NO bets
+    mint_tickets(&mut sc, &mut clock, MAX_TICKETS); // sells out -> YES wins (empty)
+    clock.set_for_testing(SETTLE_NOW);
+    settle(&mut sc, &clock);
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<SelloutMarket<USD>>();
+    assert!(predict::outcome_yes(&mkt), 0);
+    assert!(predict::total_yes(&mkt) == 0, 1); // winning side empty
+    ts::return_shared(mkt);
+    assert!(claim_amount(&mut sc, CAROL) == 50, 2); // own stake refunded
+    assert!(claim_amount(&mut sc, BOB) == 30, 3);
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<SelloutMarket<USD>>();
+    assert!(predict::no_pool_value(&mkt) == 0, 4); // nothing locked
+    ts::return_shared(mkt);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// A refund can only be taken once (stake removed on first claim).
+#[test, expected_failure(abort_code = hostit_ticket::predict::E_NO_STAKE)]
+fun double_refund_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE);
+    clock.set_for_testing(BET_NOW);
+    place_no(&mut sc, &clock, CAROL, 50);
+    mint_tickets(&mut sc, &mut clock, MAX_TICKETS); // YES wins, YES empty
+    clock.set_for_testing(SETTLE_NOW);
+    settle(&mut sc, &clock);
+    let _ = claim_amount(&mut sc, CAROL); // refund ok
+    let _ = claim_amount(&mut sc, CAROL); // second aborts E_NO_STAKE
+    destroy(cap);
     clock.destroy_for_testing();
     sc.end();
 }

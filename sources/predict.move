@@ -62,6 +62,9 @@ public struct SelloutMarket<phantom T> has key {
     event_seq: u64,
     /// Betting closes when `now >= expiry_ms` (= `event::start_ms` snapshot).
     expiry_ms: u64,
+    /// Settlement is legal only when `now >= settle_after_ms` (= `event::end_ms`
+    /// snapshot at creation, so a later `update_times` can't move the goal posts).
+    settle_after_ms: u64,
     /// YES wins iff `event::minted >= strike` (= `event::max_tickets` snapshot).
     strike: u64,
     yes_pool: Balance<T>,
@@ -115,6 +118,7 @@ public fun create_sellout_market<T>(
     let event_id = object::id(event);
     let event_seq = event::event_seq(event);
     let expiry_ms = event::start_ms(event);
+    let settle_after_ms = event::end_ms(event);
     let strike = event::max_tickets(event);
 
     let market = SelloutMarket<T> {
@@ -122,6 +126,7 @@ public fun create_sellout_market<T>(
         event_id,
         event_seq,
         expiry_ms,
+        settle_after_ms,
         strike,
         yes_pool: balance::zero<T>(),
         no_pool: balance::zero<T>(),
@@ -172,7 +177,8 @@ public fun bet_no<T>(
 // === Settle ===
 
 /// Resolve the market by reading the canonical `Event`. Permissionless: anyone
-/// can settle once `now >= expiry_ms`. YES wins iff `minted >= strike`.
+/// can settle once `now >= settle_after_ms` (= `end_ms` snapshot at creation).
+/// YES wins iff `minted >= strike`.
 public fun settle<T>(
     market: &mut SelloutMarket<T>,
     event: &Event,
@@ -182,7 +188,7 @@ public fun settle<T>(
     assert!(object::id(event) == market.event_id, E_WRONG_EVENT);
     assert!(!market.settled, E_ALREADY_SETTLED);
     let now = clock::timestamp_ms(clock);
-    assert!(now >= market.expiry_ms, E_NOT_EXPIRED);
+    assert!(now >= market.settle_after_ms, E_NOT_EXPIRED);
 
     let m = event::minted(event);
     let outcome_yes = m >= market.strike;
@@ -218,6 +224,23 @@ public fun claim<T>(
         (market.total_no, market.total_yes)
     };
 
+    // No bettors on the resolved winning side: nobody can win, so the pot is
+    // refunded — each caller reclaims their own stake from whichever side(s)
+    // they bet. Mirrors `claim_range`'s no-winner branch so funds never lock.
+    if (winning_total == 0) {
+        let mut refund = balance::zero<T>();
+        let ys = remove_stake_for(&mut market.yes_stakes, caller);
+        if (ys > 0) {
+            balance::join(&mut refund, balance::split(&mut market.yes_pool, ys));
+        };
+        let ns = remove_stake_for(&mut market.no_stakes, caller);
+        if (ns > 0) {
+            balance::join(&mut refund, balance::split(&mut market.no_pool, ns));
+        };
+        assert!(balance::value(&refund) > 0, E_NO_STAKE);
+        return coin::from_balance(refund, ctx)
+    };
+
     // Remove the caller's stake from the WINNING side's table (zero-out first to
     // prevent double-claim). Reading the losing table here is intentionally
     // impossible — losers simply have no entry on the winning side.
@@ -245,6 +268,16 @@ public fun claim<T>(
 }
 
 // === Internal ===
+
+/// Remove and return `caller`'s stake from `tbl` (0 if none). Removal blocks a
+/// second claim/refund (next read sees 0).
+fun remove_stake_for(tbl: &mut Table<address, u64>, caller: address): u64 {
+    if (table::contains(tbl, caller)) {
+        table::remove(tbl, caller)
+    } else {
+        0
+    }
+}
 
 /// Shared bet logic for YES/NO.
 fun place_bet<T>(
@@ -292,15 +325,10 @@ fun upsert_stake(tbl: &mut Table<address, u64>, who: address, amt: u64) {
 /// Remove and return `caller`'s stake from the *winning* side table (0 if none).
 /// Removal here is what makes a second `claim` abort with `E_NO_STAKE`.
 fun remove_winning_stake<T>(market: &mut SelloutMarket<T>, caller: address): u64 {
-    let tbl = if (market.outcome_yes) {
-        &mut market.yes_stakes
+    if (market.outcome_yes) {
+        remove_stake_for(&mut market.yes_stakes, caller)
     } else {
-        &mut market.no_stakes
-    };
-    if (table::contains(tbl, caller)) {
-        table::remove(tbl, caller)
-    } else {
-        0
+        remove_stake_for(&mut market.no_stakes, caller)
     }
 }
 
@@ -320,6 +348,7 @@ fun winning_losing_pools_mut<T>(
 public fun event_id<T>(market: &SelloutMarket<T>): ID { market.event_id }
 public fun event_seq<T>(market: &SelloutMarket<T>): u64 { market.event_seq }
 public fun expiry_ms<T>(market: &SelloutMarket<T>): u64 { market.expiry_ms }
+public fun settle_after_ms<T>(market: &SelloutMarket<T>): u64 { market.settle_after_ms }
 public fun strike<T>(market: &SelloutMarket<T>): u64 { market.strike }
 public fun total_yes<T>(market: &SelloutMarket<T>): u64 { market.total_yes }
 public fun total_no<T>(market: &SelloutMarket<T>): u64 { market.total_no }
@@ -375,6 +404,9 @@ public struct RangeMarket<phantom T> has key {
     event_seq: u64,
     /// Betting closes when `now >= expiry_ms` (= `event::start_ms` snapshot).
     expiry_ms: u64,
+    /// Settlement is legal only when `now >= settle_after_ms` (= `event::end_ms`
+    /// snapshot at creation, so a later `update_times` can't move the goal posts).
+    settle_after_ms: u64,
     /// Strictly-increasing bucket boundaries over `minted` (length `N`).
     cutoffs: vector<u64>,
     /// Per-bucket collateral pools (length `N+1`).
@@ -435,6 +467,7 @@ public fun create_range_market<T>(
     let event_id = object::id(event);
     let event_seq = event::event_seq(event);
     let expiry_ms = event::start_ms(event);
+    let settle_after_ms = event::end_ms(event);
 
     // Build N+1 empty pools / tables / totals.
     let buckets = n + 1;
@@ -454,6 +487,7 @@ public fun create_range_market<T>(
         event_id,
         event_seq,
         expiry_ms,
+        settle_after_ms,
         cutoffs,
         pools,
         stakes,
@@ -521,7 +555,7 @@ public fun settle_range<T>(
     assert!(object::id(event) == market.event_id, E_WRONG_EVENT);
     assert!(!market.settled, E_ALREADY_SETTLED);
     let now = clock::timestamp_ms(clock);
-    assert!(now >= market.expiry_ms, E_NOT_EXPIRED);
+    assert!(now >= market.settle_after_ms, E_NOT_EXPIRED);
 
     let m = event::minted(event);
     let n = vector::length(&market.cutoffs);
@@ -673,6 +707,7 @@ fun sum_totals<T>(market: &RangeMarket<T>): u64 {
 public fun range_event_id<T>(market: &RangeMarket<T>): ID { market.event_id }
 public fun range_event_seq<T>(market: &RangeMarket<T>): u64 { market.event_seq }
 public fun range_expiry_ms<T>(market: &RangeMarket<T>): u64 { market.expiry_ms }
+public fun range_settle_after_ms<T>(market: &RangeMarket<T>): u64 { market.settle_after_ms }
 public fun range_cutoffs<T>(market: &RangeMarket<T>): vector<u64> { market.cutoffs }
 /// Number of buckets (`N+1`).
 public fun range_num_buckets<T>(market: &RangeMarket<T>): u64 {

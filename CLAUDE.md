@@ -28,11 +28,12 @@ Frontend (run from `web/`):
 bun install
 bun run dev                    # local dev server (localhost:3000)
 bunx tsc --noEmit              # typecheck — the primary verification gate
-bun run lint                   # next lint
+bun run lint                   # eslint (flat config)
+bun run test                   # vitest unit tests (lib/ logic + a component smoke test)
 bun run smoke:sponsor          # exercise the Enoki sponsor API contract directly (scripts/sponsor-smoke.ts)
 ```
 
-There is **no JS unit-test framework** (no jest/vitest). Frontend correctness is verified with `bunx tsc --noEmit` + `bun run lint`. The Move tests (`tests/*.move`) are the contract test suite.
+Frontend correctness is verified with `bunx tsc --noEmit` + `bun run lint` + `bun run test` (**vitest** — unit tests under `web/lib/__tests__/` and `web/components/__tests__/`, covering pure `lib/` logic + a component smoke test). There is no browser E2E layer. The Move tests (`tests/*.move`) are the contract test suite.
 
 **Critical dev gotcha:** never run `bun run build` (production build) while `bun run dev` is running — they share `.next/` and the production build corrupts the dev client bundle (blank page / "Cannot find module './xxx.js'"). To verify the frontend, use `bunx tsc --noEmit`, not `bun run build`. If the dev bundle breaks: stop dev, `rm -rf .next`, restart.
 
@@ -88,7 +89,7 @@ Deploying Move changes = `sui client upgrade` (not fresh publish) using the exis
 
 Sponsorship is **server-side**: `app/api/sponsor` (create) + `app/api/sponsor/execute` (execute) hold `ENOKI_PRIVATE_API_KEY` (server-only — never `NEXT_PUBLIC_`-prefixed; likewise `GOOGLE_CLIENT_SECRET`). `ENOKI_ENABLED` (true when `NEXT_PUBLIC_ENOKI_API_KEY` is set) decides sponsored vs direct signing per call.
 
-The **allowlist of sponsorable move-call targets lives in `app/api/sponsor/route.ts` (`ALLOWED_MOVE_CALL_TARGETS`) and is authoritative**; `lib/sponsor.ts` (`SPONSORED_TARGETS`) is a client-side hint kept in sync. **When you add a sponsored Move entry function, add its target to both** — and use the correct package version (predict targets use `PACKAGE_ID_LATEST`). A sponsored tx whose targets aren't allowlisted fails at the Enoki API.
+The sponsorable move-call allowlist is a single exported `SPONSORED_TARGETS` in `web/lib/config.ts`, imported by `app/api/sponsor/route.ts` and passed to Enoki. **Add new sponsored entry functions there (one place)** — predict targets use `PACKAGE_ID_LATEST`, others `PACKAGE_ID`. `web/lib/__tests__/sponsoredTargets.test.ts` pins the version-origin invariant.
 
 ## Prediction markets (native, not DeepBook Predict)
 
