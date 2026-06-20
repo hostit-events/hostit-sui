@@ -24,28 +24,30 @@ rest. Numeric order below ≈ priority order.
 
 | Plan | Title | Pri | Effort | Risk | Depends on | Status |
 |------|-------|-----|--------|------|------------|--------|
-| 001 | Frontend CI gate (tsc/lint/vitest on `web/**`) | P1 | S | LOW | — | TODO |
-| 002 | Sponsor routes: auth/rate-limit/body-cap + stop error leak | P1 | S | LOW | — (see 003) | TODO |
-| 003 | Durable KV rate-limiter + replay nonce | P1 | M | MED | after 002 | DONE |
-| 004 | Security headers / CSP | P1 | M | MED | — | TODO |
-| 005 | Seal `verifyKeyServers` driven off NETWORK | P2 | S | LOW | — | TODO |
-| 006 | Copilot route: error hygiene + content clamp | P2 | S | LOW | — | TODO |
+| 001 | Frontend CI gate (tsc/lint/vitest on `web/**`) | P1 | S | LOW | — | DONE |
+| 002 | Sponsor routes: auth/rate-limit/body-cap + stop error leak | P1 | S | LOW | — (see 003) | DONE |
+| 003 | Durable KV rate-limiter + replay nonce | P1 | M | MED | after 002 | DONE (KV inert until RATE_LIMIT_KV_REST_* provisioned) |
+| 004 | Security headers / CSP | P1 | M | MED | — | DONE |
+| 005 | Seal `verifyKeyServers` driven off NETWORK | P2 | S | LOW | — | DONE |
+| 006 | Copilot route: error hygiene + content clamp | P2 | S | LOW | — | DONE |
 | 007 | Seal organizer-policy namespace separation | P2 | S | LOW | upgrade-gated | DONE (source+tests; deploy gated) |
-| 008 | Move quick correctness (overflow, zero-bet, signer-emit, doc) | P1 | S | LOW | upgrade-gated | DONE |
-| 009 | Refund fee policy (DECISION: refundable vs disclosed-forfeit) | P1 | M | MED | maintainer decision | TODO |
-| 010 | Per-day check-in unit (DECISION: per-ticket vs per-attendee) | P2 | M | MED | maintainer decision | DONE (PER-TICKET) |
-| 011 | Parimutuel dust sweep | P2 | M | LOW | upgrade-gated | TODO |
-| 012 | Capped-page reads → cursor enumeration + truncation banner | P1 | M | LOW | — | TODO |
+| 008 | Move quick correctness (overflow, zero-bet, signer-emit, doc) | P1 | S | LOW | upgrade-gated | DONE (source+tests; deploy gated) |
+| 009 | Refund fee policy → Option B (disclose forfeit) | P1 | M | MED | default chosen | DONE (source+tests; deploy gated) |
+| 010 | Per-day check-in unit → PER-TICKET | P2 | M | MED | default chosen | DONE (source+tests; deploy gated) |
+| 011 | Parimutuel dust sweep | P2 | M | LOW | upgrade-gated | BLOCKED — plan predicate unsafe; needs `had_winners` struct flag; reverted, re-plan |
+| 012 | Capped-page reads → cursor enumeration + truncation banner | P1 | M | LOW | — | DONE |
 | 013 | Real scannable ticket QR (add generator) | P1 | S | LOW | — | DONE |
-| 014 | `humanizeError` predict codes 7/8 | P2 | S | LOW | partial until FE-1 (deferred) | TODO |
+| 014 | `humanizeError` predict codes 7/8 | P2 | S | LOW | partial until FE-1 (deferred) | DONE |
 | 015 | Testnet banner visible on mobile | P2 | S | LOW | — | DONE |
 | 016 | Buy balance pre-check + faucet hint | P2 | S | LOW | — | DONE |
 | 017 | Mobile-correct empty-wallet guidance | P2 | S | LOW | — | DONE |
-| 018 | Cover-image perf attrs (lazy/decode/dims) | P2 | S | LOW | — | TODO |
+| 018 | Cover-image perf attrs (lazy/decode/dims) | P2 | S | LOW | — | DONE |
 | 019 | react-query global retry cap | P2 | S | LOW | — | DONE |
 | 020 | Config/doc package-id drift + pin framework SHA | P1 | S | LOW | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
+
+**Implemented on branch `advisor/implement-plans`** (5 commits, gates green: `sui move test` 100/100, web `tsc` clean + `lint` 0 errors + 109 vitest). **19/20 DONE; 011 deferred.** Decision plans resolved by the controller's default (reversible): 009 = Option B (disclose the non-refundable fee, no fund-flow change); 010 = PER-TICKET dedup. The Move plans (007–010) have code+tests landed and passing, but on-chain **deployment (`sui client upgrade`) is gated** and awaits explicit authorization. KV-backed rate limiting (003) is inert until `RATE_LIMIT_KV_REST_*` env vars are provisioned in the deploy environment.
 
 ## Dependency & sequencing notes
 
