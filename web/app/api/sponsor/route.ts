@@ -4,47 +4,7 @@
 // sends them to /api/sponsor/execute.
 
 import { EnokiClient } from "@mysten/enoki";
-import { NETWORK, PACKAGE_ID, PACKAGE_ID_LATEST } from "@/lib/config";
-
-const ALLOWED_MOVE_CALL_TARGETS = [
-  // hostit_ticket v3 entry points (onboarding + holder actions)
-  `${PACKAGE_ID}::event::create_event`,
-  `${PACKAGE_ID}::event::set_price`,
-  // organizer admin actions (gas-sponsored so hosts never need SUI)
-  `${PACKAGE_ID}::event::set_allow_self_checkin`,
-  `${PACKAGE_ID}::event::add_checkin_signer`,
-  `${PACKAGE_ID}::market::withdraw_event_balance`,
-  `${PACKAGE_ID}::market::buy`,
-  `${PACKAGE_ID}::market::buy_with_sui`,
-  `${PACKAGE_ID}::market::claim_free`,
-  `${PACKAGE_ID}::market::refund`,
-  `${PACKAGE_ID}::checkin::self_check_in`,
-  `${PACKAGE_ID}::checkin::check_in`,
-  // proof-of-attendance + community forum (holder actions, gas-sponsored)
-  `${PACKAGE_ID}::poap::claim_poap`,
-  `${PACKAGE_ID}::forum::post`,
-  // prediction markets (parimutuel sellout bets, settled on-chain via event::minted)
-  // NOTE: sponsoring speculative bets is a production money-decision to revisit.
-  `${PACKAGE_ID_LATEST}::predict::create_sellout_market`,
-  `${PACKAGE_ID_LATEST}::predict::bet_yes`,
-  `${PACKAGE_ID_LATEST}::predict::bet_no`,
-  `${PACKAGE_ID_LATEST}::predict::settle`,
-  `${PACKAGE_ID_LATEST}::predict::claim`,
-  // range markets (parimutuel bucket bets over final minted count)
-  `${PACKAGE_ID_LATEST}::predict::create_range_market`,
-  `${PACKAGE_ID_LATEST}::predict::bet_bucket`,
-  `${PACKAGE_ID_LATEST}::predict::settle_range`,
-  `${PACKAGE_ID_LATEST}::predict::claim_range`,
-  // 0x2 framework calls that the SDK's `coinWithBalance` intent may emit
-  // during tx.build() when resolving payment coins.
-  "0x2::coin::zero",
-  "0x2::coin::redeem_funds",
-  "0x2::coin::into_balance",
-  "0x2::coin::send_funds",
-  "0x2::coin::destroy_zero",
-  "0x2::balance::zero",
-  "0x2::balance::redeem_funds",
-];
+import { NETWORK, SPONSORED_TARGETS } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +42,7 @@ export async function POST(req: Request) {
       network: enokiNetwork,
       transactionKindBytes,
       sender,
-      allowedMoveCallTargets: ALLOWED_MOVE_CALL_TARGETS,
+      allowedMoveCallTargets: SPONSORED_TARGETS as string[],
     });
     return Response.json(sponsored);
   } catch (err: unknown) {

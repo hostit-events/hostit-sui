@@ -194,6 +194,7 @@ cp .env.local.example .env.local   # then fill in your keys (see below)
 bun run dev                        # http://localhost:3000
 bunx tsc --noEmit                  # typecheck (the primary verification gate)
 bun run lint
+bun run test                       # vitest unit tests
 ```
 
 > ⚠️ Do **not** run `bun run build` while `bun run dev` is running — they share `.next/` and the prod build corrupts the dev bundle. Use `bunx tsc --noEmit` to verify instead.

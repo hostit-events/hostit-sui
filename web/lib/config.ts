@@ -91,6 +91,45 @@ export const target = (mod: string, fn: string) =>
 export const targetLatest = (mod: string, fn: string) =>
   `${PACKAGE_ID_LATEST}::${mod}::${fn}` as const;
 
+/**
+ * Move-call targets HostIt will gas-sponsor via /api/sponsor (the Enoki
+ * allowlist). SINGLE SOURCE OF TRUTH — imported by app/api/sponsor/route.ts.
+ * predict::* targets use PACKAGE_ID_LATEST (added in an upgrade); all other
+ * hostit targets use PACKAGE_ID; 0x2 framework calls are emitted by the SDK's
+ * coinWithBalance intent. Add new sponsored entry functions HERE (one place).
+ */
+export const SPONSORED_TARGETS: readonly string[] = [
+  `${PACKAGE_ID}::event::create_event`,
+  `${PACKAGE_ID}::event::set_price`,
+  `${PACKAGE_ID}::event::set_allow_self_checkin`,
+  `${PACKAGE_ID}::event::add_checkin_signer`,
+  `${PACKAGE_ID}::market::withdraw_event_balance`,
+  `${PACKAGE_ID}::market::buy`,
+  `${PACKAGE_ID}::market::buy_with_sui`,
+  `${PACKAGE_ID}::market::claim_free`,
+  `${PACKAGE_ID}::market::refund`,
+  `${PACKAGE_ID}::checkin::self_check_in`,
+  `${PACKAGE_ID}::checkin::check_in`,
+  `${PACKAGE_ID}::poap::claim_poap`,
+  `${PACKAGE_ID}::forum::post`,
+  `${PACKAGE_ID_LATEST}::predict::create_sellout_market`,
+  `${PACKAGE_ID_LATEST}::predict::bet_yes`,
+  `${PACKAGE_ID_LATEST}::predict::bet_no`,
+  `${PACKAGE_ID_LATEST}::predict::settle`,
+  `${PACKAGE_ID_LATEST}::predict::claim`,
+  `${PACKAGE_ID_LATEST}::predict::create_range_market`,
+  `${PACKAGE_ID_LATEST}::predict::bet_bucket`,
+  `${PACKAGE_ID_LATEST}::predict::settle_range`,
+  `${PACKAGE_ID_LATEST}::predict::claim_range`,
+  "0x2::coin::zero",
+  "0x2::coin::redeem_funds",
+  "0x2::coin::into_balance",
+  "0x2::coin::send_funds",
+  "0x2::coin::destroy_zero",
+  "0x2::balance::zero",
+  "0x2::balance::redeem_funds",
+];
+
 // === DeepBook Predict (Phase 3 — DEFERRED / NOT wired) ===
 // HostIt's live prediction markets are the native `predict` module, which settles
 // trustlessly on `event::minted()`. Integrating DeepBook Predict proper is
@@ -150,6 +189,36 @@ export const COINS: CoinInfo[] = [
 
 export function coinInfo(type: string): CoinInfo {
   return COINS.find((c) => c.type === type) ?? { symbol: "?", type, decimals: 9 };
+}
+
+/**
+ * Parse a human decimal string into smallest units for a coin with `decimals`,
+ * EXACTLY (no float). Returns null on malformed input or more fractional digits
+ * than the coin supports — callers should surface that as a validation error.
+ */
+export function toUnits(human: string, decimals: number): bigint | null {
+  const s = human.trim();
+  if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
+  const [whole, frac = ""] = s.split(".");
+  if (frac.length > decimals) return null;
+  const padded = frac.padEnd(decimals, "0");
+  return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(padded || "0");
+}
+
+/**
+ * Format a smallest-unit bigint as a human amount for a coin with `decimals`,
+ * grouped (thousands separators) and with trailing fractional zeros trimmed.
+ * Display only — never use to compute on-chain amounts (see `toUnits`).
+ */
+export function fmtAmount(units: bigint, decimals: number): string {
+  const d = 10n ** BigInt(decimals);
+  const whole = units / d;
+  const frac = units % d;
+  // Pin the grouping locale: a runtime "."-grouping locale (e.g. de-DE) would
+  // collide with the literal "." decimal below → "1.234.5". en-US gives ",".
+  if (frac === 0n) return whole.toLocaleString("en-US");
+  const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
+  return `${whole.toLocaleString("en-US")}.${fracStr}`;
 }
 
 /** Normalize a coin type from a `type_name` (which omits the 0x and may be padded). */

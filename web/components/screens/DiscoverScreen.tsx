@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useCurrentAccount } from "@/lib/hooks";
-import { useEventList } from "@/lib/events";
+import { useEventList, useEventObjects } from "@/lib/events";
 import { useEventsWithMarkets } from "@/lib/markets";
 import { useSuiNSNames } from "@/lib/verification";
 import { CATEGORIES } from "@/lib/data";
@@ -17,6 +17,9 @@ export function DiscoverScreen() {
   // Single pair of queryEvents (both market kinds) -> Set of event_seq with a
   // market, so cards can flag it without an N+1 per-card query.
   const { hasMarketSeqs } = useEventsWithMarkets();
+  const { byId: eventObjects, refetch: refetchObjects } = useEventObjects(
+    useMemo(() => events.map((e) => e.eventId), [events]),
+  );
   const organizers = useMemo(() => Array.from(new Set(events.map((e) => e.organizer))), [events]);
   const names = useSuiNSNames(organizers);
 
@@ -113,6 +116,8 @@ export function DiscoverScreen() {
               verified={Boolean(names.get(e.organizer))}
               hasMarket={hasMarketSeqs.has(e.eventSeq)}
               onCategory={(c) => setCats((prev) => (prev[e.eventId] === c ? prev : { ...prev, [e.eventId]: c }))}
+              object={eventObjects.get(e.eventId) ?? null}
+              onRefetch={refetchObjects}
             />
           ))}
         </div>

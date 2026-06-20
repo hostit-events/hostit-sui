@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useCurrentAccount, useSuiQuery } from "@/lib/hooks";
 import { useEventList } from "@/lib/events";
-import { COINS, PACKAGE_ID, EV_TICKET_MINTED, coinInfo, matchesCoinType } from "@/lib/config";
+import { COINS, PACKAGE_ID, EV_TICKET_MINTED, coinInfo, fmtAmount, matchesCoinType } from "@/lib/config";
 import { MyEvents } from "@/components/MyEvents";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
@@ -46,16 +46,6 @@ interface MintRow {
 /** Resolve an emitted ascii coin_type to a known COINS entry (else `0x…`). */
 function resolveCoin(coinType: string): string {
   return COINS.find((c) => matchesCoinType(coinType, c.type))?.type ?? `0x${coinType}`;
-}
-
-/** Format smallest-unit bigint with a coin's decimals, trimming trailing zeros. */
-function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toLocaleString();
-  const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
-  return `${whole.toLocaleString()}.${fracStr}`;
 }
 
 /** Compact one or more coin totals into a single human label. */

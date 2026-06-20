@@ -27,9 +27,10 @@ const START: u64 = 100_000_000; // == expiry_ms (betting closes here)
 const END: u64 = 186_400_000; // START + DAY
 const PSTART: u64 = 13_600_000; // START - DAY
 const BET_NOW: u64 = 50_000_000; // in [.., START); betting open
-const SETTLE_NOW: u64 = 150_000_000; // >= START; settle allowed
+const SETTLE_NOW: u64 = 200_000_000; // >= END; settle allowed (settle gated on end_ms)
 
 const MAX_TICKETS: u64 = 1000;
+const DURING_EVENT: u64 = 150_000_000; // in [START, END); door-sales window
 
 // === Helpers ===
 
@@ -363,6 +364,70 @@ fun settle_picks_first_bucket() {
     ts::return_shared(mkt);
 
     assert!(claim_amount(&mut sc, ALICE) == 70, 1);
+
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+/// Mint `n` free tickets with the clock set to `when` (lets us mint AFTER
+/// betting closes but before `end_ms`, the door-sales case).
+fun mint_tickets_at(sc: &mut Scenario, clock: &mut Clock, n: u64, when: u64) {
+    clock.set_for_testing(when);
+    let mut i = 0;
+    while (i < n) {
+        sc.next_tx(ORG);
+        let mut ev = sc.take_shared<Event>();
+        let recipient = sui::address::from_u256((2000 + i) as u256);
+        market::claim_free(&mut ev, recipient, clock, sc.ctx());
+        ts::return_shared(ev);
+        i = i + 1;
+    };
+}
+
+// === Settle is illegal after betting closes but before the event ends ===
+#[test, expected_failure(abort_code = hostit_ticket::predict::E_NOT_EXPIRED)]
+fun settle_range_after_start_before_end_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE, vector[100, 500]);
+    clock.set_for_testing(BET_NOW);
+    place_bet(&mut sc, &clock, ALICE, 0, 10);
+    // now in [START, END): betting closed, but settle must still abort.
+    clock.set_for_testing(DURING_EVENT);
+    settle(&mut sc, &clock);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// === Door sales DURING the event move the winning bucket upward ===
+#[test]
+fun late_sales_move_winning_bucket() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE, vector[100, 500]);
+
+    clock.set_for_testing(BET_NOW);
+    place_bet(&mut sc, &clock, ALICE, 0, 30); // bets bucket 0 (low)
+    place_bet(&mut sc, &clock, CAROL, 2, 70); // bets bucket 2 (high)
+    // Before start: only 50 sold -> bucket 0 would win. Old code would give
+    // ALICE the pot. The fix waits until end_ms.
+    mint_tickets(&mut sc, &mut clock, 50);
+    // During the event: 600 more sold (total 650 > 500 cutoff) -> bucket 2 wins.
+    mint_tickets_at(&mut sc, &mut clock, 600, DURING_EVENT);
+
+    clock.set_for_testing(SETTLE_NOW); // >= END
+    settle(&mut sc, &clock);
+
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<RangeMarket<USD>>();
+    assert!(predict::range_winning_bucket(&mkt) == 2, 0);
+    ts::return_shared(mkt);
+
+    assert!(claim_amount(&mut sc, CAROL) == 100, 1); // CAROL wins the pot
 
     destroy(cap);
     clock.destroy_for_testing();
