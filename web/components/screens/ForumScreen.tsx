@@ -7,12 +7,14 @@ import { useDAppKit } from "@mysten/dapp-kit-react";
 import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
 import type { SessionKey } from "@mysten/seal";
 import type {
+  GetObjectParams,
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
   QueryEventsParams,
   PaginatedEvents,
+  SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
-import { TICKET_TYPE, ENOKI_ENABLED } from "@/lib/config";
+import { TICKET_TYPE, ORGANIZER_CAP_TYPE, ENOKI_ENABLED } from "@/lib/config";
 import { getFields } from "@/lib/ticketing";
 import {
   useCurrentAccount,
@@ -26,9 +28,20 @@ import { createSessionKey } from "@/lib/seal";
 import {
   FORUM_CHANNELS,
   EV_FORUM_POST,
+  EV_FORUM_MODERATED,
   encryptForumMessage,
   forumPostTx,
+  forumPostAsOrganizerTx,
+  forumModerateTx,
   decryptForumMessage,
+  foldModeration,
+  MOD_HIDE,
+  MOD_UNHIDE,
+  MOD_PIN,
+  MOD_UNPIN,
+  type ForumCredential,
+  type ModerationJson,
+  type ModerationState,
 } from "@/lib/forum";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
@@ -69,7 +82,7 @@ export function ForumScreen({ id }: { id: string }) {
   const sponsored = useSponsorAndExecute();
   const posting = regular.isPending || sponsored.isPending;
 
-  // --- Gate: does the connected wallet own a ticket for THIS event? ---------
+  // --- Gate: does the wallet hold a ticket OR the organizer cap for THIS event? --
   const ownedQ = useSuiQuery<
     "getOwnedObjects",
     GetOwnedObjectsParams,
@@ -79,6 +92,20 @@ export function ForumScreen({ id }: { id: string }) {
     {
       owner: addr ?? "",
       filter: { StructType: TICKET_TYPE },
+      options: { showContent: true },
+    },
+    { enabled: Boolean(addr) },
+  );
+
+  const capsQ = useSuiQuery<
+    "getOwnedObjects",
+    GetOwnedObjectsParams,
+    PaginatedObjectsResponse
+  >(
+    "getOwnedObjects",
+    {
+      owner: addr ?? "",
+      filter: { StructType: ORGANIZER_CAP_TYPE },
       options: { showContent: true },
     },
     { enabled: Boolean(addr) },
@@ -95,7 +122,42 @@ export function ForumScreen({ id }: { id: string }) {
     return null;
   }, [ownedQ.data, id]);
 
-  const gatedIn = Boolean(addr && myTicketId);
+  const myCapId = useMemo(() => {
+    if (!capsQ.data) return null;
+    for (const entry of capsQ.data.data) {
+      const fields = getFields(entry);
+      if (fields && String(fields.event_id) === id && entry.data?.objectId) {
+        return entry.data.objectId;
+      }
+    }
+    return null;
+  }, [capsQ.data, id]);
+
+  const isOrganizer = Boolean(myCapId);
+  const gatedIn = Boolean(addr && (myTicketId || myCapId));
+
+  // Credential used for decrypt + post. A ticket takes precedence (organizers who
+  // also hold a ticket post as a normal member); otherwise the organizer cap.
+  const cred = useMemo<ForumCredential | null>(
+    () =>
+      myTicketId
+        ? { kind: "ticket", ticketId: myTicketId }
+        : myCapId
+          ? { kind: "organizer", capId: myCapId }
+          : null,
+    [myTicketId, myCapId],
+  );
+
+  // Event organizer address — to badge organizer-authored posts (for everyone).
+  const eventQ = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>(
+    "getObject",
+    { id, options: { showContent: true } },
+    { enabled: gatedIn },
+  );
+  const organizerAddr = useMemo(() => {
+    const f = getFields(eventQ.data ?? {});
+    return f ? String(f.organizer) : null;
+  }, [eventQ.data]);
 
   // --- Channels -------------------------------------------------------------
   const [channel, setChannel] = useState<string>(FORUM_CHANNELS[0]?.id ?? "general");
@@ -107,6 +169,20 @@ export function ForumScreen({ id }: { id: string }) {
     { enabled: gatedIn, refetchInterval: gatedIn ? POLL_MS : false },
   );
 
+  // --- Moderation tombstones (organizer hide/pin) ---------------------------
+  const modQ = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
+    "queryEvents",
+    { query: { MoveEventType: EV_FORUM_MODERATED }, order: "descending", limit: 200 },
+    { enabled: gatedIn, refetchInterval: gatedIn ? POLL_MS : false },
+  );
+
+  const modState = useMemo<Map<string, ModerationState>>(() => {
+    const rows = (modQ.data?.data ?? [])
+      .map((ev) => ev.parsedJson as ModerationJson)
+      .filter((m) => m && m.event_id === id);
+    return foldModeration(rows);
+  }, [modQ.data, id]);
+
   const channelPosts = useMemo<ForumPostJson[]>(() => {
     if (!postsQ.data) return [];
     return postsQ.data.data
@@ -114,6 +190,13 @@ export function ForumScreen({ id }: { id: string }) {
       .filter((p) => p && p.event_id === id && p.channel === channel)
       .sort((a, b) => Number(a.ts_ms) - Number(b.ts_ms)); // oldest -> newest
   }, [postsQ.data, id, channel]);
+
+  // Pinned posts surface to the top; the rest stay chronological.
+  const orderedPosts = useMemo<ForumPostJson[]>(() => {
+    const pinned = channelPosts.filter((p) => modState.get(p.blob_id)?.pinned);
+    const rest = channelPosts.filter((p) => !modState.get(p.blob_id)?.pinned);
+    return [...pinned, ...rest];
+  }, [channelPosts, modState]);
 
   // --- Seal SessionKey (created lazily on first decrypt/post) ----------------
   const sessionRef = useRef<SessionKey | null>(null);
@@ -146,7 +229,7 @@ export function ForumScreen({ id }: { id: string }) {
 
   // Decrypt any posts we haven't decoded yet for the active channel.
   useEffect(() => {
-    if (!gatedIn || !myTicketId) return;
+    if (!gatedIn || !cred) return;
     const pending = channelPosts.filter(
       (p) => decoded[p.blob_id]?.text == null || decoded[p.blob_id] === undefined,
     );
@@ -154,8 +237,8 @@ export function ForumScreen({ id }: { id: string }) {
 
     let alive = true;
     (async () => {
-      // Only auto-create the session if it already exists; otherwise we keep
-      // messages as "encrypted" until the user signs (no surprise wallet popups).
+      // Only auto-decrypt if a session already exists; otherwise keep messages
+      // "encrypted" until the user signs (no surprise wallet popups).
       const sk = sessionRef.current;
       for (const p of pending) {
         const base: DecodedMessage = {
@@ -170,13 +253,7 @@ export function ForumScreen({ id }: { id: string }) {
           continue;
         }
         try {
-          const body = await decryptForumMessage(
-            suiClient,
-            sk,
-            p.blob_id,
-            myTicketId,
-            id,
-          );
+          const body = await decryptForumMessage(suiClient, sk, p.blob_id, cred, id);
           if (alive)
             setDecoded((m) => ({ ...m, [p.blob_id]: { ...base, text: body.text } }));
         } catch {
@@ -188,36 +265,25 @@ export function ForumScreen({ id }: { id: string }) {
     return () => {
       alive = false;
     };
-  }, [channelPosts, gatedIn, myTicketId, suiClient, id, sessionReady, decoded]);
+  }, [channelPosts, gatedIn, cred, suiClient, id, sessionReady, decoded]);
 
   // Manual "decrypt / re-sign" action: create session then decode this channel.
   async function unlockMessages() {
     const sk = await ensureSession();
-    if (!sk || !myTicketId) return;
+    if (!sk || !cred) return;
     for (const p of channelPosts) {
+      const base: DecodedMessage = {
+        blobId: p.blob_id,
+        channel: p.channel,
+        author: p.author,
+        tsMs: Number(p.ts_ms),
+        text: null,
+      };
       try {
-        const body = await decryptForumMessage(suiClient, sk, p.blob_id, myTicketId, id);
-        setDecoded((m) => ({
-          ...m,
-          [p.blob_id]: {
-            blobId: p.blob_id,
-            channel: p.channel,
-            author: p.author,
-            tsMs: Number(p.ts_ms),
-            text: body.text,
-          },
-        }));
+        const body = await decryptForumMessage(suiClient, sk, p.blob_id, cred, id);
+        setDecoded((m) => ({ ...m, [p.blob_id]: { ...base, text: body.text } }));
       } catch {
-        setDecoded((m) => ({
-          ...m,
-          [p.blob_id]: {
-            blobId: p.blob_id,
-            channel: p.channel,
-            author: p.author,
-            tsMs: Number(p.ts_ms),
-            text: null,
-          },
-        }));
+        setDecoded((m) => ({ ...m, [p.blob_id]: base }));
       }
     }
   }
@@ -233,12 +299,12 @@ export function ForumScreen({ id }: { id: string }) {
     // keep the stream pinned to the newest message
     const el = streamRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [channelPosts.length, decoded]);
+  }, [orderedPosts.length, decoded]);
 
   async function sendMessage() {
     if (sendingRef.current) return;
     const text = draft.trim();
-    if (!text || !addr || !myTicketId) return;
+    if (!text || !addr || !cred) return;
     sendingRef.current = true;
     try {
       // Encrypt body to the event policy and pin it on Walrus.
@@ -247,8 +313,11 @@ export function ForumScreen({ id }: { id: string }) {
         author: addr,
         ts: Date.now(),
       });
-      // Anchor the post on-chain (proves a valid ticket holder authored it).
-      const tx = forumPostTx(id, myTicketId, channel, blobId);
+      // Anchor the post on-chain — ticket holders via post, organizer via the cap.
+      const tx =
+        cred.kind === "ticket"
+          ? forumPostTx(id, cred.ticketId, channel, blobId)
+          : forumPostAsOrganizerTx(id, cred.capId, channel, blobId);
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
@@ -271,6 +340,30 @@ export function ForumScreen({ id }: { id: string }) {
     }
   }
 
+  // --- Moderation (organizer only) ------------------------------------------
+  async function runModerate(blobId: string, action: number) {
+    if (!myCapId || !addr) return;
+    try {
+      const tx = forumModerateTx(id, myCapId, blobId, action);
+      const out = ENOKI_ENABLED
+        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
+        : await regular.mutateAsync({ transaction: tx });
+      toast.success(
+        action === MOD_HIDE
+          ? "Post hidden"
+          : action === MOD_UNHIDE
+            ? "Post restored"
+            : action === MOD_PIN
+              ? "Post pinned"
+              : "Post unpinned",
+        { description: <TxLink digest={out.digest} chars={10} /> },
+      );
+      modQ.refetch();
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    }
+  }
+
   // --- Render: not connected ------------------------------------------------
   if (!addr) {
     return (
@@ -278,28 +371,35 @@ export function ForumScreen({ id }: { id: string }) {
         <LockOverlay
           id={id}
           title="Connect your wallet"
-          body="Forums are ticket-gated. Connect a wallet that holds a ticket for this event to join the conversation."
+          body="Forums are private to an event's ticket holders and its organizer. Connect your wallet to join the conversation."
           cta="View event"
         />
       </ForumShell>
     );
   }
 
-  // --- Render: gate (no ticket) ---------------------------------------------
-  if (ownedQ.isLoading) {
+  // --- Render: gate (checking / error) --------------------------------------
+  if (ownedQ.isLoading || capsQ.isLoading) {
     return (
       <ForumShell id={id}>
-        <Card className="mono p-4">Checking your tickets…</Card>
+        <Card className="mono p-4">Checking your access…</Card>
       </ForumShell>
     );
   }
 
-  if (ownedQ.isError) {
+  if (ownedQ.isError && capsQ.isError) {
     return (
       <ForumShell id={id}>
         <Card className="flex flex-row flex-wrap items-center gap-2 p-4 text-destructive">
-          Could not verify your tickets.{" "}
-          <Button variant="outline" size="sm" onClick={() => ownedQ.refetch()}>
+          Could not verify your access.{" "}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              ownedQ.refetch();
+              capsQ.refetch();
+            }}
+          >
             Retry
           </Button>
         </Card>
@@ -313,7 +413,7 @@ export function ForumScreen({ id }: { id: string }) {
         <LockOverlay
           id={id}
           title="Get a ticket to join"
-          body="This is a private, end-to-end encrypted forum for ticket holders. Grab a ticket to unlock the channels, lineup chatter, ride-shares and the market."
+          body="This is a private, end-to-end encrypted forum for ticket holders. Grab a ticket to unlock the channels, lineup chatter, ride-shares and the market. (Organizers get in with their event's organizer cap.)"
           cta="Get a ticket"
         />
       </ForumShell>
@@ -353,11 +453,17 @@ export function ForumScreen({ id }: { id: string }) {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+          {isOrganizer && (
+            <Badge variant="secondary" className="mt-3">
+              <Icon icon="streamline:star-badge-solid" size={11} /> Organizer
+            </Badge>
+          )}
           <div
             className="mono"
             style={{ marginTop: 16, fontSize: 11, color: "var(--fg3)", lineHeight: 1.5 }}
           >
-            <Icon icon="ic:round-lock" size={12} /> Seal-encrypted · ticket-gated
+            <Icon icon="ic:round-lock" size={12} /> Seal-encrypted ·{" "}
+            {isOrganizer ? "organizer admin" : "ticket-gated"}
           </div>
         </Card>
 
@@ -429,7 +535,7 @@ export function ForumScreen({ id }: { id: string }) {
                 <p className="text-sm">Be the first to post in #{activeChannel?.label}.</p>
               </div>
             ) : (
-              channelPosts.map((p) => (
+              orderedPosts.map((p) => (
                 <MessageRow
                   key={p.blob_id}
                   msg={
@@ -442,6 +548,10 @@ export function ForumScreen({ id }: { id: string }) {
                     }
                   }
                   mine={p.author === addr}
+                  isOrganizerPost={Boolean(organizerAddr && p.author === organizerAddr)}
+                  mod={modState.get(p.blob_id)}
+                  canModerate={isOrganizer}
+                  onModerate={runModerate}
                   onResign={unlockMessages}
                   sessionReady={sessionReady}
                 />
@@ -475,7 +585,7 @@ export function ForumScreen({ id }: { id: string }) {
                     onClick={() => void sendMessage()}
                   >
                     <Icon icon="ic:round-send" size={16} />
-                    {posting ? "Posting…" : "Send"}
+                    {posting ? "Posting…" : isOrganizer && !myTicketId ? "Send as organizer" : "Send"}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -576,11 +686,19 @@ function LockOverlay({
 function MessageRow({
   msg,
   mine,
+  isOrganizerPost,
+  mod,
+  canModerate,
+  onModerate,
   onResign,
   sessionReady,
 }: {
   msg: DecodedMessage;
   mine: boolean;
+  isOrganizerPost: boolean;
+  mod: ModerationState | undefined;
+  canModerate: boolean;
+  onModerate: (blobId: string, action: number) => void;
   onResign: () => void;
   sessionReady: boolean;
 }) {
@@ -590,42 +708,92 @@ function MessageRow({
     hour: "2-digit",
     minute: "2-digit",
   });
+  const hidden = Boolean(mod?.hidden);
+  const pinned = Boolean(mod?.pinned);
+
   return (
     <div
       className="flex flex-col gap-1"
       style={{ alignItems: mine ? "flex-end" : "flex-start" }}
     >
       <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--fg3)" }}>
+        {pinned && (
+          <Badge variant="secondary">
+            <Icon icon="ic:round-push-pin" size={11} /> pinned
+          </Badge>
+        )}
+        {isOrganizerPost && (
+          <Badge variant="secondary">
+            <Icon icon="streamline:star-badge-solid" size={11} /> organizer
+          </Badge>
+        )}
         {mine ? (
           <Badge variant="default">you</Badge>
         ) : (
           <AddressDisplay address={msg.author} suffix={4} />
         )}
         <span className="mono">{time}</span>
-      </div>
-      <Card
-        className={mine ? "bg-primary/10" : "bg-muted"}
-        style={{ padding: "10px 14px", maxWidth: "78%" }}
-      >
-        {msg.text != null ? (
-          <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.text}</span>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-                onClick={onResign}
-              >
-                <Icon icon="ic:round-lock" size={13} />
-                [encrypted — re-sign session]
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {sessionReady ? "Decrypt failed — re-sign your session." : "Sign a session to decrypt."}
-            </TooltipContent>
-          </Tooltip>
+        {canModerate && (
+          <span className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label={pinned ? "Unpin" : "Pin"}
+                  onClick={() => onModerate(msg.blobId, pinned ? MOD_UNPIN : MOD_PIN)}
+                >
+                  <Icon icon={pinned ? "ic:round-push-pin" : "ic:outline-push-pin"} size={14} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{pinned ? "Unpin" : "Pin"}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label={hidden ? "Unhide" : "Hide"}
+                  onClick={() => onModerate(msg.blobId, hidden ? MOD_UNHIDE : MOD_HIDE)}
+                >
+                  <Icon icon={hidden ? "ic:round-visibility" : "ic:round-visibility-off"} size={14} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{hidden ? "Unhide" : "Hide"}</TooltipContent>
+            </Tooltip>
+          </span>
         )}
-      </Card>
+      </div>
+
+      {hidden ? (
+        <Card className="bg-muted" style={{ padding: "10px 14px", maxWidth: "78%" }}>
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground italic">
+            <Icon icon="ic:round-visibility-off" size={13} /> Hidden by organizer
+          </span>
+        </Card>
+      ) : (
+        <Card
+          className={mine ? "bg-primary/10" : "bg-muted"}
+          style={{ padding: "10px 14px", maxWidth: "78%" }}
+        >
+          {msg.text != null ? (
+            <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.text}</span>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                  onClick={onResign}
+                >
+                  <Icon icon="ic:round-lock" size={13} />
+                  [encrypted — re-sign session]
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {sessionReady ? "Decrypt failed — re-sign your session." : "Sign a session to decrypt."}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

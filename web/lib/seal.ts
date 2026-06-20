@@ -79,6 +79,16 @@ export function approveSelf(tx: Transaction, id: string) {
   });
 }
 
+/** Organizer-gated decrypt: caller holds the event's OrganizerCap. Same original
+ *  `access` module as the ticket policy (exists at PACKAGE_ID). The ciphertext is
+ *  the SAME as the ticket path — both check `is_prefix(event_id, id)`. */
+export function approveOrganizer(tx: Transaction, id: string, capId: string, eventId: string) {
+  tx.moveCall({
+    target: `${PACKAGE_ID}::access::seal_approve_organizer`,
+    arguments: [tx.pure.vector("u8", Array.from(fromHex(id))), tx.object(capId), tx.object(eventId)],
+  });
+}
+
 export async function sealDecrypt(
   suiClient: any,
   sessionKey: SessionKey,
