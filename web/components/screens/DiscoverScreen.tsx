@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useCurrentAccount } from "@/lib/hooks";
 import { useEventList, useEventObjects } from "@/lib/events";
@@ -17,7 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 export function DiscoverScreen() {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
-  const { events, pricesBySeq, isLoading, isError, refetch } = useEventList();
+  const { events, pricesBySeq, isLoading, isError, truncated, refetch } = useEventList();
   // Single pair of queryEvents (both market kinds) -> Set of event_seq with a
   // market, so cards can flag it without an N+1 per-card query.
   const { hasMarketSeqs } = useEventsWithMarkets();
@@ -50,24 +50,6 @@ export function DiscoverScreen() {
     },
     [],
   );
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const uris = await Promise.all(
-        events.map(async () => {
-          // we only have the on-chain uri via getObject elsewhere; metadata cache
-          // keyed by uri. Here we resolve category best-effort via the event uri.
-          return null;
-        }),
-      );
-      void uris;
-      if (!alive) return;
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [events]);
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
@@ -154,23 +136,30 @@ export function DiscoverScreen() {
           </CardContent>
         </Card>
       ) : (
-        <div className="ev-grid">
-          {filtered.map((e) => (
-            <EventCard
-              key={e.eventId}
-              eventId={e.eventId}
-              organizer={e.organizer}
-              buyerAddress={addr}
-              isFree={e.isFree}
-              prices={pricesBySeq.get(e.eventSeq) ?? []}
-              verified={Boolean(names.get(e.organizer))}
-              hasMarket={hasMarketSeqs.has(e.eventSeq)}
-              onMetadata={onMetadata}
-              object={eventObjects.get(e.eventId) ?? null}
-              onRefetch={refetchObjects}
-            />
-          ))}
-        </div>
+        <>
+          <div className="ev-grid">
+            {filtered.map((e) => (
+              <EventCard
+                key={e.eventId}
+                eventId={e.eventId}
+                organizer={e.organizer}
+                buyerAddress={addr}
+                isFree={e.isFree}
+                prices={pricesBySeq.get(e.eventSeq) ?? []}
+                verified={Boolean(names.get(e.organizer))}
+                hasMarket={hasMarketSeqs.has(e.eventSeq)}
+                onMetadata={onMetadata}
+                object={eventObjects.get(e.eventId) ?? null}
+                onRefetch={refetchObjects}
+              />
+            ))}
+          </div>
+          {truncated && (
+            <p className="mono text-sm" style={{ color: "var(--fg3)", textAlign: "center" }}>
+              Search covers the {events.length} most recent events — older ones aren&apos;t loaded yet.
+            </p>
+          )}
+        </>
       )}
     </div>
   );

@@ -4,16 +4,22 @@
 // mirrors lib/events.ts (queryEvents-driven, no fragile object scans).
 //
 // Both market kinds emit a "*MarketCreated" log carrying the event_seq they were
-// opened against. We query each kind's creation log and pick the FIRST match per
-// event_seq (UI-level dedup — Move is permissionless so anyone can open many
-// markets for one event; v1 surfaces just one of each kind). The sellout
-// constants are pinned at PREDICT_SELLOUT_PKG; the range constants live at
-// PACKAGE_ID_LATEST (Phase-2 upgrade) — both already resolved in config.ts.
+// opened against. We FULLY enumerate each kind's creation log (cursor-followed,
+// via useAllEvents) and pick the FIRST match per event_seq (UI-level dedup — Move
+// is permissionless so anyone can open many markets for one event; v1 surfaces
+// just one of each kind). Enumerating past the first page means a market opened
+// on an OLDER event is still found (GH#32). The sellout constants are pinned at
+// PREDICT_SELLOUT_PKG; the range constants live at PACKAGE_ID_LATEST (Phase-2
+// upgrade) — both already resolved in config.ts.
+//
+// These hooks don't surface useAllEvents' `truncated` flag: a market beyond the
+// ~1000-log page bound being missed is theoretical at v1 testnet volume (and is
+// strictly better than the old single capped page). The v2 indexer is the fix if
+// market volume ever outgrows full enumeration.
 
 import { useMemo } from "react";
-import { useSuiQuery } from "./hooks";
+import { useAllEvents } from "./events";
 import { EV_MARKET_CREATED, EV_RANGE_MARKET_CREATED } from "./config";
-import type { PaginatedEvents, QueryEventsParams } from "@mysten/sui/jsonRpc";
 
 interface MarketCreatedJson {
   market_id: string;
@@ -33,20 +39,11 @@ export interface EventMarkets {
  * queries resolve; `refetch` re-runs both.
  */
 export function useEventMarkets(eventSeq: string): EventMarkets {
-  const sellout = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_MARKET_CREATED }, order: "descending", limit: 100 },
-    { staleTime: 30_000 },
-  );
-  const range = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_RANGE_MARKET_CREATED }, order: "descending", limit: 100 },
-    { staleTime: 30_000 },
-  );
+  const sellout = useAllEvents(EV_MARKET_CREATED);
+  const range = useAllEvents(EV_RANGE_MARKET_CREATED);
 
   const selloutMarketId = useMemo(() => {
-    if (!sellout.data) return null;
-    for (const ev of sellout.data.data) {
+    for (const ev of sellout.data?.data ?? []) {
       const p = ev.parsedJson as MarketCreatedJson;
       if (String(p.event_seq) === eventSeq) return p.market_id;
     }
@@ -54,8 +51,7 @@ export function useEventMarkets(eventSeq: string): EventMarkets {
   }, [sellout.data, eventSeq]);
 
   const rangeMarketId = useMemo(() => {
-    if (!range.data) return null;
-    for (const ev of range.data.data) {
+    for (const ev of range.data?.data ?? []) {
       const p = ev.parsedJson as MarketCreatedJson;
       if (String(p.event_seq) === eventSeq) return p.market_id;
     }
@@ -81,16 +77,8 @@ export function useEventMarkets(eventSeq: string): EventMarkets {
  * to show its Market badge.
  */
 export function useEventsWithMarkets(): { hasMarketSeqs: Set<string>; loading: boolean } {
-  const sellout = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_MARKET_CREATED }, order: "descending", limit: 200 },
-    { staleTime: 30_000 },
-  );
-  const range = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_RANGE_MARKET_CREATED }, order: "descending", limit: 200 },
-    { staleTime: 30_000 },
-  );
+  const sellout = useAllEvents(EV_MARKET_CREATED);
+  const range = useAllEvents(EV_RANGE_MARKET_CREATED);
 
   const hasMarketSeqs = useMemo(() => {
     const s = new Set<string>();
