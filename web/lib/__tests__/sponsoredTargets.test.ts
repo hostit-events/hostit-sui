@@ -11,13 +11,23 @@ describe("SPONSORED_TARGETS", () => {
       `${PACKAGE_ID_LATEST}::predict::bet_yes`,
       `${PACKAGE_ID_LATEST}::predict::claim`,
       `${PACKAGE_ID_LATEST}::predict::claim_range`,
+      `${PACKAGE_ID}::forum::post`,
+      `${PACKAGE_ID_LATEST}::forum::post_as_organizer`,
+      `${PACKAGE_ID_LATEST}::forum::moderate`,
     ]) expect(SPONSORED_TARGETS).toContain(t);
   });
 
-  it("uses PACKAGE_ID_LATEST for every predict target, PACKAGE_ID for other hostit targets", () => {
+  it("uses PACKAGE_ID_LATEST for upgrade-introduced targets, PACKAGE_ID for original ones", () => {
+    // Functions that DON'T exist in the original package (added in an upgrade) must
+    // target PACKAGE_ID_LATEST: all predict::*, plus forum::post_as_organizer /
+    // forum::moderate (the organizer-admin upgrade). forum::post stays on PACKAGE_ID.
+    const latestOrigin = (t: string) =>
+      t.includes("::predict::") ||
+      t.endsWith("::forum::post_as_organizer") ||
+      t.endsWith("::forum::moderate");
     for (const t of SPONSORED_TARGETS) {
       if (t.startsWith("0x2::")) continue; // framework calls
-      if (t.includes("::predict::")) expect(t.startsWith(PACKAGE_ID_LATEST)).toBe(true);
+      if (latestOrigin(t)) expect(t.startsWith(PACKAGE_ID_LATEST)).toBe(true);
       else expect(t.startsWith(PACKAGE_ID)).toBe(true);
     }
   });

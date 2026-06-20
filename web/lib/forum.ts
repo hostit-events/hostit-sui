@@ -1,16 +1,21 @@
-// Per-event forum: messages are Seal-encrypted (ticket-gated), stored on Walrus,
-// and anchored on-chain via `forum::post`. Readers query PostCreated events and
-// decrypt bodies they're authorized for.
+// Per-event forum: messages are Seal-encrypted, stored on Walrus, and anchored
+// on-chain via `forum::post` (ticket holders) or `forum::post_as_organizer` (the
+// event's organizer). Organizers also `forum::moderate` (hide/pin) — tombstones
+// clients fold over the immutable post log. Readers query PostCreated +
+// PostModerated and decrypt bodies they're authorized for (ticket OR organizer).
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Transaction } from "@mysten/sui/transactions";
 import { fromBase64, toBase64 } from "@mysten/sui/utils";
 import type { SessionKey } from "@mysten/seal";
-import { PACKAGE_ID, CLOCK_ID } from "./config";
+import { PACKAGE_ID, PACKAGE_ID_LATEST, CLOCK_ID } from "./config";
 import { storeBlob, readBlob } from "./walrus";
-import { sealEncrypt, sealDecrypt, approveTicket } from "./seal";
+import { sealEncrypt, sealDecrypt, approveTicket, approveOrganizer } from "./seal";
 
 export const EV_FORUM_POST = `${PACKAGE_ID}::forum::PostCreated`;
+// PostModerated is introduced in the organizer-admin UPGRADE, so its type origin
+// is PACKAGE_ID_LATEST (like predict structs). See config.ts versioning rules.
+export const EV_FORUM_MODERATED = `${PACKAGE_ID_LATEST}::forum::PostModerated`;
 
 export const FORUM_CHANNELS = [
   { id: "general", label: "general", icon: "ic:round-tag" },
@@ -19,13 +24,25 @@ export const FORUM_CHANNELS = [
   { id: "market", label: "market", icon: "ic:round-sell" },
 ];
 
+// Moderation action codes — MUST mirror forum.move's client-side mapping.
+export const MOD_HIDE = 0;
+export const MOD_UNHIDE = 1;
+export const MOD_PIN = 2;
+export const MOD_UNPIN = 3;
+
 export interface ForumBody {
   text: string;
   author: string;
   ts: number;
 }
 
-/** Encrypt a message body for an event (ticket-gated) and store on Walrus. */
+/** The credential a caller decrypts/posts with: a Ticket for the event, or the
+ *  event's OrganizerCap. Both satisfy the Seal policy on the same ciphertext. */
+export type ForumCredential =
+  | { kind: "ticket"; ticketId: string }
+  | { kind: "organizer"; capId: string };
+
+/** Encrypt a message body for an event (event-id-gated) and store on Walrus. */
 export async function encryptForumMessage(
   suiClient: any,
   eventId: string,
@@ -60,12 +77,57 @@ export function forumPostTx(
   return tx;
 }
 
-/** Fetch + decrypt a message body. Requires a SessionKey and a ticket for the event. */
+/** Post as the organizer (OrganizerCap-gated, no ticket). New in the upgrade →
+ *  PACKAGE_ID_LATEST target. */
+export function forumPostAsOrganizerTx(
+  eventId: string,
+  capId: string,
+  channel: string,
+  blobId: string,
+): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${PACKAGE_ID_LATEST}::forum::post_as_organizer`,
+    arguments: [
+      tx.object(eventId),
+      tx.object(capId),
+      tx.pure.string(channel),
+      tx.pure.string(blobId),
+      tx.object(CLOCK_ID),
+    ],
+  });
+  return tx;
+}
+
+/** Moderate a post by its Walrus blob id (hide/unhide/pin/unpin). New in the
+ *  upgrade → PACKAGE_ID_LATEST target. */
+export function forumModerateTx(
+  eventId: string,
+  capId: string,
+  targetBlobId: string,
+  action: number,
+): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${PACKAGE_ID_LATEST}::forum::moderate`,
+    arguments: [
+      tx.object(eventId),
+      tx.object(capId),
+      tx.pure.string(targetBlobId),
+      tx.pure.u8(action),
+      tx.object(CLOCK_ID),
+    ],
+  });
+  return tx;
+}
+
+/** Fetch + decrypt a message body. Requires a SessionKey and a credential
+ *  (ticket OR organizer cap) authorized for the event. */
 export async function decryptForumMessage(
   suiClient: any,
   sessionKey: SessionKey,
   blobId: string,
-  ticketId: string,
+  cred: ForumCredential,
   eventId: string,
 ): Promise<ForumBody> {
   const env = JSON.parse(new TextDecoder().decode(await readBlob(blobId))) as {
@@ -74,7 +136,45 @@ export async function decryptForumMessage(
   };
   const ct = fromBase64(env.ct);
   const pt = await sealDecrypt(suiClient, sessionKey, ct, (tx) =>
-    approveTicket(tx, env.id, ticketId, eventId),
+    cred.kind === "ticket"
+      ? approveTicket(tx, env.id, cred.ticketId, eventId)
+      : approveOrganizer(tx, env.id, cred.capId, eventId),
   );
   return JSON.parse(new TextDecoder().decode(pt)) as ForumBody;
+}
+
+// === Moderation tombstones (PostModerated) ===
+
+export interface ModerationJson {
+  event_id: string;
+  target_blob_id: string;
+  action: number | string;
+  by: string;
+  ts_ms: string | number;
+}
+
+export interface ModerationState {
+  hidden: boolean;
+  pinned: boolean;
+}
+
+/**
+ * Fold `PostModerated` events into per-blob state — the LATEST action per blob
+ * wins (hide/unhide toggle `hidden`, pin/unpin toggle `pinned`). Pure + sorted
+ * by timestamp internally so callers can pass events in any order. This is how
+ * clients honor moderation over the immutable post log.
+ */
+export function foldModeration(events: ModerationJson[]): Map<string, ModerationState> {
+  const sorted = [...events].sort((a, b) => Number(a.ts_ms) - Number(b.ts_ms));
+  const m = new Map<string, ModerationState>();
+  for (const e of sorted) {
+    const cur = m.get(e.target_blob_id) ?? { hidden: false, pinned: false };
+    const a = Number(e.action);
+    if (a === MOD_HIDE) cur.hidden = true;
+    else if (a === MOD_UNHIDE) cur.hidden = false;
+    else if (a === MOD_PIN) cur.pinned = true;
+    else if (a === MOD_UNPIN) cur.pinned = false;
+    m.set(e.target_blob_id, cur);
+  }
+  return m;
 }

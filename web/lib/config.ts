@@ -106,9 +106,10 @@ export const targetLatest = (mod: string, fn: string) =>
 /**
  * Move-call targets HostIt will gas-sponsor via /api/sponsor (the Enoki
  * allowlist). SINGLE SOURCE OF TRUTH — imported by app/api/sponsor/route.ts.
- * predict::* targets use PACKAGE_ID_LATEST (added in an upgrade); all other
- * hostit targets use PACKAGE_ID; 0x2 framework calls are emitted by the SDK's
- * coinWithBalance intent. Add new sponsored entry functions HERE (one place).
+ * Upgrade-introduced targets (predict::*, forum::post_as_organizer,
+ * forum::moderate) use PACKAGE_ID_LATEST; original-package targets use
+ * PACKAGE_ID; 0x2 framework calls are emitted by the SDK's coinWithBalance
+ * intent. Add new sponsored entry functions HERE (one place).
  */
 export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::event::create_event`,
@@ -124,6 +125,9 @@ export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::checkin::check_in`,
   `${PACKAGE_ID}::poap::claim_poap`,
   `${PACKAGE_ID}::forum::post`,
+  // Organizer admin — introduced in the organizer-admin upgrade (PACKAGE_ID_LATEST).
+  `${PACKAGE_ID_LATEST}::forum::post_as_organizer`,
+  `${PACKAGE_ID_LATEST}::forum::moderate`,
   `${PACKAGE_ID_LATEST}::predict::create_sellout_market`,
   `${PACKAGE_ID_LATEST}::predict::bet_yes`,
   `${PACKAGE_ID_LATEST}::predict::bet_no`,

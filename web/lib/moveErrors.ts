@@ -51,7 +51,10 @@ const MAP: Record<string, Record<number, string>> = {
     2: "You can only claim a POAP after checking in.",
     3: "You've already claimed this POAP.",
   },
-  forum: { 1: "This ticket isn't for this event." },
+  forum: {
+    1: "This ticket isn't for this event.",
+    2: "Unknown moderation action.",
+  },
   hub: { 1: "Insufficient balance.", 2: "No balance to withdraw.", 3: "Value too high." },
   predict: {
     1: "This market is already settled.",
