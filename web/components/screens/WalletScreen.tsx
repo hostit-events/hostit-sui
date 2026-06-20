@@ -11,11 +11,12 @@ import {
 import { getFields } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
 import { claimPoapTx, POAP_TYPE } from "@/lib/poap";
-import { catPalette, catGlyph, PAL } from "@/lib/data";
+import { PAL } from "@/lib/data";
 import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { useSuiNSName } from "@/lib/suins";
 import { MyTickets } from "@/components/MyTickets";
 import { AddressDisplay } from "@/components/AddressDisplay";
+import { EventPoster } from "@/components/EventPoster";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
 import { Card } from "@/components/ui/card";
@@ -137,9 +138,9 @@ function WalletInner({ addr }: { addr: string }) {
         <div className="glow" style={{ width: 300, height: 300, background: "rgba(0,124,250,.4)", top: -160, right: -40, opacity: 0.2 }} />
         <div
           className="poster flex items-center justify-center"
-          style={{ width: 64, height: 64, flex: "none", ["--p1" as string]: "var(--hi-blue)", ["--p2" as string]: "var(--hi-magenta)" } as React.CSSProperties}
+          style={{ width: 64, height: 64, flex: "none" }}
         >
-          <div className="poster-noise" />
+          <EventPoster seed={addr} glyph={false} className="absolute inset-0" />
           <span className="relative" style={{ color: "#fff" }}><Icon icon="solar:wallet-bold" size={30} /></span>
         </div>
         <div className="relative grow" style={{ minWidth: 0 }}>
@@ -271,17 +272,14 @@ function PoapCard({ fields }: { fields: Record<string, unknown> }) {
   const name = String(fields.name ?? "POAP");
   const eventSeq = String(fields.event_seq ?? "0");
   const eventId = String(fields.event_id ?? "");
-  const [p1, p2] = catPalette(paletteCatForSeq(eventSeq));
-  const glyph = catGlyph(paletteCatForSeq(eventSeq));
 
   return (
     <Card className="gap-0 py-0">
       <div
         className="poster flex items-center justify-center rounded-b-none"
-        style={{ height: 150, ["--p1" as string]: p1, ["--p2" as string]: p2 } as React.CSSProperties}
+        style={{ height: 150 }}
       >
-        <div className="poster-noise" />
-        <span className="poster-glyph"><Icon icon={glyph} size={64} /></span>
+        <EventPoster seed={String(eventSeq)} category={paletteCatForSeq(eventSeq)} className="absolute inset-0" />
         <div className="absolute" style={{ top: 12, left: 12 }}>
           <Badge variant="secondary"><Icon icon="ph:medal-fill" size={11} /> POAP</Badge>
         </div>

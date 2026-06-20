@@ -9,9 +9,9 @@ import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hook
 import type { PriceOption } from "@/lib/events";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
-import { catPalette, catGlyph } from "@/lib/data";
 import { humanizeError } from "@/lib/moveErrors";
 import { TxLink } from "@/components/TxLink";
+import { EventPoster } from "@/components/EventPoster";
 import { AddressDisplay } from "./AddressDisplay";
 import { Icon } from "./Icon";
 import { Card } from "@/components/ui/card";
@@ -38,14 +38,6 @@ interface EventCardProps {
   object?: SuiObjectResponse | null;
   /** Called after a buy to refetch the batch. Falls back to the card's own q.refetch(). */
   onRefetch?: () => void;
-}
-function hashHue(seed: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return Math.abs(h) % 360;
 }
 
 export function EventCard({
@@ -100,7 +92,9 @@ export function EventCard({
   if (!f) {
     return (
       <Card className="gap-0 py-0">
-        <Skeleton className="h-[150px] w-full rounded-b-none" />
+        <div className="poster rounded-none" style={{ height: 150 }}>
+          <EventPoster seed={eventId} className="absolute inset-0" />
+        </div>
         <div className="flex flex-col gap-2 px-4 pb-4 pt-3.5">
           <Skeleton className="h-5 w-3/4" />
           <Skeleton className="h-4 w-1/2" />
@@ -123,12 +117,7 @@ export function EventCard({
   const canAct = Boolean(buyerAddress) && !soldOut && windowOpen;
 
   const cat = meta?.category;
-  const [p1, p2] = cat ? catPalette(cat) : (() => {
-    const hue = hashHue(eventId);
-    return [`hsl(${hue} 90% 58%)`, `hsl(${(hue + 46) % 360} 88% 46%)`] as [string, string];
-  })();
   const coverUrl = meta?.coverBlobId && isBlobId(meta.coverBlobId) ? blobUrl(meta.coverBlobId) : undefined;
-  const glyphIcon = catGlyph(cat);
 
   async function run(tx: Transaction, coinType?: string) {
     if (!buyerAddress) return;
@@ -160,20 +149,8 @@ export function EventCard({
 
   return (
     <Card className="gap-0 py-0 text-left transition-transform duration-200 hover:-translate-y-1">
-      <Link href={`/event/${eventId}`} className="poster rounded-none" style={{ height: 150, display: "block", ["--p1" as string]: p1, ["--p2" as string]: p2 } as React.CSSProperties}>
-        {coverUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={coverUrl}
-            alt={name}
-            className="absolute inset-0 w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        )}
-        <div className="poster-noise" />
-        <span className="poster-glyph"><Icon icon={glyphIcon} size={64} /></span>
+      <Link href={`/event/${eventId}`} className="poster rounded-none" style={{ height: 150, display: "block" }}>
+        <EventPoster seed={eventId} category={cat} coverUrl={coverUrl} className="absolute inset-0" />
         <div className="absolute flex gap-1.5" style={{ top: 12, left: 12, flexWrap: "wrap" }}>
           {verified && <Badge variant="secondary"><Icon icon="streamline:star-badge-solid" size={11} /> Verified</Badge>}
           {hasMarket && <Badge variant="secondary"><Icon icon="mdi:chart-line" size={11} /> Market</Badge>}
