@@ -122,3 +122,10 @@ fun build_voucher_msg(event_id: ID, ticket_id: ID, expiry_ms: u64): vector<u8> {
     msg.append(bcs::to_bytes(&expiry_ms));
     msg
 }
+
+#[test_only]
+/// Test seam: the exact bytes a staff device signs. Pin this against
+/// `web/lib/staffKey.ts` so a layout/endianness drift fails a test, not a door.
+public fun voucher_msg_for_test(event_id: ID, ticket_id: ID, expiry_ms: u64): vector<u8> {
+    build_voucher_msg(event_id, ticket_id, expiry_ms)
+}

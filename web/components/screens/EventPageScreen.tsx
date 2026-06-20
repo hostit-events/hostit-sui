@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Transaction } from "@mysten/sui/transactions";
-import { ENOKI_ENABLED, REFUND_PERIOD_MS, coinInfo } from "@/lib/config";
+import { ENOKI_ENABLED, REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
 import { buyTx, claimFreeTx, getFields, totalWithFee } from "@/lib/ticketing";
 import {
   useCurrentAccount,
@@ -11,7 +11,7 @@ import {
   useSponsorAndExecute,
   useSuiQuery,
 } from "@/lib/hooks";
-import { useEventList } from "@/lib/events";
+import { useEventPrices } from "@/lib/events";
 import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
@@ -22,15 +22,6 @@ import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
 import { EventMarketsScreen } from "@/components/screens/EventMarketsScreen";
 import type { GetObjectParams, SuiObjectResponse } from "@mysten/sui/jsonRpc";
-
-// Inline amount formatter (mirrors EventCard; not exported from a lib).
-function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toString();
-  return `${whole}.${frac.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
-}
 
 // Inline FNV hash for a deterministic fallback poster hue when no category meta.
 function hashHue(seed: string): number {
@@ -76,7 +67,7 @@ export function EventPageScreen({ id }: { id: string }) {
     options: { showContent: true },
   });
 
-  const { pricesBySeq } = useEventList();
+  const { pricesBySeq } = useEventPrices();
 
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();

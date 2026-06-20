@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ENOKI_ENABLED, coinInfo } from "@/lib/config";
+import { ENOKI_ENABLED, coinInfo, fmtAmount } from "@/lib/config";
 import { buyTx, claimFreeTx, getFields, totalWithFee } from "@/lib/ticketing";
 import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import type { PriceOption } from "@/lib/events";
@@ -28,16 +28,11 @@ interface EventCardProps {
     eventId: string,
     meta: Pick<EventMetadata, "category" | "city" | "venue">,
   ) => void;
+  /** Pre-fetched object from batch read (DiscoverScreen). When omitted the card self-fetches. */
+  object?: SuiObjectResponse | null;
+  /** Called after a buy to refetch the batch. Falls back to the card's own q.refetch(). */
+  onRefetch?: () => void;
 }
-
-function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toString();
-  return `${whole}.${frac.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
-}
-
 function hashHue(seed: string): number {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) {
@@ -56,11 +51,15 @@ export function EventCard({
   verified = false,
   hasMarket = false,
   onMetadata,
+  object: prefetched,
+  onRefetch,
 }: EventCardProps) {
-  const q = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>("getObject", {
-    id: eventId,
-    options: { showContent: true },
-  });
+  const q = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>(
+    "getObject",
+    { id: eventId, options: { showContent: true } },
+    { enabled: prefetched === undefined },
+  );
+  const resp = prefetched !== undefined ? prefetched : q.data;
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
   const isPending = regular.isPending || sponsored.isPending;
@@ -75,7 +74,7 @@ export function EventCard({
     return () => clearInterval(id);
   }, []);
 
-  const f = getFields(q.data ?? {});
+  const f = getFields(resp ?? {});
   const uri = f ? String(f.uri ?? "") : "";
 
   useEffect(() => {
@@ -136,7 +135,7 @@ export function EventCard({
         ? await sponsored.mutateAsync({ transaction: tx, sender: buyerAddress })
         : await regular.mutateAsync({ transaction: tx });
       setDigest(out.digest);
-      q.refetch();
+      if (onRefetch) onRefetch(); else q.refetch();
     } catch (e: unknown) {
       setErr(humanizeError(e));
     } finally {
