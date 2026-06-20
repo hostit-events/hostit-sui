@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "./Icon";
+import { Button } from "@/components/ui/button";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -188,7 +189,7 @@ export function LandingV2() {
             <a href="#proof" onClick={(e) => { e.preventDefault(); scrollToId("proof"); }}>Proof</a>
           </nav>
           <div className="lv-nav-cta">
-            <button className="lv-btn lv-btn-primary" onClick={openApp}>Open app</button>
+            <Button variant="ghost" className="lv-btn lv-btn-primary h-auto" onClick={openApp}>Open app</Button>
             <button
               ref={menuToggleRef}
               type="button"
@@ -227,12 +228,13 @@ export function LandingV2() {
           <a href="#problem" onClick={(e) => { e.preventDefault(); goSection("problem"); }}>Why HostIt</a>
           <a href="#solution" onClick={(e) => { e.preventDefault(); goSection("solution"); }}>Platform</a>
           <a href="#proof" onClick={(e) => { e.preventDefault(); goSection("proof"); }}>Proof</a>
-          <button
-            className="lv-btn lv-btn-primary lv-nav-menu-cta"
+          <Button
+            variant="ghost"
+            className="lv-btn lv-btn-primary lv-nav-menu-cta h-auto"
             onClick={() => { setMenuOpen(false); openApp(); }}
           >
             Open app<Icon icon="ic:round-arrow-forward" size={19} />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -257,8 +259,8 @@ export function LandingV2() {
               <p className="lv-body">Any wallet can host. Tickets sell in any coin, gasless; payouts withdraw straight from on-chain escrow — no platform skim, no takedowns. Then a parimutuel market settles itself on the final count: no oracle, no house. Proven on EVM, now native on Sui.</p>
             </div>
             <div className="lv-hero-actions rv" style={{ transitionDelay: ".32s" }}>
-              <button className="lv-btn lv-btn-primary lv-btn-lg" onClick={host}>Host your event<Icon icon="ic:round-arrow-forward" size={19} /></button>
-              <button className="lv-btn lv-btn-ghost lv-btn-lg" onClick={demo}>See it in action</button>
+              <Button variant="ghost" className="lv-btn lv-btn-primary lv-btn-lg h-auto" onClick={host}>Host your event<Icon icon="ic:round-arrow-forward" size={19} /></Button>
+              <Button variant="ghost" className="lv-btn lv-btn-ghost lv-btn-lg h-auto hover:bg-transparent" onClick={demo}>See it in action</Button>
             </div>
           </div>
         </div>
@@ -366,8 +368,8 @@ export function LandingV2() {
           </h2>
           <div className="lv-stub-band rv" style={{ transitionDelay: ".18s" }}>
             <div className="lv-stub-main">
-              <button className="lv-btn lv-btn-primary lv-btn-lg" onClick={host}>Host your event<Icon icon="ic:round-arrow-forward" size={19} /></button>
-              <button className="lv-btn lv-btn-quiet lv-btn-lg" onClick={demo}>Explore events</button>
+              <Button variant="ghost" className="lv-btn lv-btn-primary lv-btn-lg h-auto" onClick={host}>Host your event<Icon icon="ic:round-arrow-forward" size={19} /></Button>
+              <Button variant="ghost" className="lv-btn lv-btn-quiet lv-btn-lg h-auto hover:bg-transparent" onClick={demo}>Explore events</Button>
             </div>
             <div className="lv-stub-perf" aria-hidden="true"><span className="lv-perf-notch s" /><span className="lv-perf-notch e" /></div>
             <div className="lv-stub-tail">

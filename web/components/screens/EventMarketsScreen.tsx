@@ -67,16 +67,6 @@ import type {
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
 
-// Inline amount formatter (mirrors EventCard; not exported from a lib).
-function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toString();
-  return `${whole}.${frac.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
-}
-
-function fmtDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",

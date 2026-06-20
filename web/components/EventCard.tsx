@@ -32,15 +32,6 @@ interface EventCardProps {
   hasMarket?: boolean;
   onCategory?: (cat: string) => void;
 }
-
-function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toString();
-  return `${whole}.${frac.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
-}
-
 function hashHue(seed: string): number {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) {

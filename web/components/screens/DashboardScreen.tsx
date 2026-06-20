@@ -53,15 +53,6 @@ function resolveCoin(coinType: string): string {
   return COINS.find((c) => matchesCoinType(coinType, c.type))?.type ?? `0x${coinType}`;
 }
 
-/** Format smallest-unit bigint with a coin's decimals, trimming trailing zeros. */
-function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toLocaleString();
-  const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
-  return `${whole.toLocaleString()}.${fracStr}`;
-}
 
 /** Compact one or more coin totals into a single human label. */
 function grossLabel(byCoin: Map<string, bigint>): string {

@@ -24,8 +24,16 @@
   --color-success: #38F06A;
   --color-verified: #FA00D4;       /* stage-light magenta — suiNS/KYC trust badge */
   --color-verified-soft: #2a1140;
-  --font-sans: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Space Mono', ui-monospace, monospace;
+  /* App default = Geist (shadcn's interface fonts). The landing re-scopes these
+     vars back to the brand Hanken/Space Mono on `.lv` (landing-v2.css). Geist
+     being the default means Radix portals (dialogs, selects, toasts) — which
+     render at <body>, outside the app subtree — also get Geist. */
+  --font-sans: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  /* The app uses ONE typeface (Geist Sans). --font-mono points at the same
+     stack so addresses/hashes (.mono/.hi-mono/.kicker, the footer net·pkg line,
+     AddressDisplay) match the rest of the app instead of rendering monospace.
+     The landing re-scopes --font-mono back to Space Mono on `.lv`. */
+  --font-mono: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -73,8 +81,8 @@
   --shadow-inset: inset 0 4px 4px 0 rgba(0, 0, 0, 0.25);
   --glow-blue: 0 0 80px rgba(0, 124, 250, 0.45);
 
-  /* type */
-  --font-display: 'Poppins', 'Hanken Grotesk', sans-serif;
+  /* type — display defaults to Geist too (the landing overrides to Poppins on .lv) */
+  --font-display: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -465,12 +473,6 @@ button[class*="connect" i] {
   box-shadow: 0 8px 22px rgba(0, 0, 0, .4);
 }
 
-/* Geist (shadcn's interface fonts) scoped to the app shell. The landing keeps
-   the brand Hanken Grotesk / Space Mono via the global --font-sans/--font-mono;
-   the font-* utilities resolve var(--font-*) at runtime, so overriding the vars
-   on this subtree re-points Button/Card/etc. without touching the global theme. */
-.app-shell {
-  font-family: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-}
+/* Geist is now the app-wide default (set on --font-* in @theme above); the
+   landing re-scopes the brand fonts on `.lv`. `.app-shell` no longer needs a
+   font override. */

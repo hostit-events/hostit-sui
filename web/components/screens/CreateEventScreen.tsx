@@ -16,6 +16,9 @@ import {
 } from "@/lib/hooks";
 import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
 import { Icon } from "@/components/Icon";
+import { AnimateIcon } from "@/components/animate-ui/icons/icon";
+import { ArrowRight } from "@/components/animate-ui/icons/arrow-right";
+import { DateTimePicker } from "@/components/DateTimePicker";
 import { TxLink } from "@/components/TxLink";
 import { useOrganizerMemory } from "@/lib/memoryClient";
 import {
@@ -697,23 +700,11 @@ export function CreateEventScreen() {
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="ce-start">Event starts</Label>
-                  <Input
-                    id="ce-start"
-                    type="datetime-local"
-                    min={isoLocal()}
-                    value={start}
-                    onChange={(e) => setStart(e.target.value)}
-                  />
+                  <DateTimePicker id="ce-start" value={start} min={isoLocal()} onChange={setStart} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="ce-end">Event ends</Label>
-                  <Input
-                    id="ce-end"
-                    type="datetime-local"
-                    min={start}
-                    value={end}
-                    onChange={(e) => setEnd(e.target.value)}
-                  />
+                  <DateTimePicker id="ce-end" value={end} min={start} onChange={setEnd} />
                 </div>
               </div>
               {dateError && (
@@ -1067,9 +1058,11 @@ export function CreateEventScreen() {
               <Icon icon="ph:arrow-left-bold" size={14} /> Back
             </Button>
             {step < 3 ? (
-              <Button onClick={next}>
-                Next <Icon icon="ph:arrow-right-bold" size={14} />
-              </Button>
+              <AnimateIcon asChild animateOnHover>
+                <Button onClick={next}>
+                  Next <ArrowRight size={14} />
+                </Button>
+              </AnimateIcon>
             ) : !addr ? (
               <Badge variant="outline">Connect a wallet to publish</Badge>
             ) : (

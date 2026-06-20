@@ -34,6 +34,8 @@ import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { catPalette, catGlyph } from "@/lib/data";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
+import { Copy } from "@/components/animate-ui/icons/copy";
+import { RefreshCw } from "@/components/animate-ui/icons/refresh-cw";
 import { TxLink } from "@/components/TxLink";
 import { CopilotLauncher } from "@/components/screens/CopilotLauncher";
 import { Card } from "@/components/ui/card";
@@ -61,15 +63,6 @@ import type {
 import type { Transaction } from "@mysten/sui/transactions";
 
 // === Inline helpers ===
-
-/** Format smallest-unit bigint into a human amount, trimming trailing zeros. */
-function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toString();
-  return `${whole}.${frac.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
-}
 
 /** Resolve a `type_name` coin string (no 0x, possibly padded) to a known coin type. */
 function resolveCoinType(typeName: string): string {
@@ -233,7 +226,7 @@ export function EventManageScreen({ id }: { id: string }) {
           </p>
           <div className="flex gap-2" style={{ marginTop: 16, flexWrap: "wrap" }}>
             <Button size="sm" onClick={() => capsQ.refetch()}>
-              <Icon icon="ic:round-refresh" size={16} /> Retry
+              <RefreshCw size={16} animate={capsQ.isFetching} loop /> Retry
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link href={`/event/${id}`}>
@@ -425,7 +418,12 @@ export function EventManageScreen({ id }: { id: string }) {
                 }
               }}
             >
-              <Icon icon="solar:copy-linear" size={15} /> {copied ? "Copied!" : "Copy link"}
+              {copied ? (
+                <Icon icon="ic:round-check" size={15} />
+              ) : (
+                <Copy size={15} animateOnHover />
+              )}{" "}
+              {copied ? "Copied!" : "Copy link"}
             </Button>
           </div>
         </div>
@@ -773,7 +771,7 @@ function PredictionMarketsPanel({
                 Couldn&apos;t load this market&apos;s pool.
               </div>
               <Button variant="outline" size="sm" onClick={() => selloutQ.refetch()}>
-                <Icon icon="ic:round-refresh" size={14} /> Retry
+                <RefreshCw size={14} animate={selloutQ.isFetching} loop /> Retry
               </Button>
             </div>
           ) : selloutMarketId ? (
@@ -851,7 +849,7 @@ function PredictionMarketsPanel({
                 Couldn&apos;t load this market&apos;s pool.
               </div>
               <Button variant="outline" size="sm" onClick={() => rangeQ.refetch()}>
-                <Icon icon="ic:round-refresh" size={14} /> Retry
+                <RefreshCw size={14} animate={rangeQ.isFetching} loop /> Retry
               </Button>
             </div>
           ) : rangeMarketId ? (

@@ -225,3 +225,31 @@ export const EV_SETTLED = `${PREDICT_SELLOUT_PKG}::predict::Settled`;
 export const EV_RANGE_MARKET_CREATED = `${PREDICT_RANGE_PKG}::predict::RangeMarketCreated`;
 export const EV_RANGE_BET = `${PREDICT_RANGE_PKG}::predict::RangeBet`;
 export const EV_RANGE_SETTLED = `${PREDICT_RANGE_PKG}::predict::RangeSettled`;
+
+/**
+ * Parse a human decimal string into smallest units for a coin with `decimals`,
+ * EXACTLY (no float). Returns null on malformed input or more fractional digits
+ * than the coin supports — callers should surface that as a validation error.
+ */
+export function toUnits(human: string, decimals: number): bigint | null {
+  const s = human.trim();
+  if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
+  const [whole, frac = ""] = s.split(".");
+  if (frac.length > decimals) return null;
+  const padded = frac.padEnd(decimals, "0");
+  return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(padded || "0");
+}
+
+/**
+ * Format a smallest-unit bigint as a human amount for a coin with `decimals`,
+ * grouped (thousands separators) and with trailing fractional zeros trimmed.
+ * Display only — never use to compute on-chain amounts (see `toUnits`).
+ */
+export function fmtAmount(units: bigint, decimals: number): string {
+  const d = 10n ** BigInt(decimals);
+  const whole = units / d;
+  const frac = units % d;
+  if (frac === 0n) return whole.toLocaleString();
+  const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
+  return `${whole.toLocaleString()}.${fracStr}`;
+}

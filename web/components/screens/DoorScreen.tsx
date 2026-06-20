@@ -20,6 +20,8 @@ import {
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { Icon } from "@/components/Icon";
+import { Copy } from "@/components/animate-ui/icons/copy";
+import { RefreshCw } from "@/components/animate-ui/icons/refresh-cw";
 import { TxLink } from "@/components/TxLink";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Card } from "@/components/ui/card";
@@ -239,7 +241,7 @@ export function DoorScreen({ id }: { id: string }) {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="outline" size="sm" onClick={() => checkinQ.refetch()}>
-                <Icon icon="ic:round-refresh" size={16} /> Refresh
+                <RefreshCw size={16} animate={checkinQ.isFetching} loop /> Refresh
               </Button>
             </TooltipTrigger>
             <TooltipContent>Refresh live count</TooltipContent>
@@ -609,7 +611,11 @@ function StaffKeyManager({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="outline" size="sm" onClick={copyPub}>
-                    <Icon icon={copied ? "ic:round-check" : "ic:round-content-copy"} size={15} />
+                    {copied ? (
+                      <Icon icon="ic:round-check" size={15} />
+                    ) : (
+                      <Copy size={15} animateOnHover />
+                    )}
                     {copied ? "Copied" : "Copy"}
                   </Button>
                 </TooltipTrigger>
