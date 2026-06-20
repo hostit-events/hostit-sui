@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { formatDistanceToNow } from "date-fns";
 import { useCurrentAccount, useSuiQuery } from "@/lib/hooks";
 import { useEventList } from "@/lib/events";
+import { listDrafts, deleteDraft, type DraftIndexEntry } from "@/lib/drafts";
 import { COINS, PACKAGE_ID, EV_TICKET_MINTED, coinInfo, fmtAmount, matchesCoinType } from "@/lib/config";
 import { MyEvents } from "@/components/MyEvents";
 import { AddressDisplay } from "@/components/AddressDisplay";
@@ -64,6 +66,15 @@ function grossLabel(byCoin: Map<string, bigint>): string {
   return parts.length ? parts.join(" · ") : "0";
 }
 
+/** "saved <relative> ago" → a compact phrasing of a past timestamp. */
+function savedAgo(ms: number): string {
+  try {
+    return formatDistanceToNow(new Date(ms), { addSuffix: true });
+  } catch {
+    return "recently";
+  }
+}
+
 function StatTile({
   icon,
   num,
@@ -96,6 +107,14 @@ export function DashboardScreen() {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
   const [tab, setTab] = useState<Tab>("overview");
+
+  // Local (localStorage) event drafts for the connected address. Synced on mount
+  // and re-read after a delete; the list itself is plaintext (titles only) — the
+  // form payload stays Seal-encrypted on Walrus until resumed.
+  const [drafts, setDrafts] = useState<DraftIndexEntry[]>([]);
+  useEffect(() => {
+    setDrafts(addr ? listDrafts(addr) : []);
+  }, [addr]);
 
   const { events, isLoading: eventsLoading, isError: eventsError, refetch: refetchEvents } = useEventList();
 
@@ -248,6 +267,60 @@ export function DashboardScreen() {
             Sales, check-in and revenue figures are derived from the most recent on-chain activity
             and may undercount over the full history of your events.
           </p>
+
+          {/* Local event drafts — hidden entirely when there are none. */}
+          {drafts.length > 0 && (
+            <section className="space-y-5">
+              <div>
+                <span className="eyebrow">
+                  <Icon icon="solar:document-text-bold" size={14} /> Drafts
+                </span>
+                <h2 className="page-title" style={{ marginTop: 12, fontSize: 26 }}>
+                  Saved drafts <span style={{ color: "var(--fg3)" }}>({drafts.length})</span>
+                </h2>
+              </div>
+              <div className="space-y-3">
+                {drafts.map((d) => (
+                  <Card key={d.id}>
+                    <CardContent className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold truncate" title={d.title}>
+                            {d.title || "Untitled event"}
+                          </span>
+                          <Badge variant="secondary">
+                            {d.mode === "advanced" ? "Advanced" : "Quick"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[13px]" style={{ color: "var(--fg3)" }}>
+                          <Icon icon="proicons:calendar" size={14} />
+                          <span>saved {savedAgo(d.savedAt)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button asChild size="sm">
+                          <Link href={`/create?draft=${d.id}`}>
+                            <Icon icon="solar:pen-bold" size={15} /> Resume
+                          </Link>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (!addr) return;
+                            deleteDraft(addr, d.id);
+                            setDrafts(listDrafts(addr));
+                          }}
+                        >
+                          <Icon icon="solar:trash-bin-trash-bold" size={15} /> Delete
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
 
           {eventsError ? (
             <Card>

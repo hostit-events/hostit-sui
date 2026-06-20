@@ -9,6 +9,17 @@
 // SECURITY: the staff *private* key never leaves this device — it is held only in
 // localStorage on the staff device and used to sign locally. It is never logged
 // and never sent to any server (sponsorship only ever sees the public voucher).
+//
+// ACCEPTED RISK — CodeQL js/clear-text-storage-of-sensitive-data (the two
+// localStorage.setItem(getSecretKey()) calls below). The key is stored
+// unencrypted on purpose: it is a LOW-STAKES, device-local key that only signs
+// check-in vouchers. It controls no funds and grants no authority beyond
+// admitting attendees to events where its public key is a registered signer.
+// A browser has no durable secret store, and the Sui SDK needs the raw key to
+// sign, so "encrypt at rest" would just relocate the same secret. Worst case
+// (device theft / XSS) is forged check-ins for that one organizer's events — not
+// loss of funds — and is mitigated by keeping the staff device trusted and
+// rotating via re-registering a new signer. Tracked as a dismissed CodeQL alert.
 
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { bcs } from "@mysten/sui/bcs";
