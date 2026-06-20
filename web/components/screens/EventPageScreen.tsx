@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import type { Transaction } from "@mysten/sui/transactions";
-import { ENOKI_ENABLED, REFUND_PERIOD_MS, coinInfo } from "@/lib/config";
+import { ENOKI_ENABLED, REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
 import { buyTx, claimFreeTx, getFields, totalWithFee } from "@/lib/ticketing";
 import {
   useCurrentAccount,
@@ -12,7 +12,7 @@ import {
   useSponsorAndExecute,
   useSuiQuery,
 } from "@/lib/hooks";
-import { useEventList } from "@/lib/events";
+import { useEventPrices } from "@/lib/events";
 import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
@@ -73,7 +73,7 @@ export function EventPageScreen({ id }: { id: string }) {
     options: { showContent: true },
   });
 
-  const { pricesBySeq } = useEventList();
+  const { pricesBySeq } = useEventPrices();
 
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { DAY_MS, ENOKI_ENABLED, COINS, coinInfo, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
+import { DAY_MS, ENOKI_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, setPriceTx } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
 import { putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
@@ -385,8 +385,8 @@ export function CreateEventScreen() {
 
       if (wantsPrice) {
         const dec = coinInfo(coinType).decimals;
-        const priceUnits = BigInt(Math.round(Number(basePrice) * 10 ** dec));
-        if (ids?.eventId && ids?.capId && priceUnits > 0n) {
+        const priceUnits = toUnits(basePrice, dec);
+        if (ids?.eventId && ids?.capId && priceUnits && priceUnits > 0n) {
           try {
             setBusy("Setting price…");
             const priceTx = setPriceTx({

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useCurrentAccount } from "@/lib/hooks";
-import { useEventList } from "@/lib/events";
+import { useEventList, useEventObjects } from "@/lib/events";
 import { useEventsWithMarkets } from "@/lib/markets";
 import { useSuiNSNames } from "@/lib/verification";
 import { CATEGORIES } from "@/lib/data";
@@ -21,13 +21,35 @@ export function DiscoverScreen() {
   // Single pair of queryEvents (both market kinds) -> Set of event_seq with a
   // market, so cards can flag it without an N+1 per-card query.
   const { hasMarketSeqs } = useEventsWithMarkets();
+  const { byId: eventObjects, refetch: refetchObjects } = useEventObjects(
+    useMemo(() => events.map((e) => e.eventId), [events]),
+  );
   const organizers = useMemo(() => Array.from(new Set(events.map((e) => e.organizer))), [events]);
   const names = useSuiNSNames(organizers);
 
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
-  // event_id -> category (from Walrus metadata, fetched lazily, cached)
-  const [cats, setCats] = useState<Record<string, string>>({});
+  // event_id -> searchable metadata (from Walrus metadata, fetched lazily by cards)
+  const [eventMeta, setEventMeta] = useState<
+    Record<string, { category?: string; city?: string; venue?: string }>
+  >({});
+
+  const onMetadata = useCallback(
+    (eventId: string, meta: { category?: string; city?: string; venue?: string }) => {
+      setEventMeta((prev) => {
+        const current = prev[eventId];
+        if (
+          current?.category === meta.category &&
+          current?.city === meta.city &&
+          current?.venue === meta.venue
+        ) {
+          return prev;
+        }
+        return { ...prev, [eventId]: meta };
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -50,11 +72,25 @@ export function DiscoverScreen() {
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
     return events.filter((e) => {
-      if (ql && !e.name.toLowerCase().includes(ql)) return false;
-      if (cat !== "all" && cats[e.eventId] && cats[e.eventId] !== cat) return false;
+      const meta = eventMeta[e.eventId];
+      const organizerName = names.get(e.organizer) ?? "";
+      const searchable = [
+        e.name,
+        e.organizer,
+        organizerName,
+        meta?.category,
+        meta?.city,
+        meta?.venue,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      if (ql && !searchable.includes(ql)) return false;
+      if (cat !== "all" && meta?.category && meta.category !== cat) return false;
       return true;
     });
-  }, [events, q, cat, cats]);
+  }, [events, q, cat, eventMeta, names]);
 
   return (
     <div className="space-y-8 screen-in">
@@ -129,7 +165,9 @@ export function DiscoverScreen() {
               prices={pricesBySeq.get(e.eventSeq) ?? []}
               verified={Boolean(names.get(e.organizer))}
               hasMarket={hasMarketSeqs.has(e.eventSeq)}
-              onCategory={(c) => setCats((prev) => (prev[e.eventId] === c ? prev : { ...prev, [e.eventId]: c }))}
+              onMetadata={onMetadata}
+              object={eventObjects.get(e.eventId) ?? null}
+              onRefetch={refetchObjects}
             />
           ))}
         </div>

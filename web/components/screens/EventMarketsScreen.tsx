@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { Transaction } from "@mysten/sui/transactions";
-import { ENOKI_ENABLED, USDC_COIN_TYPE, EV_MARKET_CREATED } from "@/lib/config";
+import { ENOKI_ENABLED, USDC_COIN_TYPE, EV_MARKET_CREATED, fmtAmount, toUnits } from "@/lib/config";
 import {
   betBucketTx,
   betNoTx,
@@ -67,6 +67,7 @@ import type {
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
 
+function fmtDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
@@ -81,12 +82,8 @@ function fmtTime(ms: number): string {
 // Parse a USDC amount string (human units) into smallest units (6 decimals).
 // Returns null for empty / non-positive / malformed input.
 function parseUsdcUnits(s: string): bigint | null {
-  const t = s.trim();
-  if (!t || !/^\d*\.?\d*$/.test(t)) return null;
-  const [whole = "0", frac = ""] = t.split(".");
-  const fracPadded = (frac + "000000").slice(0, 6);
-  const units = BigInt(whole || "0") * 1_000_000n + BigInt(fracPadded || "0");
-  return units > 0n ? units : null;
+  const u = toUnits(s, 6);
+  return u && u > 0n ? u : null;
 }
 
 // USDC has 6 decimals, so any digits beyond the 6th are silently truncated by

@@ -10,7 +10,18 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 
 export function ClientProviders({ children }: { children: React.ReactNode }) {
-  const [qc] = useState(() => new QueryClient());
+  const [qc] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 30_000,
+            gcTime: 5 * 60_000,
+            refetchOnWindowFocus: false,
+          },
+        },
+      }),
+  );
   const [dAppKit] = useState(() => getDAppKit());
   return (
     <QueryClientProvider client={qc}>

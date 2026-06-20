@@ -11,7 +11,9 @@ import {
   PACKAGE_ID,
   USDC_COIN_TYPE,
   coinInfo,
+  fmtAmount,
   matchesCoinType,
+  toUnits,
 } from "@/lib/config";
 import {
   addCheckinSignerTx,
@@ -906,13 +908,7 @@ function PricePanel({
   // Parse the decimal string into smallest-unit bigint without float rounding.
   // Returns null on malformed input or excess fractional digits.
   function priceUnits(): bigint | null {
-    const dec = coinInfo(coin).decimals;
-    const s = priceStr.trim();
-    if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
-    const [whole, frac = ""] = s.split(".");
-    if (frac.length > dec) return null; // more precision than the coin supports
-    const padded = frac.padEnd(dec, "0");
-    return BigInt(whole || "0") * 10n ** BigInt(dec) + BigInt(padded || "0");
+    return toUnits(priceStr, coinInfo(coin).decimals);
   }
 
   async function submit() {

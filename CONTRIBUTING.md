@@ -42,10 +42,11 @@ A change is not ready until these pass:
 | Move | `sui move build` && `sui move test` | repo root |
 | Frontend types | `bunx tsc --noEmit` | `web/` |
 | Frontend lint | `bun run lint` | `web/` |
+| Frontend unit tests | `bun run test` | `web/` |
 
 > ⚠️ **Do not run `bun run build` while `bun run dev` is running** — they share `.next/` and the production build corrupts the dev bundle. Use `bunx tsc --noEmit` to typecheck instead.
 
-There is no JS unit-test framework; `tsc --noEmit` + `lint` are the frontend gates. Move changes **must** keep the `tests/` suites green — add a `test_scenario` test for new on-chain behavior.
+Frontend gates are `bunx tsc --noEmit`, `bun run lint`, and `bun run test` (vitest). There is no browser E2E layer. Move changes **must** keep the `tests/` suites green — add a `test_scenario` test for new on-chain behavior.
 
 ## Commit & PR conventions
 

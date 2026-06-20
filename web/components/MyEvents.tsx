@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { COINS, ENOKI_ENABLED, ORGANIZER_CAP_TYPE, coinInfo } from "@/lib/config";
+import { COINS, ENOKI_ENABLED, ORGANIZER_CAP_TYPE, coinInfo, toUnits } from "@/lib/config";
 import { useEventList } from "@/lib/events";
 import {
   getFields,
@@ -137,10 +137,7 @@ function MyEventRow({
   }
 
   function priceUnits(): bigint {
-    const dec = coinInfo(coin).decimals;
-    const n = Number(priceStr);
-    if (!Number.isFinite(n) || n <= 0) return 0n;
-    return BigInt(Math.round(n * 10 ** dec));
+    return toUnits(priceStr, coinInfo(coin).decimals) ?? 0n;
   }
 
   return (

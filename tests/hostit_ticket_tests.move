@@ -32,6 +32,9 @@ const WITHDRAW_NOW: u64 = 500_000_000; // > END + 3d (445_600_000)
 const PRICE: u64 = 1_000_000;
 const HOSTIT_FEE: u64 = 30_000; // PRICE * 300 / 10000
 
+/// A second collateral type, distinct from SUI, for the wrong-coin refund test.
+public struct OTHER has drop {}
+
 // === Helpers ===
 
 fun begin(): (Scenario, Clock) {
@@ -695,6 +698,112 @@ fun withdraw_wrong_cap_fails() {
     sc.end();
 }
 
+// A ticket that has been checked in is no longer ISSUED, so it cannot be refunded.
+#[test, expected_failure(abort_code = hostit_ticket::market::E_NOT_ISSUED)]
+fun refund_checked_in_ticket_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, 100, 5, false, true); // paid, refundable
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_price<SUI>(&cap, &mut ev, PRICE);
+    event::set_allow_self_checkin(&cap, &mut ev, true);
+    ts::return_shared(ev);
+
+    clock.set_for_testing(BUY_NOW);
+    sc.next_tx(BUYER);
+    let mut hub = sc.take_shared<Hub>();
+    let mut ev = sc.take_shared<Event>();
+    let pay = mint(PRICE + HOSTIT_FEE, &mut sc);
+    market::buy<SUI>(&mut ev, &mut hub, pay, BUYER, &clock, sc.ctx());
+    ts::return_shared(hub);
+    ts::return_shared(ev);
+
+    // Check in -> ticket becomes CHECKED_IN (no longer ISSUED).
+    clock.set_for_testing(USE_NOW);
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    let mut t = sc.take_from_sender<Ticket>();
+    checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
+    sc.return_to_sender(t);
+    ts::return_shared(ev);
+
+    // Now try to refund the used ticket -> E_NOT_ISSUED.
+    clock.set_for_testing(REFUND_NOW);
+    sc.next_tx(BUYER);
+    let hub = sc.take_shared<Hub>();
+    let mut ev = sc.take_shared<Event>();
+    let t = sc.take_from_sender<Ticket>();
+    let refunded = market::refund<SUI>(&mut ev, &hub, t, &clock, sc.ctx());
+    coin::burn_for_testing(refunded);
+    ts::return_shared(hub);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// Bought with SUI; refunding with type OTHER must abort before touching escrow.
+#[test, expected_failure(abort_code = hostit_ticket::market::E_WRONG_COIN)]
+fun refund_wrong_coin_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, 100, 5, false, true);
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_price<SUI>(&cap, &mut ev, PRICE);
+    ts::return_shared(ev);
+
+    clock.set_for_testing(BUY_NOW);
+    sc.next_tx(BUYER);
+    let mut hub = sc.take_shared<Hub>();
+    let mut ev = sc.take_shared<Event>();
+    let pay = mint(PRICE + HOSTIT_FEE, &mut sc);
+    market::buy<SUI>(&mut ev, &mut hub, pay, BUYER, &clock, sc.ctx());
+    ts::return_shared(hub);
+    ts::return_shared(ev);
+
+    clock.set_for_testing(REFUND_NOW);
+    sc.next_tx(BUYER);
+    let hub = sc.take_shared<Hub>();
+    let mut ev = sc.take_shared<Event>();
+    let t = sc.take_from_sender<Ticket>();
+    // refund<OTHER> while the ticket was paid in SUI -> E_WRONG_COIN.
+    let refunded = market::refund<OTHER>(&mut ev, &hub, t, &clock, sc.ctx());
+    coin::burn_for_testing(refunded);
+    ts::return_shared(hub);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// Non-refundable event with a price set but NO sales -> escrow is empty ->
+// withdraw aborts E_NO_BALANCE.
+#[test, expected_failure(abort_code = hostit_ticket::market::E_NO_BALANCE)]
+fun withdraw_empty_escrow_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, 100, 5, false, false); // non-refundable
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_price<SUI>(&cap, &mut ev, PRICE);
+    ts::return_shared(ev);
+
+    // No buy -> escrow empty. Withdraw immediately (non-refundable, no time gate).
+    clock.set_for_testing(BUY_NOW);
+    sc.next_tx(ORG);
+    let hub = sc.take_shared<Hub>();
+    let mut ev = sc.take_shared<Event>();
+    let out = market::withdraw_event_balance<SUI>(&cap, &mut ev, &hub, &clock, sc.ctx());
+    coin::burn_for_testing(out);
+    ts::return_shared(hub);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
 #[test]
 fun withdraw_platform_fee() {
     let (mut sc, mut clock) = begin();
@@ -903,6 +1012,50 @@ fun checkin_bad_voucher_fails() {
     destroy(cap);
     clock.destroy_for_testing();
     sc.end();
+}
+
+// The voucher message is exactly event_id(32) || ticket_id(32) || expiry(8 LE).
+// This is the cross-language contract with web/lib/staffKey.ts; a drift here
+// breaks every staffed check-in.
+#[test]
+fun voucher_msg_layout_is_id_id_expiry_le() {
+    let eid = object::id_from_address(@0x0a);
+    let tid = object::id_from_address(@0x0b);
+    let expiry: u64 = 1_700_000_000_000;
+    let msg = checkin::voucher_msg_for_test(eid, tid, expiry);
+
+    let mut expected = object::id_to_bytes(&eid);
+    expected.append(object::id_to_bytes(&tid));
+    expected.append(std::bcs::to_bytes(&expiry));
+
+    assert!(msg == expected, 0);
+    assert!(vector::length(&msg) == 72, 1); // 32 + 32 + 8
+    // expiry is little-endian: low byte first. 1_700_000_000_000 = 0x018BCFE56800.
+    // last 8 bytes = 00 68 e5 cf 8b 01 00 00.
+    assert!(*vector::borrow(&msg, 64) == 0x00, 2);
+    assert!(*vector::borrow(&msg, 65) == 0x68, 3);
+}
+
+// A valid staff signature over the canonical voucher layout verifies. Pins the
+// ed25519_verify(signature, pubkey, build_voucher_msg(...)) path that check_in
+// relies on (vector generated by the recipe in plan 010, Step 3).
+#[test]
+fun voucher_signature_verifies_over_layout() {
+    let eid = object::id_from_address(@0x0a);
+    let tid = object::id_from_address(@0x0b);
+    let expiry: u64 = 1_700_000_000_000;
+    let msg = checkin::voucher_msg_for_test(eid, tid, expiry);
+
+    let pubkey = x"4983ca0600422626954bb23313fbea24d8837152d9f8ccad2e81e5f726ede019";
+    let sig    = x"4e2c72df61595faf8c75fe8710effeb6b2faae0101af8edee6499fd76c0a24c201088e2f9e278b78020e39472013195be3cade4963b382e6987a32c0be360007";
+
+    assert!(sui::ed25519::ed25519_verify(&sig, &pubkey, &msg), 0);
+
+    // A flipped byte must NOT verify.
+    let mut bad = sig;
+    let b0 = *vector::borrow(&bad, 0);
+    *vector::borrow_mut(&mut bad, 0) = b0 ^ 1;
+    assert!(!sui::ed25519::ed25519_verify(&bad, &pubkey, &msg), 1);
 }
 
 // === Param tuning ===

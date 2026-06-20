@@ -2,6 +2,12 @@
 // v3 (2026-05-31): faithful Sui port of the HostIt EVM Diamond. Multi-module
 // package (hub/event/ticket/market/checkin); shared Hub; one shared Event per
 // event; generic Coin<T> payments.
+// 2026-06-20: FRESH publish (single package, version 1) — the predict
+// settle_after_ms struct change was upgrade-incompatible, so the package was
+// re-published from scratch rather than upgraded. Because there are no upgrades
+// yet, ALL package-id pins below (PACKAGE_ID / PACKAGE_ID_LATEST /
+// PREDICT_SELLOUT_PKG / PREDICT_RANGE_PKG) equal the same new id. The separate
+// constants are kept because a FUTURE upgrade re-splits them (see comments).
 
 export const NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK ?? "testnet") as
   | "testnet"
@@ -17,54 +23,51 @@ export function explorerTxUrl(digest: string): string {
 
 export const PACKAGE_ID =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_ID ??
-  "0x423336143d4e5a810d24b97762bfa10be56b7d5dc86b75e831cb0897264b1e8d";
+  "0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3";
 
 /**
- * Latest UPGRADED package version (v8, 2026-06-14 — adds the `policy_rules`
- * module; v6/v7 added `predict`). Sui anchors a type's identity to the package
- * version where it was INTRODUCED: existing modules (event/ticket/market/…) keep
- * the original PACKAGE_ID, and each predict struct stays pinned to the version
- * that introduced it (SelloutMarket → PREDICT_SELLOUT_PKG, RangeMarket →
- * PREDICT_RANGE_PKG). Move-call targets for predict + policy_rules use the latest
- * via `targetLatest`, while every proven existing flow keeps using PACKAGE_ID.
+ * Latest package version for Move-CALL targets (`targetLatest`). On a fresh
+ * publish this equals PACKAGE_ID (version 1, no upgrades yet). Sui anchors a
+ * type's identity to the version that INTRODUCED it, so when the package is next
+ * UPGRADED this rolls forward to the new version while the type-origin pins
+ * (PACKAGE_ID for the original modules, PREDICT_*_PKG for the predict structs)
+ * stay put. Until then, all four are the same id.
  */
 export const PACKAGE_ID_LATEST =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_LATEST_ID ??
-  "0xf6ebcba4e9c661c9bdbf6dc75fa44db3095dc35566d7cf246862f76603e56c12";
+  "0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3";
 
 /**
- * Type-origin pin for `predict::SelloutMarket` (+ its events). Sui anchors a
- * type to the package version that INTRODUCED it; SelloutMarket shipped in the
- * 2026-06-07 upgrade (0x4829…), so its `*_TYPE`/`EV_*` constants must stay there
- * even as PACKAGE_ID_LATEST rolls forward with future upgrades. Calls still use
- * PACKAGE_ID_LATEST (latest version). Range markets get their own pin once the
- * Phase-2 upgrade lands.
+ * Type-origin pin for `predict::SelloutMarket` (+ its events). SelloutMarket is
+ * defined in the current package (introduced at v1 of this fresh publish), so it
+ * equals PACKAGE_ID today. Kept as its own constant so it stays pinned here if a
+ * future upgrade rolls PACKAGE_ID_LATEST forward.
  */
 export const PREDICT_SELLOUT_PKG =
   process.env.NEXT_PUBLIC_HOSTIT_PREDICT_SELLOUT_PKG ??
-  "0x4829706d16be235a2c3fbe86a1f7449100d39a46e3dd8105a5db3762a8ce1848";
+  "0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3";
 
 /**
- * Type-origin pin for `predict::RangeMarket` (+ its events). RangeMarket shipped
- * in the v7 upgrade (0xb5c952…), so its `*_TYPE`/`EV_*` constants stay pinned
- * there even though PACKAGE_ID_LATEST has since rolled to v8 (policy_rules).
+ * Type-origin pin for `predict::RangeMarket` (+ its events). Also defined in the
+ * current fresh-publish package (v1), so it equals PACKAGE_ID today; kept
+ * separate so it stays pinned if a future upgrade rolls the latest forward.
  */
 export const PREDICT_RANGE_PKG =
   process.env.NEXT_PUBLIC_HOSTIT_PREDICT_RANGE_PKG ??
-  "0xb5c95242b1a2acc8a2561246f95f8de182b3cbc67d71a370ee413c9dcdffcc0f";
+  "0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3";
 
 /** Shared protocol Hub (config + 3% fee treasury). Every paid sale needs it. */
 export const HUB_ID =
   process.env.NEXT_PUBLIC_HOSTIT_HUB_ID ??
-  "0xa2b9ceb63babc6897932c6f4cfdbbddc9d3493d36691e4520278fc58090efabd";
+  "0x059d4a96832edbaca1cdae2abf0d5ba1b45e5db126c4883ff4b02f0b21594cd8";
 
 /** Shared POAP dedup registry (one proof-of-attendance NFT per ticket). */
 export const POAP_REGISTRY_ID =
   process.env.NEXT_PUBLIC_HOSTIT_POAP_REGISTRY_ID ??
-  "0x57e285538f99b6bcc4d42e6adca2d2bb305cfb0c8b292094677fb70963d6021f";
+  "0x10a8e9ae971df483ec13a4cd8bc38d587761771276c2290a89eb79b9540591eb";
 
 export const TRANSFER_POLICY_ID =
-  "0x3a8325aadee206476e5e71507d444e3fe2b25c11c9cd467503a8bba4e0ede8da";
+  "0x8b32532990d89319ae4bcffc7a43819daa83378cd33e49c167481ca8520a9d61";
 
 // Well-known Sui shared Clock
 export const CLOCK_ID = "0x6";
@@ -90,6 +93,45 @@ export const target = (mod: string, fn: string) =>
  *  added in an upgrade (e.g. `predict`, which doesn't exist in the original id). */
 export const targetLatest = (mod: string, fn: string) =>
   `${PACKAGE_ID_LATEST}::${mod}::${fn}` as const;
+
+/**
+ * Move-call targets HostIt will gas-sponsor via /api/sponsor (the Enoki
+ * allowlist). SINGLE SOURCE OF TRUTH — imported by app/api/sponsor/route.ts.
+ * predict::* targets use PACKAGE_ID_LATEST (added in an upgrade); all other
+ * hostit targets use PACKAGE_ID; 0x2 framework calls are emitted by the SDK's
+ * coinWithBalance intent. Add new sponsored entry functions HERE (one place).
+ */
+export const SPONSORED_TARGETS: readonly string[] = [
+  `${PACKAGE_ID}::event::create_event`,
+  `${PACKAGE_ID}::event::set_price`,
+  `${PACKAGE_ID}::event::set_allow_self_checkin`,
+  `${PACKAGE_ID}::event::add_checkin_signer`,
+  `${PACKAGE_ID}::market::withdraw_event_balance`,
+  `${PACKAGE_ID}::market::buy`,
+  `${PACKAGE_ID}::market::buy_with_sui`,
+  `${PACKAGE_ID}::market::claim_free`,
+  `${PACKAGE_ID}::market::refund`,
+  `${PACKAGE_ID}::checkin::self_check_in`,
+  `${PACKAGE_ID}::checkin::check_in`,
+  `${PACKAGE_ID}::poap::claim_poap`,
+  `${PACKAGE_ID}::forum::post`,
+  `${PACKAGE_ID_LATEST}::predict::create_sellout_market`,
+  `${PACKAGE_ID_LATEST}::predict::bet_yes`,
+  `${PACKAGE_ID_LATEST}::predict::bet_no`,
+  `${PACKAGE_ID_LATEST}::predict::settle`,
+  `${PACKAGE_ID_LATEST}::predict::claim`,
+  `${PACKAGE_ID_LATEST}::predict::create_range_market`,
+  `${PACKAGE_ID_LATEST}::predict::bet_bucket`,
+  `${PACKAGE_ID_LATEST}::predict::settle_range`,
+  `${PACKAGE_ID_LATEST}::predict::claim_range`,
+  "0x2::coin::zero",
+  "0x2::coin::redeem_funds",
+  "0x2::coin::into_balance",
+  "0x2::coin::send_funds",
+  "0x2::coin::destroy_zero",
+  "0x2::balance::zero",
+  "0x2::balance::redeem_funds",
+];
 
 // === DeepBook Predict (Phase 3 — DEFERRED / NOT wired) ===
 // HostIt's live prediction markets are the native `predict` module, which settles
@@ -152,6 +194,36 @@ export function coinInfo(type: string): CoinInfo {
   return COINS.find((c) => c.type === type) ?? { symbol: "?", type, decimals: 9 };
 }
 
+/**
+ * Parse a human decimal string into smallest units for a coin with `decimals`,
+ * EXACTLY (no float). Returns null on malformed input or more fractional digits
+ * than the coin supports — callers should surface that as a validation error.
+ */
+export function toUnits(human: string, decimals: number): bigint | null {
+  const s = human.trim();
+  if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
+  const [whole, frac = ""] = s.split(".");
+  if (frac.length > decimals) return null;
+  const padded = frac.padEnd(decimals, "0");
+  return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(padded || "0");
+}
+
+/**
+ * Format a smallest-unit bigint as a human amount for a coin with `decimals`,
+ * grouped (thousands separators) and with trailing fractional zeros trimmed.
+ * Display only — never use to compute on-chain amounts (see `toUnits`).
+ */
+export function fmtAmount(units: bigint, decimals: number): string {
+  const d = 10n ** BigInt(decimals);
+  const whole = units / d;
+  const frac = units % d;
+  // Pin the grouping locale: a runtime "."-grouping locale (e.g. de-DE) would
+  // collide with the literal "." decimal below → "1.234.5". en-US gives ",".
+  if (frac === 0n) return whole.toLocaleString("en-US");
+  const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
+  return `${whole.toLocaleString("en-US")}.${fracStr}`;
+}
+
 /** Normalize a coin type from a `type_name` (which omits the 0x and may be padded). */
 export function matchesCoinType(typeName: string, full: string): boolean {
   const norm = (s: string) => s.replace(/^0x0*/, "").toLowerCase();
@@ -206,9 +278,8 @@ export const ORGANIZER_CAP_TYPE = `${PACKAGE_ID}::event::OrganizerCap`;
 export const SELLOUT_MARKET_TYPE = `${PREDICT_SELLOUT_PKG}::predict::SelloutMarket`;
 /**
  * Generic struct head (no type arg) for filtering parimutuel RANGE markets.
- * RangeMarket was introduced in the v7 upgrade, so its type origin is pinned to
- * PREDICT_RANGE_PKG (0xb5c952…) — NOT PACKAGE_ID_LATEST, which has since rolled
- * to v8 (policy_rules).
+ * Type origin pinned to PREDICT_RANGE_PKG (= PACKAGE_ID on this fresh v1; stays
+ * pinned if a future upgrade rolls PACKAGE_ID_LATEST forward).
  */
 export const RANGE_MARKET_TYPE = `${PREDICT_RANGE_PKG}::predict::RangeMarket`;
 
@@ -221,35 +292,7 @@ export const EV_MARKET_CREATED = `${PREDICT_SELLOUT_PKG}::predict::MarketCreated
 export const EV_BET = `${PREDICT_SELLOUT_PKG}::predict::Bet`;
 export const EV_SETTLED = `${PREDICT_SELLOUT_PKG}::predict::Settled`;
 // predict (parimutuel RANGE market) log type strings for queryEvents.
-// RangeMarket shipped in v7 -> type origin pinned to PREDICT_RANGE_PKG (not LATEST).
+// Type origin pinned to PREDICT_RANGE_PKG (= PACKAGE_ID on this fresh v1).
 export const EV_RANGE_MARKET_CREATED = `${PREDICT_RANGE_PKG}::predict::RangeMarketCreated`;
 export const EV_RANGE_BET = `${PREDICT_RANGE_PKG}::predict::RangeBet`;
 export const EV_RANGE_SETTLED = `${PREDICT_RANGE_PKG}::predict::RangeSettled`;
-
-/**
- * Parse a human decimal string into smallest units for a coin with `decimals`,
- * EXACTLY (no float). Returns null on malformed input or more fractional digits
- * than the coin supports — callers should surface that as a validation error.
- */
-export function toUnits(human: string, decimals: number): bigint | null {
-  const s = human.trim();
-  if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
-  const [whole, frac = ""] = s.split(".");
-  if (frac.length > decimals) return null;
-  const padded = frac.padEnd(decimals, "0");
-  return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(padded || "0");
-}
-
-/**
- * Format a smallest-unit bigint as a human amount for a coin with `decimals`,
- * grouped (thousands separators) and with trailing fractional zeros trimmed.
- * Display only — never use to compute on-chain amounts (see `toUnits`).
- */
-export function fmtAmount(units: bigint, decimals: number): string {
-  const d = 10n ** BigInt(decimals);
-  const whole = units / d;
-  const frac = units % d;
-  if (frac === 0n) return whole.toLocaleString();
-  const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
-  return `${whole.toLocaleString()}.${fracStr}`;
-}
