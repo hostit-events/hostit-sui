@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
 import { getFields, totalWithFee } from "@/lib/ticketing";
+import { humanizeError } from "@/lib/moveErrors";
 import { useCurrentAccount, useSuiQuery } from "@/lib/hooks";
 import { useEventPrices } from "@/lib/events";
 import { recordRecentlyViewed } from "@/lib/discovery";
@@ -12,18 +14,32 @@ import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
 import { useIsVerified } from "@/lib/verification";
 import { eventShareUrl } from "@/lib/share";
+import { POAP_TYPE } from "@/lib/poap";
+import {
+  addReview,
+  averageRating,
+  hasReviewed as reviewedByAuthor,
+  listReviews,
+  type Review,
+} from "@/lib/reviews";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { EventPoster } from "@/components/EventPoster";
 import { SocialShare } from "@/components/SocialShare";
 import { BuyTicketDialog, type BuyPayload } from "@/components/BuyTicketDialog";
 import { EventMarketsScreen } from "@/components/screens/EventMarketsScreen";
+import { ReviewsSection } from "@/components/screens/ReviewsSection";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { GetObjectParams, SuiObjectResponse } from "@mysten/sui/jsonRpc";
+import type {
+  GetObjectParams,
+  GetOwnedObjectsParams,
+  PaginatedObjectsResponse,
+  SuiObjectResponse,
+} from "@mysten/sui/jsonRpc";
 
 function fmtDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, {
@@ -90,6 +106,64 @@ export function EventPageScreen({ id }: { id: string }) {
     refetch: refetchMarkets,
   } = useEventMarkets(eventSeqEarly);
   const hasMarket = Boolean(selloutMarketId || rangeMarketId);
+
+  // --- Reviews (GH#58) ------------------------------------------------------
+  // POAP gate: can review iff the connected wallet owns a Poap whose event_id
+  // matches THIS event. Mirrors ForumScreen's ticket gate, swapping the type
+  // filter TICKET_TYPE -> POAP_TYPE. This keeps the permissionless model: the
+  // only "permission" is having attended (holding the event POAP).
+  const poapsQ = useSuiQuery<
+    "getOwnedObjects",
+    GetOwnedObjectsParams,
+    PaginatedObjectsResponse
+  >(
+    "getOwnedObjects",
+    {
+      owner: addr ?? "",
+      filter: { StructType: POAP_TYPE },
+      options: { showContent: true },
+    },
+    { enabled: Boolean(addr) },
+  );
+  const holdsEventPoap = useMemo(() => {
+    if (!addr || !poapsQ.data) return false;
+    return poapsQ.data.data.some((entry) => {
+      const fields = getFields(entry);
+      return fields != null && String(fields.event_id) === id;
+    });
+  }, [addr, poapsQ.data, id]);
+
+  // Persistence is device-local (localStorage) in v1 behind lib/reviews.ts; see
+  // the storage-decision note there. `reviews` is the rendered list, refreshed
+  // from the store on mount/account-change and optimistically after a submit.
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [submittingReview, setSubmittingReview] = useState(false);
+  useEffect(() => {
+    setReviews(listReviews(id));
+  }, [id]);
+  const reviewSummary = useMemo(() => averageRating(reviews), [reviews]);
+  const alreadyReviewed = useMemo(
+    () => (addr ? reviewedByAuthor(id, addr) : false),
+    [addr, id, reviews],
+  );
+  const canReview = Boolean(addr) && holdsEventPoap && !poapsQ.isLoading;
+
+  const submitReview = useCallback(
+    (rating: number, comment: string) => {
+      if (!addr) return;
+      setSubmittingReview(true);
+      try {
+        const next = addReview({ eventId: id, rating, comment, author: addr });
+        setReviews(next);
+        toast.success("Review posted", { description: "Thanks for sharing!" });
+      } catch (e: unknown) {
+        toast.error(humanizeError(e));
+      } finally {
+        setSubmittingReview(false);
+      }
+    },
+    [addr, id],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -355,6 +429,19 @@ export function EventPageScreen({ id }: { id: string }) {
               <Icon icon="mdi:plus" size={15} /> Add a prediction market
             </Button>
           )}
+
+          {/* Reviews — POAP-gated (only attendees who hold this event's POAP
+              can post). Persistence is device-local in v1 (see lib/reviews.ts);
+              the gate itself is a real on-chain getOwnedObjects read. */}
+          <ReviewsSection
+            reviews={reviews}
+            averageRating={reviewSummary.avg}
+            reviewCount={reviewSummary.count}
+            canReview={canReview}
+            hasReviewed={alreadyReviewed}
+            submitting={submittingReview}
+            onSubmit={submitReview}
+          />
         </div>
 
         {/* ---- Sticky ticket panel ---- */}
