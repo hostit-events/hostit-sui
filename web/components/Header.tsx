@@ -7,6 +7,7 @@ import { Icon } from "./Icon";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { openCommandPalette } from "@/components/discovery/DiscoveryCommand";
 
 const NAV = [
   { href: "/discover", label: "Discover", icon: "ic:round-explore" },
@@ -43,6 +44,21 @@ export function Header() {
           })}
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openCommandPalette}
+                aria-label="Open command palette"
+                className="gap-1.5 text-muted-foreground"
+              >
+                <Icon icon="ic:round-search" size={15} />
+                <kbd className="hidden font-mono text-[11px] lg:inline">⌘K</kbd>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Search & commands (⌘K)</TooltipContent>
+          </Tooltip>
           <Button asChild size="sm">
             <Link href="/create" aria-label="Create event">
               <Icon icon="ic:round-add" size={16} />
