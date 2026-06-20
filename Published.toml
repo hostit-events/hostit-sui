@@ -2,9 +2,11 @@
 # This file contains metadata about published versions of this package in different environments
 # This file SHOULD be committed to source control
 
-# [published.testnet] removed to force a FRESH publish (the predict
-# settle_after_ms struct change is upgrade-incompatible). `sui client publish`
-# writes the new entry. Abandoned packages for reference:
-#   v1-v4 original-id = 0x423336143d4e5a810d24b97762bfa10be56b7d5dc86b75e831cb0897264b1e8d
-#         published-at = 0xf6ebcba4e9c661c9bdbf6dc75fa44db3095dc35566d7cf246862f76603e56c12 (v4)
-#   accidental (pre-fix) = 0x1fd722d185ec597dd6e15d08ab5be02fe2d49cacb38df60403a6427a4b36aa98
+[published.testnet]
+chain-id = "4c78adac"
+published-at = "0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3"
+original-id = "0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3"
+version = 1
+toolchain-version = "1.73.1"
+build-config = { flavor = "sui", edition = "2024" }
+upgrade-capability = "0x12a2a3c5fa6dd53de253dc1327d3aaaba08839e8e86b6e0a188dc19c45ec22bf"

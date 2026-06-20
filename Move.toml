@@ -10,11 +10,10 @@ authors = ["HostIt contributors"]
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
 
-# 0x0 = unpublished: `sui client publish` assigns the new package address and
-# writes it back to Published.toml. Reset for the fresh publish (the predict
-# settle_after_ms struct change is upgrade-incompatible).
+# Original package id of the fresh publish (= Published.toml original-id), so a
+# future `sui client upgrade` resolves the named address correctly.
 [addresses]
-hostit_ticket = "0x0"
+hostit_ticket = "0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3"
 
 [dev-addresses]
 hostit_ticket = "0xCAFE"
