@@ -1,0 +1,70 @@
+name: Move CI
+
+# Lint + test the Move package on every push/PR that touches the Move tree.
+# The package lives at the repo ROOT (Move.toml, sources/, tests/), so no
+# working-directory is needed. web/-only changes don't trigger this (path filter).
+
+on:
+  push:
+    branches: [main]
+    paths: [sources/**, tests/**, Move.toml, Move.lock, Published.toml, .github/workflows/move.yml]
+  pull_request:
+    paths: [sources/**, tests/**, Move.toml, Move.lock, Published.toml, .github/workflows/move.yml]
+
+concurrency:
+  group: move-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  move:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Pinned TESTNET release matching `framework/testnet` in Move.toml and
+      # `toolchain-version = "1.73.1"` in Published.toml. Bump this in lockstep
+      # when you bump the framework. (Verified: this tag's
+      # sui-testnet-v1.73.1-ubuntu-x86_64.tgz asset exists, and `build --lint
+      # --warnings-are-errors` + `sui move test` are green at this version.)
+      SUI_VERSION: testnet-v1.73.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Sui CLI
+        id: cache-sui
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/sui
+          key: sui-${{ runner.os }}-${{ env.SUI_VERSION }}
+
+      - name: Install Sui CLI
+        if: steps.cache-sui.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.local/bin /tmp/sui-extract
+          url="https://github.com/MystenLabs/sui/releases/download/${SUI_VERSION}/sui-${SUI_VERSION}-ubuntu-x86_64.tgz"
+          curl -fsSL "$url" -o /tmp/sui.tgz
+          # Extract into a dir we OWN: the .tgz has a top-level "." entry, so
+          # extracting into /tmp directly makes tar try to chmod/utime the sticky,
+          # root-owned /tmp root — "Operation not permitted" under the runner user.
+          tar -xzf /tmp/sui.tgz -C /tmp/sui-extract
+          # The .tgz layout has varied across releases — find the binary robustly.
+          mv "$(find /tmp/sui-extract -type f -name sui | head -1)" ~/.local/bin/sui
+          chmod +x ~/.local/bin/sui
+
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: sui --version
+
+      - name: Cache Move git deps (~/.move)
+        uses: actions/cache@v4
+        with:
+          path: ~/.move
+          key: move-${{ runner.os }}-${{ hashFiles('Move.toml', 'Move.lock') }}
+
+      - name: Lint
+        run: sui move build --lint --warnings-are-errors
+
+      - name: Test
+        run: sui move test
