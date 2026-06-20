@@ -93,12 +93,58 @@ interface DraftEnvelope {
 
 const indexKey = (addr: string) => `hostit:drafts:${addr}`;
 
+const te = new TextEncoder();
+const td = new TextDecoder();
+
+function bytesToB64(bytes: Uint8Array): string {
+  return toBase64(bytes);
+}
+
+function b64ToBytes(b64: string): Uint8Array {
+  return fromBase64(b64);
+}
+
+async function deriveIndexKey(addr: string): Promise<CryptoKey> {
+  const material = te.encode(`${window.location.origin}|hostit:drafts|${addr}`);
+  const hash = await crypto.subtle.digest("SHA-256", material);
+  return crypto.subtle.importKey("raw", hash, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+async function encryptIndex(addr: string, list: DraftIndexEntry[]): Promise<string> {
+  const key = await deriveIndexKey(addr);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = te.encode(JSON.stringify(list));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext));
+  return JSON.stringify({ v: 1, iv: bytesToB64(iv), ct: bytesToB64(ciphertext) });
+}
+
+async function decryptIndex(addr: string, raw: string): Promise<DraftIndexEntry[] | null> {
+  try {
+    const parsed = JSON.parse(raw) as { v?: number; iv?: string; ct?: string };
+    if (parsed?.v !== 1 || !parsed.iv || !parsed.ct) return null;
+    const key = await deriveIndexKey(addr);
+    const iv = b64ToBytes(parsed.iv);
+    const ct = b64ToBytes(parsed.ct);
+    const plaintext = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct));
+    const list = JSON.parse(td.decode(plaintext)) as unknown;
+    return Array.isArray(list) ? (list as DraftIndexEntry[]) : [];
+  } catch {
+    return null;
+  }
+}
+
 /** SSR-safe, never-throws read of the per-address index. */
-function readIndex(addr: string): DraftIndexEntry[] {
+async function readIndex(addr: string): Promise<DraftIndexEntry[]> {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(indexKey(addr));
-    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    if (!raw) return [];
+
+    const decrypted = await decryptIndex(addr, raw);
+    if (decrypted) return decrypted;
+
+    // Backward-compat: accept legacy plaintext JSON index and migrate on next write.
+    const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed) ? (parsed as DraftIndexEntry[]) : [];
   } catch {
     return [];
@@ -106,10 +152,11 @@ function readIndex(addr: string): DraftIndexEntry[] {
 }
 
 /** SSR-safe, never-throws write of the per-address index. */
-function writeIndex(addr: string, list: DraftIndexEntry[]): void {
+async function writeIndex(addr: string, list: DraftIndexEntry[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(indexKey(addr), JSON.stringify(list));
+    const enc = await encryptIndex(addr, list);
+    window.localStorage.setItem(indexKey(addr), enc);
   } catch {
     /* quota / private mode — fail silently */
   }
@@ -137,7 +184,7 @@ export function removeEntry(list: DraftIndexEntry[], id: string): DraftIndexEntr
 
 /** List this address's drafts (newest-stored detail lives in the entries).
  *  Sync — reads only the device-local index, no network. */
-export function listDrafts(addr: string): DraftIndexEntry[] {
+export async function listDrafts(addr: string): Promise<DraftIndexEntry[]> {
   return readIndex(addr);
 }
 
@@ -175,7 +222,8 @@ export async function saveDraft(
     mode: draft.mode,
     savedAt: draft.savedAt,
   };
-  writeIndex(addr, upsertEntry(readIndex(addr), entry));
+  const current = await readIndex(addr);
+  await writeIndex(addr, upsertEntry(current, entry));
   return entry;
 }
 
