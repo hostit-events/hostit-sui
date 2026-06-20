@@ -138,7 +138,12 @@ export function EventQuickViewModal({ id }: { id: string }) {
   }
 
   return (
-    <Dialog open onOpenChange={close}>
+    <Dialog open={!buyOpen} onOpenChange={close}>
+      {/* open={!buyOpen}: while the buy dialog is open, hide this quick-view so
+          the two never stack. Setting open=false here does NOT fire onOpenChange
+          (only a user-initiated close does) → no router.back; the sibling
+          BuyTicketDialog stays mounted and visible. Closing buy restores this
+          view with refreshed counts. */}
       <DialogContent className="overflow-hidden p-0 sm:max-w-lg">
         {/* sr-only title/description always present so Radix never warns; the
             visible heading lives in the body once the name loads. */}
