@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AuthControl } from "./AuthControl";
+import { NotificationsBellContainer } from "./NotificationsBell";
 import { Icon } from "./Icon";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -59,6 +60,8 @@ export function Header() {
             </TooltipTrigger>
             <TooltipContent>Settings</TooltipContent>
           </Tooltip>
+          {/* notifications slot — on-chain-derived inbox (renders nothing signed out) */}
+          <NotificationsBellContainer />
           <AuthControl />
         </div>
       </div>
