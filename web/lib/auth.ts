@@ -20,18 +20,29 @@ export function useIsGoogleSession(): boolean {
  * is fragile across browsers (blocked when `window.open` runs after the async
  * session hydration); a same-tab redirect is immune — sessionStorage/IndexedDB
  * survives the round-trip to Google and back to `/auth`.
+ *
+ * Google ALWAYS returns to `/auth` — the only page that mounts `useAuthCallback`
+ * to complete the id_token in the URL hash, and the origin allowlisted in the
+ * Google OAuth client. Pass `returnTo` (e.g. the current `/event/[id]` URL) to
+ * have `/auth` bounce there once the session lands, so a buyer who signs in
+ * mid-purchase returns to the event they were buying.
  */
 export function useGoogleSignIn() {
   const enokiFlow = useEnokiFlow();
-  return useCallback(async () => {
-    const url = await enokiFlow.createAuthorizationURL({
-      provider: "google",
-      clientId: GOOGLE_CLIENT_ID,
-      redirectUrl: `${window.location.origin}/auth`,
-      network: ENOKI_NETWORK,
-    });
-    window.location.href = url;
-  }, [enokiFlow]);
+  return useCallback(
+    async (returnTo?: string) => {
+      const authUrl = new URL("/auth", window.location.origin);
+      if (returnTo) authUrl.searchParams.set("next", returnTo);
+      const url = await enokiFlow.createAuthorizationURL({
+        provider: "google",
+        clientId: GOOGLE_CLIENT_ID,
+        redirectUrl: authUrl.toString(),
+        network: ENOKI_NETWORK,
+      });
+      window.location.href = url;
+    },
+    [enokiFlow],
+  );
 }
 
 /** Sign out of whichever session is active (Google zkLogin or wallet). */

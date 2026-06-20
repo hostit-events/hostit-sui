@@ -2,15 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
-import { ENOKI_ENABLED, coinInfo, fmtAmount } from "@/lib/config";
-import { buyTx, claimFreeTx, getFields, totalWithFee } from "@/lib/ticketing";
-import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
+import { coinInfo, fmtAmount } from "@/lib/config";
+import { getFields, totalWithFee } from "@/lib/ticketing";
+import { useSuiQuery } from "@/lib/hooks";
 import type { PriceOption } from "@/lib/events";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
-import { humanizeError } from "@/lib/moveErrors";
-import { TxLink } from "@/components/TxLink";
+import { BuyTicketDialog, type BuyPayload } from "@/components/BuyTicketDialog";
 import { EventPoster } from "@/components/EventPoster";
 import { AddressDisplay } from "./AddressDisplay";
 import { Icon } from "./Icon";
@@ -20,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { GetObjectParams, SuiObjectResponse } from "@mysten/sui/jsonRpc";
-import type { Transaction } from "@mysten/sui/transactions";
 
 interface EventCardProps {
   eventId: string;
@@ -58,11 +55,9 @@ export function EventCard({
     { enabled: prefetched === undefined },
   );
   const resp = prefetched !== undefined ? prefetched : q.data;
-  const regular = useSignAndExecute();
-  const sponsored = useSponsorAndExecute();
-  const isPending = regular.isPending || sponsored.isPending;
   const [meta, setMeta] = useState<EventMetadata | null>(null);
-  const [pendingCoin, setPendingCoin] = useState<string | null>(null);
+  const [buyOpen, setBuyOpen] = useState(false);
+  const [buyPayload, setBuyPayload] = useState<BuyPayload | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -110,35 +105,30 @@ export function EventCard({
   const endMs = Number(f.end_ms);
   const purchaseStartMs = Number(f.purchase_start_ms);
 
+  const maxPerUser = BigInt((f.max_per_user as string) ?? "0");
   const remaining = maxTickets - minted;
   const soldOut = remaining <= 0n;
   const now = Date.now();
   const windowOpen = now >= purchaseStartMs && now <= endMs;
-  const canAct = Boolean(buyerAddress) && !soldOut && windowOpen;
+  // Purchasable when open & not sold out — independent of connection. The
+  // BuyTicketDialog owns connect → review → mint → done, so an unconnected
+  // buyer lands on its connect step instead of facing a dead button.
+  const canPurchase = !soldOut && windowOpen;
 
   const cat = meta?.category;
   const coverUrl = meta?.coverBlobId && isBlobId(meta.coverBlobId) ? blobUrl(meta.coverBlobId) : undefined;
 
-  async function run(tx: Transaction, coinType?: string) {
-    if (!buyerAddress) return;
-    setPendingCoin(coinType ?? null);
-    try {
-      const out = ENOKI_ENABLED
-        ? await sponsored.mutateAsync({ transaction: tx, sender: buyerAddress })
-        : await regular.mutateAsync({ transaction: tx });
-      toast.success(isFree ? "Ticket claimed" : "Ticket purchased", {
-        description: <TxLink digest={out.digest} chars={10} />,
-      });
-      if (onRefetch) onRefetch(); else q.refetch();
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-    } finally {
-      setPendingCoin(null);
-    }
+  function openClaim() {
+    setBuyPayload({ kind: "free", eventId, eventName: name, remaining, maxPerUser });
+    setBuyOpen(true);
+  }
+  function openBuy(coinType: string, priceUnits: bigint) {
+    setBuyPayload({ kind: "paid", eventId, eventName: name, coinType, priceUnits, remaining, maxPerUser });
+    setBuyOpen(true);
   }
 
+  // Label for a closed sale (sold out / wrong window).
   function statusLabel(): string {
-    if (!buyerAddress) return "Connect to buy";
     if (soldOut) return "Sold out";
     if (now < purchaseStartMs) return "Sale soon";
     if (now > endMs) return "Ended";
@@ -178,9 +168,9 @@ export function EventCard({
 
         <div className="flex flex-wrap items-center justify-between gap-2.5 border-t pt-3">
           {isFree ? (
-            <Button size="sm" disabled={!canAct || isPending} onClick={() => run(claimFreeTx({ eventId, recipient: buyerAddress! }))}>
+            <Button size="sm" disabled={!canPurchase} onClick={openClaim}>
               <Icon icon="ion:ticket" size={15} />
-              {isPending ? "Claiming…" : canAct ? "Claim free" : statusLabel()}
+              {!canPurchase ? statusLabel() : buyerAddress ? "Claim free" : "Connect to claim"}
             </Button>
           ) : prices.length === 0 ? (
             <Badge variant="outline">Price not set</Badge>
@@ -189,23 +179,26 @@ export function EventCard({
               {prices.map((p) => {
                 const ci = coinInfo(p.coinType);
                 const allIn = `${fmtAmount(totalWithFee(BigInt(p.price)), ci.decimals)} ${ci.symbol}`;
-                const coinPending = pendingCoin === p.coinType;
                 return (
                   <div key={p.coinType} className="flex flex-col gap-1">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           size="sm"
-                          disabled={!canAct || isPending}
-                          onClick={() => run(buyTx({ eventId, coinType: p.coinType, priceUnits: BigInt(p.price), recipient: buyerAddress!, sponsored: ENOKI_ENABLED }), p.coinType)}
+                          disabled={!canPurchase}
+                          onClick={() => openBuy(p.coinType, BigInt(p.price))}
                         >
                           <Icon icon="ion:ticket" size={15} />
-                          {coinPending ? "Buying…" : canAct ? `${fmtAmount(BigInt(p.price), ci.decimals)} ${ci.symbol}` : statusLabel()}
+                          {!canPurchase
+                            ? statusLabel()
+                            : buyerAddress
+                              ? `${fmtAmount(BigInt(p.price), ci.decimals)} ${ci.symbol}`
+                              : "Connect to buy"}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Total incl. 3% fee: {allIn}</TooltipContent>
                     </Tooltip>
-                    {canAct && <span className="text-[11px]" style={{ color: "var(--fg3)" }}>{allIn} incl. 3% fee</span>}
+                    {canPurchase && <span className="text-[11px]" style={{ color: "var(--fg3)" }}>{allIn} incl. 3% fee</span>}
                   </div>
                 );
               })}
@@ -213,6 +206,13 @@ export function EventCard({
           )}
         </div>
       </div>
+
+      <BuyTicketDialog
+        open={buyOpen}
+        onOpenChange={setBuyOpen}
+        payload={buyPayload}
+        onSuccess={() => (onRefetch ? onRefetch() : q.refetch())}
+      />
     </Card>
   );
 }

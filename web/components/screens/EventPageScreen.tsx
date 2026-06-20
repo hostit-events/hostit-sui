@@ -232,7 +232,10 @@ export function EventPageScreen({ id }: { id: string }) {
   const soldOut = remaining <= 0n;
   const now = Date.now();
   const windowOpen = now >= purchaseStartMs && now <= endMs;
-  const canAct = Boolean(addr) && !soldOut && windowOpen;
+  // Sale is purchasable when open & not sold out — independent of connection.
+  // BuyTicketDialog owns the connect step, so an unconnected buyer can still
+  // open it ("Connect to buy").
+  const canPurchase = !soldOut && windowOpen;
   const isOrganizer = Boolean(addr) && addr === organizer;
 
   const prices = pricesBySeq.get(eventSeq) ?? [];
@@ -248,19 +251,34 @@ export function EventPageScreen({ id }: { id: string }) {
       ? "Free"
       : "—";
 
+  // BuyTicketDialog owns connect → review → mint → done, so we no longer gate on
+  // `addr`: an unconnected buyer lands on the dialog's connect step.
   function openClaim() {
-    if (!addr) return;
-    setBuyPayload({ kind: "free", eventId: id, eventName: name, recipient: addr });
+    setBuyPayload({
+      kind: "free",
+      eventId: id,
+      eventName: name,
+      remaining,
+      maxPerUser: BigInt(maxPerUser),
+    });
     setBuyOpen(true);
   }
   function openBuy(coinType: string, priceUnits: bigint) {
-    if (!addr) return;
-    setBuyPayload({ kind: "paid", eventId: id, eventName: name, coinType, priceUnits, recipient: addr });
+    setBuyPayload({
+      kind: "paid",
+      eventId: id,
+      eventName: name,
+      coinType,
+      priceUnits,
+      remaining,
+      maxPerUser: BigInt(maxPerUser),
+    });
     setBuyOpen(true);
   }
 
+  // Label for a closed sale (sold out / wrong window). When the sale is open the
+  // CTA shows "Connect to buy" / "Buy · …" / "Claim free ticket" instead.
   function statusLabel(): string {
-    if (!addr) return "Connect wallet to buy";
     if (soldOut) return "Sold out";
     if (now < purchaseStartMs) return "Sale not open yet";
     if (now > endMs) return "Event ended";
@@ -479,11 +497,11 @@ export function EventPageScreen({ id }: { id: string }) {
               </div>
             )}
 
-            {/* Buy / claim actions — open BuyTicketDialog (real submit lives there) */}
+            {/* Buy / claim actions — open BuyTicketDialog (connect + submit live there) */}
             {isFree ? (
-              <Button className="w-full" disabled={!canAct} onClick={openClaim}>
+              <Button className="w-full" disabled={!canPurchase} onClick={openClaim}>
                 <Icon icon="ion:ticket" size={16} />
-                {canAct ? "Claim free ticket" : statusLabel()}
+                {!canPurchase ? statusLabel() : addr ? "Claim free ticket" : "Connect to claim"}
               </Button>
             ) : prices.length === 0 ? (
               <Badge variant="outline" role="status">Price not set by organizer</Badge>
@@ -497,13 +515,15 @@ export function EventPageScreen({ id }: { id: string }) {
                       <TooltipTrigger asChild>
                         <Button
                           className="w-full"
-                          disabled={!canAct}
+                          disabled={!canPurchase}
                           onClick={() => openBuy(p.coinType, BigInt(p.price))}
                         >
                           <Icon icon="ion:ticket" size={16} />
-                          {canAct
-                            ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
-                            : statusLabel()}
+                          {!canPurchase
+                            ? statusLabel()
+                            : addr
+                              ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
+                              : "Connect to buy"}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -518,11 +538,6 @@ export function EventPageScreen({ id }: { id: string }) {
               </div>
             )}
 
-            {!addr && (
-              <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
-                Connect a wallet to buy or claim.
-              </div>
-            )}
             {now < purchaseStartMs && (
               <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
                 Sales open {fmtDate(purchaseStartMs)} at {fmtTime(purchaseStartMs)}.

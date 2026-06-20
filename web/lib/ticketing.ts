@@ -85,25 +85,48 @@ export function totalWithFee(priceUnits: bigint): bigint {
 }
 
 export function buyTx(args: BuyArgs): Transaction {
+  return buyManyTx({ ...args, quantity: 1 });
+}
+
+export interface BuyManyArgs extends BuyArgs {
+  /** How many tickets to mint in this one PTB (1..max_per_user). */
+  quantity: number;
+}
+
+/**
+ * Mint `quantity` paid tickets in a SINGLE programmable transaction: one
+ * `market::buy<T>` call per ticket, each funded by its own `coinWithBalance`
+ * input of `price + 3% fee`. Each `buy` returns its own change, so no manual
+ * coin-splitting math is needed — the builder allocates exact per-call coins.
+ * `quantity = 1` is the plain single-buy path. The per-user cap and sold-out
+ * checks are enforced on-chain (and surfaced via `humanizeError`).
+ */
+export function buyManyTx(args: BuyManyArgs): Transaction {
   const tx = new Transaction();
   const total = totalWithFee(args.priceUnits);
-  const payment = coinWithBalance({
-    balance: total,
-    type: args.coinType,
-    // gas coin can't be a tx arg under sponsorship; for SUI otherwise it's fine.
-    useGasCoin: !args.sponsored && args.coinType === SUI_COIN_TYPE,
-  })(tx);
-  tx.moveCall({
-    target: target("market", "buy"),
-    typeArguments: [args.coinType],
-    arguments: [
-      tx.object(args.eventId),
-      tx.object(HUB_ID),
-      payment,
-      tx.pure.address(args.recipient),
-      tx.object(CLOCK_ID),
-    ],
-  });
+  const qty = Math.max(1, Math.trunc(args.quantity));
+  // The gas coin can be used as a tx arg only when NOT sponsored AND there is a
+  // single SUI payment; with multiple SUI coins we cannot reuse the gas coin for
+  // every call, so fall back to balance-sourced coins.
+  const useGasCoin = !args.sponsored && args.coinType === SUI_COIN_TYPE && qty === 1;
+  for (let i = 0; i < qty; i++) {
+    const payment = coinWithBalance({
+      balance: total,
+      type: args.coinType,
+      useGasCoin,
+    })(tx);
+    tx.moveCall({
+      target: target("market", "buy"),
+      typeArguments: [args.coinType],
+      arguments: [
+        tx.object(args.eventId),
+        tx.object(HUB_ID),
+        payment,
+        tx.pure.address(args.recipient),
+        tx.object(CLOCK_ID),
+      ],
+    });
+  }
   return tx;
 }
 
@@ -113,11 +136,28 @@ export interface ClaimFreeArgs {
 }
 
 export function claimFreeTx(args: ClaimFreeArgs): Transaction {
+  return claimFreeManyTx({ ...args, quantity: 1 });
+}
+
+export interface ClaimFreeManyArgs extends ClaimFreeArgs {
+  /** How many free tickets to claim in this one PTB (1..max_per_user). */
+  quantity: number;
+}
+
+/**
+ * Claim `quantity` free tickets in a SINGLE PTB: one `market::claim_free` call
+ * per ticket. No coins are involved, so this just repeats the move call. The
+ * per-user cap / sold-out checks are enforced on-chain.
+ */
+export function claimFreeManyTx(args: ClaimFreeManyArgs): Transaction {
   const tx = new Transaction();
-  tx.moveCall({
-    target: target("market", "claim_free"),
-    arguments: [tx.object(args.eventId), tx.pure.address(args.recipient), tx.object(CLOCK_ID)],
-  });
+  const qty = Math.max(1, Math.trunc(args.quantity));
+  for (let i = 0; i < qty; i++) {
+    tx.moveCall({
+      target: target("market", "claim_free"),
+      arguments: [tx.object(args.eventId), tx.pure.address(args.recipient), tx.object(CLOCK_ID)],
+    });
+  }
   return tx;
 }
 

@@ -88,14 +88,15 @@ export function EventQuickViewModal({ id }: { id: string }) {
     if (!openState) router.back();
   }
 
+  // Open the unified BuyTicketDialog. It owns connect → review → mint → done,
+  // so we no longer gate on `addr`: an unconnected buyer lands on the connect
+  // step inside the dialog instead of hitting a dead button.
   function openClaim(name: string) {
-    if (!addr) return;
-    setBuyPayload({ kind: "free", eventId: id, eventName: name, recipient: addr });
+    setBuyPayload({ kind: "free", eventId: id, eventName: name, remaining, maxPerUser });
     setBuyOpen(true);
   }
   function openBuy(name: string, coinType: string, priceUnits: bigint) {
-    if (!addr) return;
-    setBuyPayload({ kind: "paid", eventId: id, eventName: name, coinType, priceUnits, recipient: addr });
+    setBuyPayload({ kind: "paid", eventId: id, eventName: name, coinType, priceUnits, remaining, maxPerUser });
     setBuyOpen(true);
   }
 
@@ -107,13 +108,17 @@ export function EventQuickViewModal({ id }: { id: string }) {
   const purchaseStartMs = f ? Number(f.purchase_start_ms) : 0;
   const minted = f ? BigInt((f.minted as string) ?? "0") : 0n;
   const maxTickets = f ? BigInt((f.max_tickets as string) ?? "0") : 0n;
+  const maxPerUser = f ? BigInt((f.max_per_user as string) ?? "0") : 0n;
   const isFree = f ? Boolean(f.is_free) : false;
 
   const remaining = maxTickets - minted;
   const soldOut = remaining <= 0n;
   const now = Date.now();
   const windowOpen = now >= purchaseStartMs && now <= endMs;
-  const canAct = Boolean(addr) && !soldOut && windowOpen;
+  // The sale is purchasable when it's open & not sold out — independent of
+  // connection. The dialog now owns the connect step, so an unconnected buyer
+  // can still open it ("Connect to buy") instead of facing a dead button.
+  const canPurchase = !soldOut && windowOpen;
 
   const cat = meta?.category;
   const coverUrl =
@@ -123,8 +128,9 @@ export function EventQuickViewModal({ id }: { id: string }) {
   const pct =
     maxTickets > 0n ? Math.min(100, Number((minted * 100n) / maxTickets)) : 0;
 
+  // Label for when the sale itself is closed (sold out / wrong window). When the
+  // sale IS open, the CTA shows "Connect to buy" / "Buy · …" instead.
   function statusLabel(): string {
-    if (!addr) return "Connect to buy";
     if (soldOut) return "Sold out";
     if (now < purchaseStartMs) return "Sale not open yet";
     if (now > endMs) return "Event ended";
@@ -253,9 +259,9 @@ export function EventQuickViewModal({ id }: { id: string }) {
               </Button>
 
               {isFree ? (
-                <Button size="sm" disabled={!canAct} onClick={() => openClaim(name)}>
+                <Button size="sm" disabled={!canPurchase} onClick={() => openClaim(name)}>
                   <Icon icon="ion:ticket" size={15} />
-                  {canAct ? "Claim free" : statusLabel()}
+                  {!canPurchase ? statusLabel() : addr ? "Claim free" : "Connect to claim"}
                 </Button>
               ) : prices.length === 0 ? (
                 <Badge variant="outline" role="status">
@@ -269,11 +275,15 @@ export function EventQuickViewModal({ id }: { id: string }) {
                   return (
                     <Button
                       size="sm"
-                      disabled={!canAct}
+                      disabled={!canPurchase}
                       onClick={() => openBuy(name, p.coinType, BigInt(p.price))}
                     >
                       <Icon icon="ion:ticket" size={15} />
-                      {canAct ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}` : statusLabel()}
+                      {!canPurchase
+                        ? statusLabel()
+                        : addr
+                          ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
+                          : "Connect to buy"}
                     </Button>
                   );
                 })()

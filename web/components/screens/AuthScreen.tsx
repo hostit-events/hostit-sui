@@ -35,10 +35,18 @@ export function AuthScreen() {
     () => typeof window !== "undefined" && /id_token=/.test(window.location.hash),
   );
   const [callbackError, setCallbackError] = useState(false);
+  // Optional in-app return target (e.g. the `/event/[id]` a buyer signed in from).
+  // Read once from the URL search params so a Suspense boundary isn't required.
+  const [nextPath] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("next");
+    // Only allow same-origin app paths — never an absolute/protocol-relative URL.
+    return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
+  });
 
   useEffect(() => {
-    if (account) router.replace("/discover");
-  }, [account, router]);
+    if (account) router.replace(nextPath ?? "/discover");
+  }, [account, router, nextPath]);
 
   // If we came back from Google but no session materializes, surface an error
   // instead of spinning forever.
