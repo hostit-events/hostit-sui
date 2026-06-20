@@ -198,49 +198,104 @@ export function ForumScreen({ id }: { id: string }) {
     return [...pinned, ...rest];
   }, [channelPosts, modState]);
 
-  // --- Seal SessionKey (created lazily on first decrypt/post) ----------------
+  // --- Seal SessionKey (auto-minted on open for gated users; ~10-min TTL) -----
   const sessionRef = useRef<SessionKey | null>(null);
+  const sessionPromiseRef = useRef<Promise<SessionKey | null> | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [signing, setSigning] = useState(false);
+  const [decrypting, setDecrypting] = useState(false);
 
+  // Mint (or reuse) the Seal SessionKey. zkLogin signs the personal message with
+  // the Enoki ephemeral key (seamless, no popup); an external wallet shows ONE
+  // prompt. The in-flight promise is cached so concurrent callers (the
+  // auto-decrypt effect + a post/moderate action) never trigger a second prompt.
   const ensureSession = useCallback(async (): Promise<SessionKey | null> => {
     if (sessionRef.current) return sessionRef.current;
+    if (sessionPromiseRef.current) return sessionPromiseRef.current;
     if (!addr) return null;
-    setSigning(true);
-    try {
-      const sk = await createSessionKey(suiClient, addr, async (message) => {
-        const signer = new CurrentAccountSigner(dAppKit);
-        const r = await signer.signPersonalMessage(message);
-        return { signature: r.signature };
-      });
-      sessionRef.current = sk;
-      setSessionReady(true);
-      return sk;
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-      return null;
-    } finally {
-      setSigning(false);
-    }
+    const promise = (async () => {
+      setSigning(true);
+      try {
+        const sk = await createSessionKey(suiClient, addr, async (message) => {
+          const signer = new CurrentAccountSigner(dAppKit);
+          const r = await signer.signPersonalMessage(message);
+          return { signature: r.signature };
+        });
+        sessionRef.current = sk;
+        setSessionReady(true);
+        return sk;
+      } catch (e: unknown) {
+        toast.error(humanizeError(e));
+        return null;
+      } finally {
+        setSigning(false);
+        sessionPromiseRef.current = null;
+      }
+    })();
+    sessionPromiseRef.current = promise;
+    return promise;
   }, [addr, suiClient, dAppKit]);
 
   // --- Decrypted message cache (keyed by blob id) ---------------------------
   const [decoded, setDecoded] = useState<Record<string, DecodedMessage>>({});
 
-  // Decrypt any posts we haven't decoded yet for the active channel.
+  // AUTO-DECRYPT on open + channel switch (GH#66): for gated users, mint the
+  // session if needed (seamless for zkLogin; one prompt for a wallet) and decode
+  // the channel — no manual click. Strictly gated on `gatedIn`, so a non-holder
+  // never gets a signature prompt. We only touch posts not yet ATTEMPTED (an entry
+  // exists once attempted, even if it failed) so failures don't auto-retry in a
+  // loop — the fallback button / per-message retry re-signs. Results are committed
+  // in ONE setState so the effect doesn't re-fire mid-decode.
   useEffect(() => {
     if (!gatedIn || !cred) return;
-    const pending = channelPosts.filter(
-      (p) => decoded[p.blob_id]?.text == null || decoded[p.blob_id] === undefined,
-    );
+    const pending = channelPosts.filter((p) => decoded[p.blob_id] === undefined);
     if (pending.length === 0) return;
 
     let alive = true;
     (async () => {
-      // Only auto-decrypt if a session already exists; otherwise keep messages
-      // "encrypted" until the user signs (no surprise wallet popups).
-      const sk = sessionRef.current;
-      for (const p of pending) {
+      setDecrypting(true);
+      try {
+        const sk = await ensureSession();
+        const results: Record<string, DecodedMessage> = {};
+        for (const p of pending) {
+          const base: DecodedMessage = {
+            blobId: p.blob_id,
+            channel: p.channel,
+            author: p.author,
+            tsMs: Number(p.ts_ms),
+            text: null,
+          };
+          if (!sk) {
+            // mint declined/failed — mark attempted (encrypted); the fallback re-signs.
+            results[p.blob_id] = base;
+            continue;
+          }
+          try {
+            const body = await decryptForumMessage(suiClient, sk, p.blob_id, cred, id);
+            results[p.blob_id] = { ...base, text: body.text };
+          } catch {
+            results[p.blob_id] = base;
+          }
+        }
+        if (alive) setDecoded((m) => ({ ...m, ...results }));
+      } finally {
+        if (alive) setDecrypting(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [channelPosts, gatedIn, cred, suiClient, id, ensureSession, decoded]);
+
+  // Fallback "re-sign / retry" action: re-mint the session (if expired) and
+  // re-decode this channel, overwriting failed attempts. Auto-decrypt is the
+  // primary path; this covers a declined/expired session or a failed decrypt.
+  async function unlockMessages() {
+    setDecrypting(true);
+    try {
+      const sk = await ensureSession();
+      if (!sk || !cred) return;
+      for (const p of channelPosts) {
         const base: DecodedMessage = {
           blobId: p.blob_id,
           channel: p.channel,
@@ -248,43 +303,15 @@ export function ForumScreen({ id }: { id: string }) {
           tsMs: Number(p.ts_ms),
           text: null,
         };
-        if (!sk) {
-          if (alive) setDecoded((m) => ({ ...m, [p.blob_id]: m[p.blob_id] ?? base }));
-          continue;
-        }
         try {
           const body = await decryptForumMessage(suiClient, sk, p.blob_id, cred, id);
-          if (alive)
-            setDecoded((m) => ({ ...m, [p.blob_id]: { ...base, text: body.text } }));
+          setDecoded((m) => ({ ...m, [p.blob_id]: { ...base, text: body.text } }));
         } catch {
-          if (alive)
-            setDecoded((m) => ({ ...m, [p.blob_id]: { ...base, text: null } }));
+          setDecoded((m) => ({ ...m, [p.blob_id]: base }));
         }
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [channelPosts, gatedIn, cred, suiClient, id, sessionReady, decoded]);
-
-  // Manual "decrypt / re-sign" action: create session then decode this channel.
-  async function unlockMessages() {
-    const sk = await ensureSession();
-    if (!sk || !cred) return;
-    for (const p of channelPosts) {
-      const base: DecodedMessage = {
-        blobId: p.blob_id,
-        channel: p.channel,
-        author: p.author,
-        tsMs: Number(p.ts_ms),
-        text: null,
-      };
-      try {
-        const body = await decryptForumMessage(suiClient, sk, p.blob_id, cred, id);
-        setDecoded((m) => ({ ...m, [p.blob_id]: { ...base, text: body.text } }));
-      } catch {
-        setDecoded((m) => ({ ...m, [p.blob_id]: base }));
-      }
+    } finally {
+      setDecrypting(false);
     }
   }
 
@@ -478,27 +505,29 @@ export function ForumScreen({ id }: { id: string }) {
               {activeChannel?.label ?? channel}
             </div>
             <div className="flex items-center gap-2">
-              {!sessionReady ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={signing}
-                      onClick={unlockMessages}
-                    >
-                      <Icon icon="ic:round-lock-open" size={14} />
-                      {signing ? "Signing…" : "Decrypt thread"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Sign a session message to decrypt the thread (valid ~10 min).
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
+              {signing || decrypting ? (
+                // Auto-unlock in progress (session mint / decrypt). For zkLogin this
+                // is instant + popup-free; an external wallet shows one prompt.
+                <Badge variant="secondary" aria-live="polite">
+                  <Icon icon="ic:round-lock-open" size={11} />
+                  {signing ? "Unlocking…" : "Decrypting…"}
+                </Badge>
+              ) : sessionReady ? (
                 <Badge variant="secondary">
                   <Icon icon="ic:round-lock-open" size={11} /> Session active
                 </Badge>
+              ) : (
+                // Fallback: auto-unlock was declined or the session expired.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm" onClick={unlockMessages}>
+                      <Icon icon="ic:round-lock-open" size={14} /> Decrypt thread
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Re-sign your session to decrypt (valid ~10 min).
+                  </TooltipContent>
+                </Tooltip>
               )}
             </div>
           </header>
