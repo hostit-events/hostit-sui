@@ -30,10 +30,10 @@ rest. Numeric order below ≈ priority order.
 | 004 | Security headers / CSP | P1 | M | MED | — | TODO |
 | 005 | Seal `verifyKeyServers` driven off NETWORK | P2 | S | LOW | — | TODO |
 | 006 | Copilot route: error hygiene + content clamp | P2 | S | LOW | — | TODO |
-| 007 | Seal organizer-policy namespace separation | P2 | S | LOW | upgrade-gated | TODO |
-| 008 | Move quick correctness (overflow, zero-bet, signer-emit, doc) | P1 | S | LOW | upgrade-gated | TODO |
+| 007 | Seal organizer-policy namespace separation | P2 | S | LOW | upgrade-gated | DONE (source+tests; deploy gated) |
+| 008 | Move quick correctness (overflow, zero-bet, signer-emit, doc) | P1 | S | LOW | upgrade-gated | DONE |
 | 009 | Refund fee policy (DECISION: refundable vs disclosed-forfeit) | P1 | M | MED | maintainer decision | TODO |
-| 010 | Per-day check-in unit (DECISION: per-ticket vs per-attendee) | P2 | M | MED | maintainer decision | TODO |
+| 010 | Per-day check-in unit (DECISION: per-ticket vs per-attendee) | P2 | M | MED | maintainer decision | DONE (PER-TICKET) |
 | 011 | Parimutuel dust sweep | P2 | M | LOW | upgrade-gated | TODO |
 | 012 | Capped-page reads → cursor enumeration + truncation banner | P1 | M | LOW | — | TODO |
 | 013 | Real scannable ticket QR (add generator) | P1 | S | LOW | — | DONE |

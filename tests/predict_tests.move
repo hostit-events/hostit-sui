@@ -319,6 +319,20 @@ fun bet_after_expiry_aborts() {
     sc.end();
 }
 
+// === Zero-value bet aborts (sellout path) ===
+#[test, expected_failure(abort_code = hostit_ticket::predict::E_ZERO_BET)]
+fun zero_bet_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE);
+    clock.set_for_testing(BET_NOW); // betting open
+    place_yes(&mut sc, &clock, ALICE, 0); // zero stake -> abort
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
 // === Settle before expiry aborts ===
 #[test, expected_failure(abort_code = hostit_ticket::predict::E_NOT_EXPIRED)]
 fun settle_before_expiry_aborts() {
@@ -500,3 +514,4 @@ fun double_refund_aborts() {
     clock.destroy_for_testing();
     sc.end();
 }
+

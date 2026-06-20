@@ -18,4 +18,6 @@ Execution: sequential waves on one branch; parallel Opus implementers within a w
 
 ## Status
 - W1 complete (001,002,004,006,015,017,018,019) — gates green: tsc clean, lint 0 errors (25 pre-existing warnings), 84 tests. Commit d6ed50d.
-- W2 complete (003,005,012,016) — fixed 016 hook-order; gates green: tsc clean, lint 0 errors, 101 tests. Commit pending (see git log).
+- W2 complete (003,005,012,016) — fixed 016 hook-order; gates green: tsc clean, lint 0 errors, 101 tests. Commit ea9679e.
+- W3 complete (013,020) — gates green: tsc clean, lint 0 errors, 103 tests, sui move build OK. Commit f0b163e.
+- W4 (Move): 008,009,010,014,007 DONE (compile OK). **011 DEFERRED/BLOCKED** — implementer + controller found the plan's "fully-claimed" predicate unsafe (all-tables-empty never true with losers; winning-table-empty drains pot early in no-winner case). Safe fix needs a `had_winners` flag = struct-layout change on the money structs for negligible dust → not worth batch-rushing. Reverting 011's additions; re-plan later. Commit pending after revert + gates.

@@ -293,6 +293,20 @@ fun bet_invalid_bucket_aborts() {
     sc.end();
 }
 
+// === Zero-value bet aborts (range path) ===
+#[test, expected_failure(abort_code = hostit_ticket::predict::E_ZERO_BET)]
+fun zero_bet_bucket_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE, vector[100, 500]);
+    clock.set_for_testing(BET_NOW);
+    place_bet(&mut sc, &clock, ALICE, 0, 0); // bucket 0, zero stake -> abort
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
 // === Bet after expiry aborts ===
 #[test, expected_failure(abort_code = hostit_ticket::predict::E_STILL_OPEN)]
 fun bet_after_expiry_aborts() {
@@ -433,3 +447,4 @@ fun late_sales_move_winning_bucket() {
     clock.destroy_for_testing();
     sc.end();
 }
+

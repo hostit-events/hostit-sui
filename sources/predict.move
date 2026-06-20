@@ -46,6 +46,8 @@ const E_NO_STAKE: u64 = 6;
 const E_BAD_CUTOFFS: u64 = 7;
 /// `bucket` index out of range (`>= len(pools)`).
 const E_BAD_BUCKET: u64 = 8;
+/// Bet amount is zero — would create a dead, unclaimable stake entry.
+const E_ZERO_BET: u64 = 9;
 
 // === Objects ===
 
@@ -292,6 +294,7 @@ fun place_bet<T>(
     assert!(now < market.expiry_ms, E_STILL_OPEN);
 
     let amt = coin::value(&stake);
+    assert!(amt > 0, E_ZERO_BET);
     let bal = coin::into_balance(stake);
 
     if (yes) {
@@ -526,6 +529,7 @@ public fun bet_bucket<T>(
     assert!(bucket < vector::length(&market.pools), E_BAD_BUCKET);
 
     let amt = coin::value(&stake);
+    assert!(amt > 0, E_ZERO_BET);
     let bal = coin::into_balance(stake);
 
     balance::join(vector::borrow_mut(&mut market.pools, bucket), bal);
@@ -544,8 +548,9 @@ public fun bet_bucket<T>(
 // === Settle ===
 
 /// Resolve the market by reading the canonical `Event`. Permissionless: anyone
-/// can settle once `now >= expiry_ms`. The winning bucket is the first `i` in
-/// `0..N-1` with `minted < cutoffs[i]`, else the last bucket `N`.
+/// can settle once `now >= settle_after_ms` (= `end_ms` snapshot at creation),
+/// so door sales during the event are counted. The winning bucket is the first
+/// `i` in `0..N-1` with `minted < cutoffs[i]`, else the last bucket `N`.
 public fun settle_range<T>(
     market: &mut RangeMarket<T>,
     event: &Event,

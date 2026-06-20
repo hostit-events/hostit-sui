@@ -29,6 +29,7 @@ const MAP: Record<string, Record<number, string>> = {
     13: "The refund window has closed.",
     14: "Revenue can't be withdrawn until the refund window closes.",
     15: "No balance to withdraw.",
+    16: "This ticket price is too high to process (would overflow). Set a lower price.",
   },
   event: {
     1: "Name is required.",
@@ -43,8 +44,9 @@ const MAP: Record<string, Record<number, string>> = {
     10: "This event is free — there's no price to set.",
     11: "Price must be greater than zero.",
     12: "No price set for this coin.",
-    13: "Already checked in for this day.",
+    13: "This ticket is already checked in for today.",
     14: "Invalid signer key — must be a 32-byte ed25519 public key.",
+    15: "That key isn't a registered check-in signer — nothing to remove.",
   },
   poap: {
     1: "This ticket isn't for this event.",
@@ -63,6 +65,9 @@ const MAP: Record<string, Record<number, string>> = {
     4: "This event doesn't match the market's event.",
     5: "This market isn't settled yet — nothing to claim.",
     6: "You have no winning stake to claim here.",
+    7: "Bucket cutoffs must be non-empty and strictly increasing.",
+    8: "That bucket doesn't exist for this market.",
+    9: "Your bet amount must be greater than zero.",
   },
   policy_rules: {
     1: "This ticket doesn't match the one being sold.",

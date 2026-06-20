@@ -375,7 +375,7 @@ export function EventPageScreen({ id }: { id: string }) {
                 title="Refunds"
                 value={
                   isRefundable
-                    ? `Refundable up to ${Math.round(REFUND_PERIOD_MS / 86_400_000)} days before`
+                    ? `Refundable for ${Math.round(REFUND_PERIOD_MS / 86_400_000)} days after the event ends — the 3% platform fee is non-refundable`
                     : "Non-refundable"
                 }
               />
