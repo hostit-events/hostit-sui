@@ -22,6 +22,13 @@
 //    list without decrypting every blob, the index stores `title`/`savedAt`/
 //    `mode` in the CLEAR (only on this device). The sensitive form fields stay
 //    encrypted in the Walrus blob; do not put PII in the title.
+//    ACCEPTED RISK — CodeQL js/clear-text-storage flags this index write. It is
+//    intentional and non-sensitive: only title/timestamp/mode live in the clear
+//    (the draft body is Seal-encrypted on Walrus). Encrypting the index in the
+//    browser would need a key derived from public data (origin + address) — no
+//    real protection — AND would force an async decrypt-to-list, defeating the
+//    no-decrypt listing above. (A Copilot Autofix that did exactly this also
+//    broke the build by making listDrafts async.) Tracked as a dismissed alert.
 
 import { toBase64, fromBase64 } from "@mysten/sui/utils";
 import type { SessionKey } from "@mysten/seal";
