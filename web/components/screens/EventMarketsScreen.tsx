@@ -164,10 +164,14 @@ function SelloutMarketCard({
   eventId,
   eventSeq,
   maxTickets,
+  onMarketChange,
 }: {
   eventId: string;
   eventSeq: string;
   maxTickets: bigint;
+  // Called after a successful tx so a parent (the event page) can re-run its own
+  // market-existence query and reveal/refresh the section without a reload.
+  onMarketChange?: () => void;
 }) {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
@@ -250,6 +254,7 @@ function SelloutMarketCard({
       marketQ.refetch();
       balanceQ.refetch();
       winStakeQ.refetch();
+      onMarketChange?.();
     } catch (e: unknown) {
       toast.error(humanizeError(e));
     }
@@ -546,12 +551,16 @@ function RangeMarketCard({
   marketsLoading,
   maxTickets,
   refetchMarkets,
+  onMarketChange,
 }: {
   eventId: string;
   marketId: string | null;
   marketsLoading: boolean;
   maxTickets: bigint;
   refetchMarkets: () => void;
+  // Called after a successful tx so a parent (the event page) can re-run its own
+  // market-existence query and reveal/refresh the section without a reload.
+  onMarketChange?: () => void;
 }) {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
@@ -628,6 +637,7 @@ function RangeMarketCard({
       marketQ.refetch();
       balanceQ.refetch();
       winStakeQ.refetch();
+      onMarketChange?.();
     } catch (e: unknown) {
       toast.error(humanizeError(e));
     }
@@ -971,22 +981,33 @@ export function EventMarketsScreen({
   eventId,
   eventSeq,
   maxTickets,
+  onMarketChange,
 }: {
   eventId: string;
   eventSeq: string;
   maxTickets: bigint;
+  // Optional: forwarded to both cards so a market-creating (or any) tx can notify
+  // a parent (the event page) to re-run its own existence query and reveal/refresh
+  // the section live, without a reload.
+  onMarketChange?: () => void;
 }) {
   const { rangeMarketId, loading, refetch } = useEventMarkets(eventSeq);
 
   return (
     <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))" }}>
-      <SelloutMarketCard eventId={eventId} eventSeq={eventSeq} maxTickets={maxTickets} />
+      <SelloutMarketCard
+        eventId={eventId}
+        eventSeq={eventSeq}
+        maxTickets={maxTickets}
+        onMarketChange={onMarketChange}
+      />
       <RangeMarketCard
         eventId={eventId}
         marketId={rangeMarketId}
         marketsLoading={loading}
         maxTickets={maxTickets}
         refetchMarkets={refetch}
+        onMarketChange={onMarketChange}
       />
     </div>
   );

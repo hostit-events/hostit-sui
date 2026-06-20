@@ -146,10 +146,10 @@ Live on **Sui testnet**. `web/lib/config.ts` is the source of truth (all values 
 
 | Object | ID |
 |---|---|
-| Package (fresh v1 — original == latest; all calls + type origins) | `0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3` |
-| Shared `Hub` | `0x059d4a96832edbaca1cdae2abf0d5ba1b45e5db126c4883ff4b02f0b21594cd8` |
-| Shared `PoapRegistry` | `0x10a8e9ae971df483ec13a4cd8bc38d587761771276c2290a89eb79b9540591eb` |
-| Shared `TransferPolicy<Ticket>` | `0x8b32532990d89319ae4bcffc7a43819daa83378cd33e49c167481ca8520a9d61` |
+| Package (fresh v1 — original == latest; all calls + type origins) | `0x80ffb7c9ffe2eee4d69cb69f1bb7fb5403f90aa1492b91e4fdd9fa2dcde3e3f0` |
+| Shared `Hub` | `0x78d084b5fb25875d9d87cb04540e1f9633f2ad2851d2b1667db4f8d30131ef24` |
+| Shared `PoapRegistry` | `0x8488a2e7b7079d71fad61e358dcde291635d94a69c43a7c4bc5b72b4470ae888` |
+| Shared `TransferPolicy<Ticket>` | `0x8817b9cbefdb613cf3c63e2eb3b0a7993575e8e992abc11df40fb8c32b1b78f3` |
 | Collateral coin (testnet USDC) | `0xa1ec7fc0…::usdc::USDC` |
 
 > **Package versioning (Sui upgrades):** this is a **fresh publish (version 1)** — the predict `settle_after_ms` struct change was upgrade-incompatible, so the package was re-published rather than upgraded. With no upgrades yet, `PACKAGE_ID`, `PACKAGE_ID_LATEST`, `PREDICT_SELLOUT_PKG`, and `PREDICT_RANGE_PKG` are all the same id; a future in-place upgrade re-splits them (latest rolls forward, type origins stay pinned). See [`CLAUDE.md`](./CLAUDE.md) for the full model.

@@ -153,10 +153,15 @@ public fun create_event(
     assert!(string::length(&name) > 0, E_EMPTY_NAME);
     assert!(string::length(&uri) > 0, E_EMPTY_URI);
     let now = clock::timestamp_ms(clock);
-    assert!(start_ms > now, E_START_MUST_BE_AHEAD);
-    assert!(end_ms >= start_ms + DAY_MS, E_END_TOO_EARLY);
-    // purchase_start_ms <= start_ms - DAY_MS, rewritten to avoid underflow.
-    assert!(purchase_start_ms + DAY_MS <= start_ms, E_PURCHASE_START_TOO_LATE);
+    // Allow same-instant start (start_ms == now): an event can open and be
+    // checked into the moment it's created (no minimum lead).
+    assert!(start_ms >= now, E_START_MUST_BE_AHEAD);
+    // Any positive duration is valid (no minimum-duration floor).
+    assert!(end_ms > start_ms, E_END_TOO_EARLY);
+    // Purchases may open as late as start_ms (no minimum purchase lead) and
+    // must not open after the event ends.
+    assert!(purchase_start_ms <= start_ms, E_PURCHASE_START_TOO_LATE);
+    assert!(purchase_start_ms <= end_ms, E_PURCHASE_START_TOO_LATE);
     assert!(max_tickets > 0, E_MAX_TICKETS_ZERO);
     assert!(max_per_user > 0, E_MAX_PER_USER_ZERO);
 
@@ -220,9 +225,12 @@ public fun update_times(
 ) {
     assert_organizer(cap, event);
     let now = clock::timestamp_ms(clock);
-    assert!(start_ms > now, E_START_MUST_BE_AHEAD);
-    assert!(end_ms >= start_ms + DAY_MS, E_END_TOO_EARLY);
-    assert!(purchase_start_ms + DAY_MS <= start_ms, E_PURCHASE_START_TOO_LATE);
+    // Same semantics as create_event: allow same-instant start, any positive
+    // duration, and purchases opening as late as start_ms but no later than end.
+    assert!(start_ms >= now, E_START_MUST_BE_AHEAD);
+    assert!(end_ms > start_ms, E_END_TOO_EARLY);
+    assert!(purchase_start_ms <= start_ms, E_PURCHASE_START_TOO_LATE);
+    assert!(purchase_start_ms <= end_ms, E_PURCHASE_START_TOO_LATE);
     event.start_ms = start_ms;
     event.end_ms = end_ms;
     event.purchase_start_ms = purchase_start_ms;

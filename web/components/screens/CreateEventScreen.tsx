@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { DAY_MS, ENOKI_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
+import { ENOKI_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, setPriceTx } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
-import { putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
+import { minimalEventMetadata, putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
 import { storeFile } from "@/lib/walrus";
 import {
   useCurrentAccount,
@@ -38,6 +38,15 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -62,6 +71,41 @@ const PICKABLE = CATEGORIES.filter((c) => c.id !== "all");
 // Sane upper bound for ticket counts — guards against fat-finger / overflow.
 const MAX_TICKET_LIMIT = 10_000_000;
 
+/**
+ * Resolve the new Event (shared) + OrganizerCap (owned) object ids from a
+ * create-event tx by reading its on-chain object changes. Uses
+ * `waitForTransaction` so it works even if the create result carried no effects
+ * (e.g. the sponsored path, which returns only a digest). Shared by both the
+ * Quick and Advanced flows so pricing is never silently dropped.
+ */
+async function resolveCreatedIds(
+  client: unknown,
+  txDigest: string,
+): Promise<{ eventId: string | null; capId: string | null }> {
+  const rpc = client as {
+    waitForTransaction: (input: {
+      digest: string;
+      options?: { showObjectChanges?: boolean };
+      timeout?: number;
+      pollInterval?: number;
+    }) => Promise<{
+      objectChanges?:
+        | Array<{ type?: string; objectType?: string; objectId?: string }>
+        | null;
+    }>;
+  };
+  const res = await rpc.waitForTransaction({
+    digest: txDigest,
+    options: { showObjectChanges: true },
+    timeout: 30_000,
+  });
+  const changes = res.objectChanges ?? [];
+  const created = changes.filter((c) => c.type === "created");
+  const eventId = created.find((c) => c.objectType === EVENT_TYPE)?.objectId ?? null;
+  const capId = created.find((c) => c.objectType === ORGANIZER_CAP_TYPE)?.objectId ?? null;
+  return { eventId, capId };
+}
+
 interface ExtraTier {
   name: string;
   price: string;
@@ -75,7 +119,97 @@ const STEPS = [
   { id: 3, label: "Publish", icon: "ph:paper-plane-tilt-fill" },
 ] as const;
 
+type CreateMode = "quick" | "advanced";
+
+/**
+ * Top-level create screen. Offers a Quick (default) and an Advanced mode.
+ * - Quick   = a single compact form (instant create): name, category, times,
+ *             capacity, Free-or-price. `max_per_user = 1`, no tiers, no cover.
+ * - Advanced = the full 4-step wizard, preserved exactly (`AdvancedCreate`).
+ * Switching modes while the active form is dirty asks for confirmation first so
+ * input is never silently dropped.
+ */
 export function CreateEventScreen() {
+  const [mode, setMode] = useState<CreateMode>("quick");
+  // Per-mode dirtiness, reported up from each child form.
+  const [quickDirty, setQuickDirty] = useState(false);
+  const [advancedDirty, setAdvancedDirty] = useState(false);
+  // When non-null, a confirm dialog is open offering to switch to this mode.
+  const [pendingMode, setPendingMode] = useState<CreateMode | null>(null);
+  // Bumping a form's key remounts it (a true reset) when the user confirms a
+  // discard — so "Switch & discard" actually drops the in-progress input.
+  const [quickKey, setQuickKey] = useState(0);
+  const [advancedKey, setAdvancedKey] = useState(0);
+
+  const currentDirty = mode === "quick" ? quickDirty : advancedDirty;
+
+  function requestMode(next: CreateMode) {
+    if (next === mode) return;
+    if (currentDirty) {
+      setPendingMode(next);
+      return;
+    }
+    setMode(next);
+  }
+  function confirmSwitch() {
+    if (!pendingMode) return;
+    // Reset the form we're leaving so the discard is real, then switch.
+    if (mode === "quick") setQuickKey((k) => k + 1);
+    else setAdvancedKey((k) => k + 1);
+    setMode(pendingMode);
+    setPendingMode(null);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-center">
+        <Tabs value={mode} onValueChange={(v) => requestMode(v as CreateMode)}>
+          <TabsList>
+            <TabsTrigger value="quick">
+              <Icon icon="ph:lightning-fill" size={14} /> Quick
+            </TabsTrigger>
+            <TabsTrigger value="advanced">
+              <Icon icon="ph:sliders-horizontal-fill" size={14} /> Advanced
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* Both forms are kept mounted (hidden, not unmounted) so a half-filled
+          form survives a glance at the other mode once the user confirms. */}
+      <div hidden={mode !== "quick"}>
+        <QuickCreate key={quickKey} onDirtyChange={setQuickDirty} />
+      </div>
+      <div hidden={mode !== "advanced"}>
+        <AdvancedCreate key={advancedKey} onDirtyChange={setAdvancedDirty} />
+      </div>
+
+      <Dialog open={pendingMode !== null} onOpenChange={(o) => !o && setPendingMode(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Discard your changes?</DialogTitle>
+            <DialogDescription>
+              You&apos;ve started filling out the{" "}
+              <strong>{mode === "quick" ? "Quick" : "Advanced"}</strong> form. Switching to{" "}
+              <strong>{pendingMode === "quick" ? "Quick" : "Advanced"}</strong> won&apos;t carry
+              those details over.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingMode(null)}>
+              Keep editing
+            </Button>
+            <Button variant="destructive" onClick={confirmSwitch}>
+              Switch &amp; discard
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
   const client = useCurrentClient();
@@ -166,6 +300,24 @@ export function CreateEventScreen() {
   const [p1, p2] = catPalette(category);
   const ci = coinInfo(coinType);
 
+  // Report dirtiness to the parent so switching modes can confirm before
+  // discarding input. "Dirty" = the user typed/picked something beyond defaults.
+  const advancedDirty =
+    Boolean(digest) ||
+    name.trim() !== "" ||
+    description.trim() !== "" ||
+    venue.trim() !== "" ||
+    city.trim() !== "" ||
+    tag.trim() !== "" ||
+    basePrice.trim() !== "" ||
+    coverFile !== null ||
+    tiers.length > 0 ||
+    maxTickets !== "100" ||
+    maxPerUser !== "5";
+  useEffect(() => {
+    onDirtyChange?.(advancedDirty);
+  }, [advancedDirty, onDirtyChange]);
+
   // A tier row only persists if it has a name; a named row with a non-numeric /
   // negative price is invalid and would be dropped (price coerces to 0).
   function tierState(t: ExtraTier): "ok" | "drop" | "badprice" {
@@ -177,15 +329,17 @@ export function CreateEventScreen() {
 
   const startMs = Date.parse(start);
   const endMs = Date.parse(end);
-  // Default sale opens now; on-chain `purchase_start_ms`.
-  const purchaseStartMs = Date.now();
+  // Sale opens at the earliest of now / start; clamped so the on-chain
+  // purchase_start_ms <= start_ms holds even when start is ~now.
+  const purchaseStartMs = Math.min(Date.now(), startMs);
 
+  // Time rules match the relaxed Move contract: start_ms >= now, end_ms >
+  // start_ms, purchase_start_ms <= start_ms. No minimum lead or duration
+  // (kept consistent with Quick create).
   function validateTimes(): string | null {
     if (![startMs, endMs].every(Number.isFinite)) return "Dates must be valid.";
-    if (startMs <= Date.now()) return "Start must be in the future.";
-    if (endMs < startMs + DAY_MS) return "End must be at least 1 day after start.";
-    if (purchaseStartMs + DAY_MS > startMs)
-      return "Sale must open at least 1 day before the event starts.";
+    if (startMs < Date.now() - 60_000) return "Start can't be in the past.";
+    if (endMs <= startMs) return "End must be after start.";
     return null;
   }
 
@@ -380,7 +534,7 @@ export function CreateEventScreen() {
       // resolve the new Event id + OrganizerCap id authoritatively from the chain
       // by reading the create tx's object changes (works for both paths).
       const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
-      const ids = await resolveCreatedIds(out.digest).catch(() => null);
+      const ids = await resolveCreatedIds(client, out.digest).catch(() => null);
       if (ids?.eventId) setCreatedEventId(ids.eventId);
 
       if (wantsPrice) {
@@ -443,40 +597,6 @@ export function CreateEventScreen() {
     }
   }
 
-  /**
-   * Resolve the new Event (shared) + OrganizerCap (owned) object ids from a
-   * create-event tx by reading its on-chain object changes. Uses
-   * `waitForTransaction` so it works even if the create result carried no
-   * effects (e.g. the sponsored path, which returns only a digest).
-   */
-  async function resolveCreatedIds(
-    txDigest: string,
-  ): Promise<{ eventId: string | null; capId: string | null }> {
-    const rpc = client as unknown as {
-      waitForTransaction: (input: {
-        digest: string;
-        options?: { showObjectChanges?: boolean };
-        timeout?: number;
-        pollInterval?: number;
-      }) => Promise<{
-        objectChanges?:
-          | Array<{ type?: string; objectType?: string; objectId?: string }>
-          | null;
-      }>;
-    };
-    const res = await rpc.waitForTransaction({
-      digest: txDigest,
-      options: { showObjectChanges: true },
-      timeout: 30_000,
-    });
-    const changes = res.objectChanges ?? [];
-    const created = changes.filter((c) => c.type === "created");
-    const eventId =
-      created.find((c) => c.objectType === EVENT_TYPE)?.objectId ?? null;
-    const capId =
-      created.find((c) => c.objectType === ORGANIZER_CAP_TYPE)?.objectId ?? null;
-    return { eventId, capId };
-  }
 
   const dateLabel = Number.isFinite(startMs)
     ? new Date(startMs).toLocaleString(undefined, {
@@ -1145,6 +1265,462 @@ export function CreateEventScreen() {
           </p>
         </aside>
       </div>
+    </div>
+  );
+}
+
+// ── Quick (instant) create ────────────────────────────────────────────────────
+// A single compact form. Hardcodes max_per_user = 1, no tiers, no cover. Stores a
+// minimal sentinel metadata blob ({ v:1, category }) on Walrus, creates the event
+// (uri = blobId), then — if paid — applies the price via the same cap-gated
+// two-tx flow as the wizard (CREATE-PRICE-DROPPED safe). Rich metadata (cover,
+// description, tiers) is added later from the manage screen.
+const QUICK_DEFAULT_DURATION_MIN = 3 * 60; // default end = start + 3h
+
+function QuickCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
+  const account = useCurrentAccount();
+  const addr = account?.address ?? null;
+  const client = useCurrentClient();
+  const regular = useSignAndExecute();
+  const sponsored = useSponsorAndExecute();
+  const txPending = regular.isPending || sponsored.isPending;
+
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState(PICKABLE[0].id);
+  const [start, setStart] = useState(() => isoLocal()); // now
+  const [end, setEnd] = useState(() => isoLocal(QUICK_DEFAULT_DURATION_MIN)); // now + 3h
+  const [maxTickets, setMaxTickets] = useState("100");
+  const [isFree, setIsFree] = useState(false);
+  const [basePrice, setBasePrice] = useState("");
+  const [coinType, setCoinType] = useState(COINS[0].type);
+
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [digest, setDigest] = useState<string | null>(null);
+  const [createdEventId, setCreatedEventId] = useState<string | null>(null);
+  const [priceSet, setPriceSet] = useState<boolean | null>(null);
+  // Walrus upload cache so a create retry doesn't re-upload an identical blob.
+  const [metaCache, setMetaCache] = useState<{ key: string; blobId: string } | null>(null);
+
+  const [p1, p2] = catPalette(category);
+  const ci = coinInfo(coinType);
+
+  const quickDirty =
+    Boolean(digest) ||
+    name.trim() !== "" ||
+    basePrice.trim() !== "" ||
+    maxTickets !== "100" ||
+    category !== PICKABLE[0].id ||
+    isFree !== false ||
+    coinType !== COINS[0].type;
+  useEffect(() => {
+    onDirtyChange?.(quickDirty);
+  }, [quickDirty, onDirtyChange]);
+
+  const startMs = Date.parse(start);
+  const endMs = Date.parse(end);
+
+  // Time validation matching the NEW Move contract:
+  //   start_ms >= now, end_ms > start_ms, purchase_start_ms = now (sales open now).
+  function validateTimes(): string | null {
+    if (![startMs, endMs].every(Number.isFinite)) return "Dates must be valid.";
+    // Small slack so "now" set a moment ago isn't rejected as past by the time
+    // the tx lands (the contract checks start_ms >= now at execution).
+    if (startMs < Date.now() - 60_000) return "Start can't be in the past.";
+    if (endMs <= startMs) return "End must be after start.";
+    return null;
+  }
+
+  function validate(): string | null {
+    if (!name.trim()) return "Event name is required.";
+    const t = validateTimes();
+    if (t) return t;
+    const maxT = Number(maxTickets);
+    if (!Number.isInteger(maxT) || maxT <= 0)
+      return "Capacity must be a whole number greater than 0.";
+    if (maxT > MAX_TICKET_LIMIT)
+      return `Capacity can't exceed ${MAX_TICKET_LIMIT.toLocaleString()}.`;
+    if (!isFree) {
+      if (!basePrice.trim()) return "Set a price, or mark the event as free.";
+      const price = Number(basePrice);
+      if (!Number.isFinite(price) || price <= 0)
+        return "Price must be a number greater than 0.";
+    }
+    return null;
+  }
+
+  const dateError = validateTimes();
+  const formError = validate();
+
+  async function publish() {
+    if (!addr) return setErr("Connect a wallet to publish.");
+    const e = validate();
+    if (e) return setErr(e);
+
+    setErr(null);
+    setDigest(null);
+    setCreatedEventId(null);
+    setPriceSet(null);
+    // Sales open immediately; clamp to start so on-chain purchase_start_ms <= start_ms.
+    const purchaseStartMs = Math.min(Date.now(), startMs);
+    try {
+      // 1) Minimal sentinel metadata → Walrus (tiny, fast). Reuse on retry.
+      const metadata = minimalEventMetadata(category);
+      const metaKey = JSON.stringify(metadata);
+      let blobId: string;
+      if (metaCache && metaCache.key === metaKey) {
+        blobId = metaCache.blobId;
+      } else {
+        setBusy("Storing event metadata on Walrus…");
+        blobId = await putEventMetadata(metadata);
+        setMetaCache({ key: metaKey, blobId });
+      }
+
+      // 2) Create the event on-chain (uri = metadata blobId, max_per_user = 1).
+      setBusy("Creating event on Sui…");
+      const tx = createEventTx(
+        {
+          name: name.trim(),
+          symbol: category.slice(0, 4).toUpperCase(),
+          uri: blobId,
+          startMs: BigInt(startMs),
+          endMs: BigInt(endMs),
+          purchaseStartMs: BigInt(purchaseStartMs),
+          maxTickets: BigInt(Math.trunc(Number(maxTickets))),
+          maxPerUser: 1n,
+          isFree,
+          isRefundable: false,
+        },
+        addr,
+      );
+      const out = ENOKI_ENABLED
+        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
+        : await regular.mutateAsync({ transaction: tx });
+      setDigest(out.digest);
+      toast.success("Your event is live", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
+
+      // 3) CREATE-PRICE-DROPPED: pricing is a separate cap-gated call. Resolve the
+      // new Event + OrganizerCap ids from the create tx, then apply set_price.
+      const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
+      const ids = await resolveCreatedIds(client, out.digest).catch(() => null);
+      if (ids?.eventId) setCreatedEventId(ids.eventId);
+
+      if (wantsPrice) {
+        const dec = coinInfo(coinType).decimals;
+        const priceUnits = toUnits(basePrice, dec);
+        if (ids?.eventId && ids?.capId && priceUnits && priceUnits > 0n) {
+          try {
+            setBusy("Setting price…");
+            const priceTx = setPriceTx({
+              capId: ids.capId,
+              eventId: ids.eventId,
+              coinType,
+              price: priceUnits,
+            });
+            if (ENOKI_ENABLED) {
+              await sponsored.mutateAsync({ transaction: priceTx, sender: addr });
+            } else {
+              await regular.mutateAsync({ transaction: priceTx });
+            }
+            setPriceSet(true);
+          } catch {
+            setPriceSet(false);
+          }
+        } else {
+          setPriceSet(false);
+        }
+      }
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const dateLabel = Number.isFinite(startMs)
+    ? new Date(startMs).toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "Date TBA";
+
+  // ── success ──
+  if (digest) {
+    return (
+      <div className="space-y-6 screen-in" style={{ maxWidth: 560, margin: "0 auto" }}>
+        <Card className="text-center" style={{ padding: 36 }}>
+          <div
+            className="poster"
+            style={
+              {
+                width: 92,
+                height: 92,
+                margin: "0 auto 18px",
+                borderRadius: "50%",
+                display: "grid",
+                placeItems: "center",
+                ["--p1" as string]: p1,
+                ["--p2" as string]: p2,
+              } as React.CSSProperties
+            }
+          >
+            <Icon icon="ph:lightning-fill" size={40} style={{ color: "#fff", position: "relative" }} />
+          </div>
+          <h1 className="page-title" style={{ fontSize: 26 }}>
+            Your event is live
+          </h1>
+          <p className="page-sub">
+            <strong style={{ color: "var(--fg1)" }}>{name.trim() || "Your event"}</strong> is now on
+            Sui. Add a cover, description and ticket tiers any time from your event&apos;s manage
+            page.
+          </p>
+          <div style={{ marginTop: 10 }}>
+            <TxLink digest={digest} chars={12} className="mono" />
+          </div>
+          {!isFree && priceSet === true && (
+            <Card
+              style={{
+                marginTop: 18,
+                textAlign: "left",
+                padding: 16,
+                background: "rgba(0,200,120,.08)",
+                borderColor: "var(--color-success)",
+              }}
+            >
+              <div className="flex items-center gap-2" style={{ color: "var(--color-success)" }}>
+                <Icon icon="ph:check-circle-fill" size={16} />
+                <span className="text-sm font-semibold">Ticket price set</span>
+              </div>
+              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
+                Your price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} is live on-chain.
+                Adjust pricing and add more coins from your{" "}
+                <Link href="/dashboard" style={{ color: "var(--hi-blue)", fontWeight: 600 }}>
+                  dashboard
+                </Link>
+                .
+              </p>
+            </Card>
+          )}
+          {!isFree && priceSet !== true && (
+            <Card
+              style={{
+                marginTop: 18,
+                textAlign: "left",
+                padding: 16,
+                background: "rgba(245,166,35,.08)",
+                borderColor: "var(--hi-amber)",
+              }}
+            >
+              <div className="flex items-center gap-2" style={{ color: "var(--hi-amber)" }}>
+                <Icon icon="ph:warning-fill" size={16} />
+                <span className="text-sm font-semibold">Set your ticket price</span>
+              </div>
+              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
+                The Event is shared on creation, so pricing is a separate cap-gated call. Set your
+                price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} before the sale opens —
+                buyers can&apos;t purchase until a price is set.
+              </p>
+              <Button asChild style={{ marginTop: 10 }}>
+                <Link href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}>
+                  <Icon icon="ph:tag-fill" size={16} /> Set your ticket price
+                </Link>
+              </Button>
+            </Card>
+          )}
+          <div className="flex gap-2 justify-center" style={{ marginTop: 22, flexWrap: "wrap" }}>
+            <Button asChild size="lg">
+              <Link href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}>
+                <Icon icon="ph:pencil-simple-fill" size={18} /> Add details
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDigest(null);
+                setCreatedEventId(null);
+                setPriceSet(null);
+                setName("");
+                setBasePrice("");
+                setCategory(PICKABLE[0].id);
+                setStart(isoLocal());
+                setEnd(isoLocal(QUICK_DEFAULT_DURATION_MIN));
+                setMaxTickets("100");
+                setIsFree(false);
+                setCoinType(COINS[0].type);
+              }}
+            >
+              Create another
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-7 screen-in">
+      <header className="relative">
+        <div
+          className="glow"
+          style={{ width: 360, height: 360, background: "rgba(0,124,250,.4)", top: -150, right: -40, opacity: 0.2 }}
+        />
+        <span className="eyebrow">
+          <Icon icon="ph:lightning-fill" size={14} /> Quick host
+        </span>
+        <h1 className="page-title" style={{ marginTop: 12, fontSize: 32 }}>
+          Create an event
+        </h1>
+        <p className="page-sub">
+          Publish in seconds — sales open immediately. Add a cover, description and tiers later from
+          the manage page.
+          {ENOKI_ENABLED && <span style={{ color: "var(--color-success)" }}> Gas is sponsored.</span>}
+        </p>
+      </header>
+
+      <Card className="space-y-5" style={{ padding: 20, maxWidth: 620 }}>
+        <div className="space-y-1.5">
+          <Label htmlFor="qc-event-name">Event name</Label>
+          <Input
+            id="qc-event-name"
+            placeholder="e.g. Sui Builders Night"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="qc-category">Category</Label>
+          <Select value={category} onValueChange={(v) => setCategory(v)}>
+            <SelectTrigger id="qc-category" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PICKABLE.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="qc-start">Event starts</Label>
+            <DateTimePicker id="qc-start" value={start} min={isoLocal()} onChange={setStart} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="qc-end">Event ends</Label>
+            <DateTimePicker id="qc-end" value={end} min={start} onChange={setEnd} />
+          </div>
+        </div>
+        {dateError && (
+          <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+            <Icon icon="ph:warning-circle-fill" size={12} /> {dateError}
+          </p>
+        )}
+
+        <div className="space-y-1.5" style={{ maxWidth: 220 }}>
+          <Label htmlFor="qc-capacity">Capacity</Label>
+          <Input
+            id="qc-capacity"
+            type="number"
+            min={1}
+            step="1"
+            value={maxTickets}
+            onChange={(e) => setMaxTickets(e.target.value)}
+          />
+          <p className="text-xs" style={{ color: "var(--fg3)" }}>
+            One ticket per attendee.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">Free event</div>
+            <div className="text-xs" style={{ color: "var(--fg3)" }}>
+              Attendees claim for free — no on-chain price.
+            </div>
+          </div>
+          <Switch
+            aria-label="Free event"
+            checked={isFree}
+            onCheckedChange={(v) => setIsFree(Boolean(v))}
+          />
+        </div>
+
+        {!isFree && (
+          <div className="grid sm:grid-cols-[1fr_140px] gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="qc-price">Price</Label>
+              <Input
+                id="qc-price"
+                type="number"
+                min={0}
+                step="any"
+                placeholder="0.00"
+                value={basePrice}
+                onChange={(e) => setBasePrice(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="qc-coin">Coin</Label>
+              <Select value={coinType} onValueChange={(v) => setCoinType(v)}>
+                <SelectTrigger id="qc-coin" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COINS.map((c) => (
+                    <SelectItem key={c.type} value={c.type}>
+                      {c.symbol}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+        {!isFree && (
+          <p className="text-xs" style={{ color: "var(--fg3)" }}>
+            A 3% platform fee is added on top at checkout. Pricing is applied as a follow-up call
+            after creation (the Event is shared on-chain).
+          </p>
+        )}
+
+        {err && (
+          <div className="text-sm break-words" style={{ color: "var(--color-danger)" }}>
+            <Icon icon="ph:warning-circle-fill" size={14} /> {err}
+          </div>
+        )}
+        {busy && (
+          <div className="mono" style={{ color: "var(--hi-blue)" }}>
+            <Icon icon="svg-spinners:3-dots-fade" size={16} /> {busy}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <span className="text-xs" style={{ color: "var(--fg3)" }}>
+            {dateLabel}
+          </span>
+          {!addr ? (
+            <Badge variant="outline">Connect a wallet to publish</Badge>
+          ) : (
+            <Button
+              size="lg"
+              onClick={publish}
+              disabled={!!busy || txPending || !!formError}
+            >
+              <Icon icon="ph:lightning-fill" size={18} />
+              {busy || txPending ? "Publishing…" : "Publish event"}
+            </Button>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }
