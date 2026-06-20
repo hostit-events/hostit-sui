@@ -2,10 +2,11 @@
 // v3 (2026-05-31): faithful Sui port of the HostIt EVM Diamond. Multi-module
 // package (hub/event/ticket/market/checkin); shared Hub; one shared Event per
 // event; generic Coin<T> payments.
-// 2026-06-20: FRESH publish (single package, version 1) — the predict
-// settle_after_ms struct change was upgrade-incompatible, so the package was
-// re-published from scratch rather than upgraded. Because there are no upgrades
-// yet, ALL package-id pins below (PACKAGE_ID / PACKAGE_ID_LATEST /
+// 2026-06-20: FRESH publish (single package, version 1) carrying the forum
+// organizer-admin change (#37). Shipped as a re-publish — not because the change
+// is incompatible (#37 is additive) but because `sui client upgrade` was
+// non-functional at the time; see DEPLOYING.md. Because there are no upgrades on
+// this id yet, ALL package-id pins below (PACKAGE_ID / PACKAGE_ID_LATEST /
 // PREDICT_SELLOUT_PKG / PREDICT_RANGE_PKG) equal the same new id. The separate
 // constants are kept because a FUTURE upgrade re-splits them (see comments).
 
@@ -23,7 +24,7 @@ export function explorerTxUrl(digest: string): string {
 
 export const PACKAGE_ID =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_ID ??
-  "0x80ffb7c9ffe2eee4d69cb69f1bb7fb5403f90aa1492b91e4fdd9fa2dcde3e3f0";
+  "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd";
 
 /**
  * Latest package version for Move-CALL targets (`targetLatest`). On a fresh
@@ -35,7 +36,7 @@ export const PACKAGE_ID =
  */
 export const PACKAGE_ID_LATEST =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_LATEST_ID ??
-  "0x80ffb7c9ffe2eee4d69cb69f1bb7fb5403f90aa1492b91e4fdd9fa2dcde3e3f0";
+  "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd";
 
 /**
  * Type-origin pin for `predict::SelloutMarket` (+ its events). SelloutMarket is
@@ -45,7 +46,7 @@ export const PACKAGE_ID_LATEST =
  */
 export const PREDICT_SELLOUT_PKG =
   process.env.NEXT_PUBLIC_HOSTIT_PREDICT_SELLOUT_PKG ??
-  "0x80ffb7c9ffe2eee4d69cb69f1bb7fb5403f90aa1492b91e4fdd9fa2dcde3e3f0";
+  "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd";
 
 /**
  * Type-origin pin for `predict::RangeMarket` (+ its events). Also defined in the
@@ -54,20 +55,20 @@ export const PREDICT_SELLOUT_PKG =
  */
 export const PREDICT_RANGE_PKG =
   process.env.NEXT_PUBLIC_HOSTIT_PREDICT_RANGE_PKG ??
-  "0x80ffb7c9ffe2eee4d69cb69f1bb7fb5403f90aa1492b91e4fdd9fa2dcde3e3f0";
+  "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd";
 
 /** Shared protocol Hub (config + 3% fee treasury). Every paid sale needs it. */
 export const HUB_ID =
   process.env.NEXT_PUBLIC_HOSTIT_HUB_ID ??
-  "0x78d084b5fb25875d9d87cb04540e1f9633f2ad2851d2b1667db4f8d30131ef24";
+  "0x4e02096883ac6505fd83cfb25ce6ea5414a49395ac443d830d6df075e9402b46";
 
 /** Shared POAP dedup registry (one proof-of-attendance NFT per ticket). */
 export const POAP_REGISTRY_ID =
   process.env.NEXT_PUBLIC_HOSTIT_POAP_REGISTRY_ID ??
-  "0x8488a2e7b7079d71fad61e358dcde291635d94a69c43a7c4bc5b72b4470ae888";
+  "0x13b9aad046800a554d365e2474f0e658753db9feadfde5913af1651c68a01044";
 
 export const TRANSFER_POLICY_ID =
-  "0x8817b9cbefdb613cf3c63e2eb3b0a7993575e8e992abc11df40fb8c32b1b78f3";
+  "0x37fed2fd12c6037a72413fd2da8b6e715587fdc625bf137f2edee61e20cbdcf1";
 
 // Well-known Sui shared Clock
 export const CLOCK_ID = "0x6";

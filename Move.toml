@@ -10,10 +10,10 @@ authors = ["HostIt contributors"]
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
 
-# Original package id of the fresh publish (= Published.toml original-id), so a
-# future `sui client upgrade` resolves the named address correctly.
+# Fresh-publish prep: 0x0 so Sui assigns a NEW package id on publish. The
+# post-publish roll sets this to the new original-id (for future upgrades).
 [addresses]
-hostit_ticket = "0x80ffb7c9ffe2eee4d69cb69f1bb7fb5403f90aa1492b91e4fdd9fa2dcde3e3f0"
+hostit_ticket = "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd"
 
 [dev-addresses]
 hostit_ticket = "0xCAFE"
