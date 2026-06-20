@@ -110,7 +110,7 @@ When an upgrade can't carry the change (see [the two cases above](#upgrade-vs-fr
 
 ## Verifying the type-origin wiring
 
-The most common upgrade bug is a frontend constant pointing at the wrong package version, which silently makes queries return nothing. After deploying, confirm a freshly created object's on-chain `objectType` exactly matches the `*_TYPE` constant the UI filters on. For example, a `predict::RangeMarket` created after v3 reports `0xb5c952…::predict::RangeMarket<…>` — so `RANGE_MARKET_TYPE` must use `PACKAGE_ID_LATEST`, **not** the original `PACKAGE_ID`.
+The most common upgrade bug is a frontend constant pointing at the wrong package version, which silently makes queries return nothing. After deploying, confirm a freshly created object's on-chain `objectType` exactly matches the `*_TYPE` constant the UI filters on. Today (fresh v1) every type origin equals `0x6a41303d…671fcd`, so a `predict::RangeMarket` reports `0x6a41303d…::predict::RangeMarket<…>`. After the first in-place upgrade, newly created objects of an upgrade-introduced struct report the **new** package id — so that struct's `*_TYPE` must use `PACKAGE_ID_LATEST` (or its own pinned origin), **not** the original `PACKAGE_ID`.
 
 ## Authorization
 

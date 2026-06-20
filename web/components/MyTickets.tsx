@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import {
   COINS,
@@ -37,8 +38,11 @@ function fmtRefundDate(ms: number): string {
   });
 }
 
-/** Deterministic faux-QR matrix (ticket-stub motif). */
-function Qr({ seed, size = 54, dim = 11 }: { seed: string; size?: number; dim?: number }) {
+/**
+ * Deterministic faux-QR matrix (ticket-stub motif). Retained as the SSR/loading
+ * fallback look; the scannable QR is rendered by {@link TicketQr}.
+ */
+function FauxQr({ seed, size = 54, dim = 11 }: { seed: string; size?: number; dim?: number }) {
   const cells = useMemo(() => {
     let h = 2166136261;
     for (let i = 0; i < seed.length; i++) {
@@ -80,6 +84,28 @@ function Qr({ seed, size = 54, dim = 11 }: { seed: string; size?: number; dim?: 
           : on;
         return <span key={i} style={{ background: fill ? "#0C112B" : "transparent", borderRadius: 1 }} />;
       })}
+    </div>
+  );
+}
+
+/**
+ * Real, scannable QR encoding the ticket's bare on-chain object id. The door
+ * camera scanner decodes it and `extractTicketId` (lib/staffKey.ts) reads the id
+ * directly via its `isValidSuiObjectId` branch — so the encoded value MUST be the
+ * bare object id, with no URL/JSON wrapper. `QRCodeSVG` renders an inline SVG and
+ * is SSR-safe (no canvas/DOM-measure), so no client-only guard is needed.
+ */
+export function TicketQr({ ticketId, size = 54 }: { ticketId: string; size?: number }) {
+  return (
+    <div style={{ background: "#fff", padding: 4, borderRadius: 7, flex: "none", lineHeight: 0 }}>
+      <QRCodeSVG
+        value={ticketId}
+        size={size}
+        bgColor="#ffffff"
+        fgColor="#0C112B"
+        level="M"
+        aria-label="Ticket QR code"
+      />
     </div>
   );
 }
@@ -291,7 +317,7 @@ function TicketStub({
             )}
           </div>
         </div>
-        <Qr seed={ticketId} />
+        <TicketQr ticketId={ticketId} />
       </div>
     </div>
   );

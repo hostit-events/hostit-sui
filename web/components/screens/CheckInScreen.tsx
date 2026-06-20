@@ -506,12 +506,16 @@ function Attendance({ eventId }: { eventId: string }) {
 
         <TabsContent value="qr">
           <Card className="text-center" style={{ padding: 22 }}>
-            <FauxQr seed={eventId} />
-            <p className="text-sm text-muted-foreground mt-3">
-              Point an attendee&apos;s ticket QR at the staff scanner. On scan, the staff
-              device signs a voucher and the attendee submits the on-chain check-in.
-            </p>
-            <p className="text-xs mono text-muted-foreground mt-1.5">
+            <div className="text-sm text-muted-foreground">
+              QR scanning happens in the full-screen door view, which runs the
+              camera scanner and signs the staff voucher on each scan.
+            </div>
+            <Button asChild className="mt-3">
+              <Link href={`/door/${eventId}`}>
+                <Icon icon="ic:round-meeting-room" size={15} /> Open door view to scan
+              </Link>
+            </Button>
+            <p className="text-xs mono text-muted-foreground mt-2">
               event {eventId.slice(0, 14)}…
             </p>
           </Card>
@@ -579,53 +583,6 @@ function Attendance({ eventId }: { eventId: string }) {
           Showing the most recent check-ins — older ones aren&apos;t all loaded yet.
         </p>
       )}
-    </div>
-  );
-}
-
-/** Deterministic ticket-stub QR motif (display only). */
-function FauxQr({ seed, size = 132, dim = 13 }: { seed: string; size?: number; dim?: number }) {
-  const cells = useMemo(() => {
-    let h = 2166136261;
-    for (let i = 0; i < seed.length; i++) {
-      h ^= seed.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    const out: boolean[] = [];
-    for (let i = 0; i < dim * dim; i++) {
-      h ^= h << 13;
-      h ^= h >>> 17;
-      h ^= h << 5;
-      out.push((h >>> 0) % 100 < 48);
-    }
-    return out;
-  }, [seed, dim]);
-  const isFinder = (r: number, c: number) =>
-    (r < 3 && c < 3) || (r < 3 && c >= dim - 3) || (r >= dim - 3 && c < 3);
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        display: "grid",
-        gridTemplateColumns: `repeat(${dim},1fr)`,
-        gridTemplateRows: `repeat(${dim},1fr)`,
-        gap: 2,
-        background: "#fff",
-        padding: 8,
-        borderRadius: 12,
-        margin: "0 auto",
-      }}
-    >
-      {cells.map((on, i) => {
-        const r = Math.floor(i / dim);
-        const c = i % dim;
-        const f = isFinder(r, c);
-        const fill = f
-          ? r === 0 || r === 2 || r === dim - 1 || r === dim - 3 || c === 0 || c === 2 || c === dim - 1 || c === dim - 3
-          : on;
-        return <span key={i} style={{ background: fill ? "#0C112B" : "transparent", borderRadius: 1 }} />;
-      })}
     </div>
   );
 }

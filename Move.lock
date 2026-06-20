@@ -16,8 +16,8 @@ use_environment = "testnet"
 manifest_digest = "7AFB66695545775FBFBB2D3078ADFD084244D5002392E837FDE21D9EA1C6D01C"
 deps = { MoveStdlib = "MoveStdlib" }
 
-[pinned.testnet.sui_ticket]
+[pinned.testnet.hostit_ticket]
 source = { root = true }
 use_environment = "testnet"
-manifest_digest = "0532D72C4F42A4472D331C54E2F8FB1595A305815D58568D26C6F8A4AC9BBFCE"
+manifest_digest = "0ADBBEDD41FF1BCDBA2372DC73FB3A343401A4F65C57A61877B4E65581DE3651"
 deps = { Sui = "Sui" }

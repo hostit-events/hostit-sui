@@ -18,3 +18,4 @@ Execution: sequential waves on one branch; parallel Opus implementers within a w
 
 ## Status
 - W1 complete (001,002,004,006,015,017,018,019) — gates green: tsc clean, lint 0 errors (25 pre-existing warnings), 84 tests. Commit d6ed50d.
+- W2 complete (003,005,012,016) — fixed 016 hook-order; gates green: tsc clean, lint 0 errors, 101 tests. Commit pending (see git log).

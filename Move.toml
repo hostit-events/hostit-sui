@@ -8,7 +8,7 @@ authors = ["HostIt contributors"]
 # management) — the single source of truth for the deployed package versions.
 
 [dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "94ad8ccd0ed6c089a9fe072ff80c918b5ab44943" }
 
 # Fresh-publish prep: 0x0 so Sui assigns a NEW package id on publish. The
 # post-publish roll sets this to the new original-id (for future upgrades).
