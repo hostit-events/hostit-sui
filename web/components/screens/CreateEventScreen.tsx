@@ -270,7 +270,11 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
   // `enabled` is true only when a wallet is connected AND the server memory layer
   // is configured, so everything below cleanly no-ops (and never prompts for a
   // signature) when memory is off / no wallet.
-  const { enabled: memoryEnabled, recall, remember } = useOrganizerMemory();
+  const { enabled: memoryEnabled, recall, remember, draft } = useOrganizerMemory();
+  // AI "Draft with AI" state: true while a draft request is in flight; when a
+  // draft would overwrite existing text we stash the ctx here and open a confirm.
+  const [drafting, setDrafting] = useState(false);
+  const [confirmDraft, setConfirmDraft] = useState(false);
   // Read-only suggestions derived from past events; null until recall resolves.
   const [suggested, setSuggested] = useState<CreatePrefs | null>(null);
   const [suggestDismissed, setSuggestDismissed] = useState(false);
@@ -433,6 +437,48 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
     const num = value.match(/[\d.]+/)?.[0];
     const n = num ? Number(num) : NaN;
     if (Number.isFinite(n) && n > 0) setBasePrice(num as string);
+  }
+
+  // ── AI draft (GH#19) ───────────────────────────────────────────────────────
+  // Gather the form context and ask /api/create-assist (via the memory hook) for
+  // a description. When memory is on this signs the same envelope recall uses so
+  // the route may ground the draft in past events; when off it sends ctx only.
+  // The route never blocks — it always returns a draft (groq or fallback).
+  async function runDraft() {
+    if (!name.trim()) return; // guarded by the disabled button, belt-and-braces
+    setDrafting(true);
+    try {
+      const { description: drafted, sourced } = await draft({
+        name: name.trim(),
+        category,
+        venue: venue.trim() || undefined,
+        city: city.trim() || undefined,
+        date: start,
+        tag: tag.trim() || undefined,
+      });
+      setDescription(drafted);
+      toast.success(
+        sourced === "groq" ? "Drafted with AI" : "Draft ready",
+        sourced === "fallback"
+          ? { description: "AI was unavailable — here's a starter draft you can edit." }
+          : undefined,
+      );
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setDrafting(false);
+    }
+  }
+
+  // Click handler for the "Draft with AI" / "Regenerate" button. Confirms before
+  // overwriting a non-empty description; otherwise drafts immediately.
+  function onDraftClick() {
+    if (!name.trim() || drafting) return;
+    if (description.trim()) {
+      setConfirmDraft(true);
+      return;
+    }
+    void runDraft();
   }
 
   async function publish() {
@@ -865,7 +911,45 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="ce-description">Description</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="ce-description">Description</Label>
+                  {/* Draft with AI (GH#19). Disabled until the event has a name
+                      (so the draft has something to work with) and while a draft
+                      is in flight. Reads "Regenerate" once the field has text. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* span wrapper so the tooltip still fires when disabled */}
+                      <span tabIndex={!name.trim() ? 0 : -1}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={onDraftClick}
+                          disabled={!name.trim() || drafting}
+                          title={!name.trim() ? "Add an event name first" : undefined}
+                        >
+                          {drafting ? (
+                            <>
+                              <Icon icon="svg-spinners:3-dots-fade" size={13} /> Drafting…
+                            </>
+                          ) : (
+                            <>
+                              <Icon icon="ph:sparkle-fill" size={13} />{" "}
+                              {description.trim() ? "Regenerate" : "Draft with AI"}
+                            </>
+                          )}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {!name.trim()
+                        ? "Add an event name first"
+                        : description.trim()
+                          ? "Replace the description with a fresh AI draft"
+                          : "Draft a description from your event details"}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <Textarea
                   id="ce-description"
                   placeholder="What is this event about? Who is it for?"
@@ -1265,6 +1349,33 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
           </p>
         </aside>
       </div>
+
+      {/* Confirm before an AI draft overwrites an existing description (GH#19).
+          Mirrors the mode-switch discard dialog's shadcn pattern. */}
+      <Dialog open={confirmDraft} onOpenChange={(o) => !o && setConfirmDraft(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Replace your description?</DialogTitle>
+            <DialogDescription>
+              Drafting with AI will replace what you&apos;ve already written in the description
+              field. This can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDraft(false)}>
+              Keep what I have
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmDraft(false);
+                void runDraft();
+              }}
+            >
+              <Icon icon="ph:sparkle-fill" size={14} /> Replace with AI draft
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
