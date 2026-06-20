@@ -43,12 +43,15 @@ jobs:
         if: steps.cache-sui.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          mkdir -p ~/.local/bin
+          mkdir -p ~/.local/bin /tmp/sui-extract
           url="https://github.com/MystenLabs/sui/releases/download/${SUI_VERSION}/sui-${SUI_VERSION}-ubuntu-x86_64.tgz"
           curl -fsSL "$url" -o /tmp/sui.tgz
-          tar -xzf /tmp/sui.tgz -C /tmp
+          # Extract into a dir we OWN: the .tgz has a top-level "." entry, so
+          # extracting into /tmp directly makes tar try to chmod/utime the sticky,
+          # root-owned /tmp root — "Operation not permitted" under the runner user.
+          tar -xzf /tmp/sui.tgz -C /tmp/sui-extract
           # The .tgz layout has varied across releases — find the binary robustly.
-          mv "$(find /tmp -maxdepth 2 -type f -name sui | head -1)" ~/.local/bin/sui
+          mv "$(find /tmp/sui-extract -type f -name sui | head -1)" ~/.local/bin/sui
           chmod +x ~/.local/bin/sui
 
       - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
