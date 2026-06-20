@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { fromHex } from "@mysten/sui/utils";
 import {
   ORGANIZER_CAP_TYPE,
@@ -19,6 +20,15 @@ import { useSuiNSNames } from "@/lib/verification";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { EventInfo } from "@/lib/events";
 import type {
   GetObjectParams,
@@ -74,13 +84,13 @@ export function CheckInScreen() {
     return (
       <div className="space-y-8 screen-in">
         <Header />
-        <div className="card">
+        <Card className="p-5">
           <div className="font-semibold">Connect your wallet to run check-in.</div>
-          <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+          <p className="text-sm text-muted-foreground mt-1">
             The console shows live attendance and signer management for events you
             organize.
           </p>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -94,31 +104,33 @@ export function CheckInScreen() {
       <section className="space-y-3">
         <span className="section-label">Your events</span>
         {isLoading ? (
-          <div className="card mono" role="status">Loading your events…</div>
+          <Card className="p-5 mono" role="status">Loading your events…</Card>
         ) : isError ? (
-          <div className="card" style={{ color: "var(--color-danger)" }}>
-            Couldn&apos;t load your events. <button className="btn btn-sm" onClick={() => refetch()}>Retry</button>
-          </div>
+          <Card className="p-5 flex items-center gap-3 flex-wrap text-destructive">
+            Couldn&apos;t load your events.{" "}
+            <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+          </Card>
         ) : mine.length === 0 ? (
-          <div className="card" role="status">
+          <Card className="p-5" role="status">
             <div className="font-semibold">No events to staff.</div>
-            <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+            <p className="text-sm text-muted-foreground mt-1">
               You aren&apos;t the organizer of any event yet. Create one to manage
               the door.
             </p>
-          </div>
+          </Card>
         ) : (
-          <div className="flex gap-2 flex-wrap">
+          <ToggleGroup
+            type="single"
+            value={selected ?? ""}
+            onValueChange={(v) => v && setSelected(v)}
+            className="flex-wrap justify-start"
+          >
             {mine.map((e) => (
-              <button
-                key={e.eventId}
-                className={`chip ${selected === e.eventId ? "on" : ""}`}
-                onClick={() => setSelected(e.eventId)}
-              >
+              <ToggleGroupItem key={e.eventId} value={e.eventId}>
                 <Icon icon="ion:ticket" size={14} /> {e.name}
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
         )}
       </section>
 
@@ -147,13 +159,13 @@ function Header() {
 
 function Explainer() {
   return (
-    <div className="panel" style={{ padding: 18 }}>
+    <Card className="p-[18px]">
       <div className="flex items-start gap-3">
-        <span style={{ color: "var(--hi-blue)", marginTop: 2 }}>
+        <span className="text-primary mt-0.5">
           <Icon icon="ic:round-info" size={20} />
         </span>
-        <div className="text-sm space-y-1" style={{ color: "var(--fg2)" }}>
-          <div className="font-medium" style={{ color: "var(--fg1)" }}>
+        <div className="text-sm space-y-1 text-muted-foreground">
+          <div className="font-medium text-foreground">
             How the door works
           </div>
           <p>
@@ -176,7 +188,7 @@ function Explainer() {
           </ul>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -207,26 +219,25 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
   }, [capsQuery.data, event.eventId]);
 
   const { mutateAsync, isPending } = useSignAndExecute();
-  const [err, setErr] = useState<string | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
 
   async function toggleSelf() {
     if (!capId) return;
-    setErr(null);
     try {
       const out = await mutateAsync({
         transaction: setAllowSelfCheckinTx({ capId, eventId: event.eventId, allow: !allowSelf }),
       });
-      setDigest(out.digest);
+      toast.success(allowSelf ? "Self check-in disabled" : "Self check-in enabled", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       obj.refetch();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
   return (
     <section className="space-y-6">
-      <div className="card space-y-4" style={posterVars(event.eventId)}>
+      <Card className="space-y-4" style={posterVars(event.eventId)}>
         <div className="poster flex items-center justify-between" style={{ padding: "16px 18px" }}>
           <div className="poster-noise" />
           <div className="relative">
@@ -236,70 +247,82 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
             </div>
           </div>
           <div className="relative flex items-center gap-2 flex-wrap">
-            {event.isFree && <span className="badge badge-green">Free</span>}
-            <span className="badge" style={{ background: "rgba(255,255,255,.18)", color: "#fff" }}>
-              seq {event.eventSeq}
-            </span>
-            <Link
-              href={`/door/${event.eventId}`}
-              className="btn btn-sm"
-              title="Open the full-screen door view for this event"
-            >
-              <Icon icon="ic:round-meeting-room" size={14} /> Open door view
-            </Link>
-            <Link
-              href={`/manage/${event.eventId}`}
-              className="btn btn-sm"
-              title="Manage this event"
-            >
-              <Icon icon="ic:round-settings" size={14} /> Manage
-            </Link>
-            <Link
-              href={`/forum/${event.eventId}`}
-              className="btn btn-sm"
-              title="Open the attendee forum for this event"
-            >
-              <Icon icon="ic:round-forum" size={14} /> Forum
-            </Link>
+            {event.isFree && <Badge variant="secondary">Free</Badge>}
+            <Badge variant="secondary">seq {event.eventSeq}</Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/door/${event.eventId}`}>
+                    <Icon icon="ic:round-meeting-room" size={14} /> Open door view
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open the full-screen door view for this event</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/manage/${event.eventId}`}>
+                    <Icon icon="ic:round-settings" size={14} /> Manage
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Manage this event</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/forum/${event.eventId}`}>
+                    <Icon icon="ic:round-forum" size={14} /> Forum
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open the attendee forum for this event</TooltipContent>
+            </Tooltip>
           </div>
         </div>
-      </div>
+      </Card>
 
       <Attendance eventId={event.eventId} />
 
       <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-        <div className="card space-y-4">
+        <Card className="p-5 space-y-4">
           <div className="flex items-center justify-between gap-2">
             <div>
               <span className="section-label">Self check-in</span>
-              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+              <p className="text-sm text-muted-foreground mt-1">
                 Let holders check themselves in within the window (no staff voucher).
               </p>
             </div>
-            <button
-              type="button"
-              className={`switch ${allowSelf ? "on" : ""}`}
-              role="switch"
-              aria-checked={allowSelf}
-              aria-label={`Self check-in ${allowSelf ? "enabled" : "disabled"}`}
-              disabled={isPending || !capId}
-              onClick={() => {
-                if (!isPending && capId) toggleSelf();
-              }}
-              title={capId ? "Toggle self check-in" : "OrganizerCap for this event not found"}
-            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Switch
+                    checked={allowSelf}
+                    aria-label={`Self check-in ${allowSelf ? "enabled" : "disabled"}`}
+                    disabled={isPending || !capId}
+                    onCheckedChange={() => {
+                      if (!isPending && capId) toggleSelf();
+                    }}
+                  />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {capId ? "Toggle self check-in" : "OrganizerCap for this event not found"}
+              </TooltipContent>
+            </Tooltip>
           </div>
           {capsQuery.isError ? (
-            <div className="text-xs" role="status" style={{ color: "var(--color-danger)" }}>
+            <div className="text-xs text-destructive flex items-center gap-2 flex-wrap" role="status">
               Could not load your organizer permissions —{" "}
-              <button className="btn btn-sm" onClick={() => capsQuery.refetch()}>Retry</button>
+              <Button variant="outline" size="sm" onClick={() => capsQuery.refetch()}>Retry</Button>
             </div>
           ) : !capId && !capsQuery.isLoading ? (
-            <div className="text-xs" style={{ color: "var(--color-danger)" }}>
+            <div className="text-xs text-destructive">
               No matching OrganizerCap in this wallet — admin actions are disabled.
             </div>
           ) : null}
-        </div>
+        </Card>
 
         <SignerManager
           capId={capId}
@@ -309,9 +332,6 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
           capsLoading={capsQuery.isLoading}
         />
       </div>
-
-      {digest && <TxLink digest={digest} className="mono text-xs" style={{ color: "var(--fg3)" }} />}
-      {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
     </section>
   );
 }
@@ -331,8 +351,6 @@ function SignerManager({
 }) {
   const { mutateAsync } = useSignAndExecute();
   const [hex, setHex] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Parse a 32-byte ed25519 pubkey from hex (0x-prefixed or bare) → number[].
@@ -351,71 +369,65 @@ function SignerManager({
 
   async function add() {
     if (!capId || !bytes) return;
-    setErr(null);
-    setOk(null);
     setBusy(true);
     try {
       const out = await mutateAsync({
         transaction: addCheckinSignerTx({ capId, eventId, pubkey: bytes }),
       });
-      setOk(out.digest);
+      toast.success("Signer added", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       setHex("");
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="card space-y-3">
+    <Card className="p-5 space-y-3">
       <div>
         <span className="section-label">Staff signers</span>
-        <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+        <p className="text-sm text-muted-foreground mt-1">
           Register a staff device&apos;s 32-byte ed25519 public key (hex). Its signed
           vouchers will be accepted at <span className="mono">check_in</span>.
         </p>
       </div>
-      <div className="field">
-        <label className="label">ed25519 public key</label>
-        <input
-          className="input mono"
+      <div className="space-y-1.5">
+        <Label htmlFor="signer-pubkey">ed25519 public key</Label>
+        <Input
+          id="signer-pubkey"
+          className="mono"
           placeholder="0x… (64 hex chars / 32 bytes)"
           value={hex}
-          onChange={(e) => {
-            setHex(e.target.value);
-            setErr(null);
-            setOk(null);
-          }}
+          onChange={(e) => setHex(e.target.value)}
           spellCheck={false}
         />
       </div>
       <div className="flex items-center gap-2 flex-wrap">
-        <button
-          className="btn btn-primary"
+        <Button
           disabled={!capId || !valid || busy || isPending}
           onClick={add}
         >
           <Icon icon="ic:round-add" size={16} />
           {busy ? "Adding…" : "Add signer"}
-        </button>
+        </Button>
         {hex.trim().length > 0 && !valid && (
-          <span className="badge badge-amber">Need exactly 32 bytes (64 hex)</span>
+          <Badge variant="secondary">Need exactly 32 bytes (64 hex)</Badge>
         )}
-        {valid && <span className="badge badge-line">{bytes!.length} bytes</span>}
+        {valid && <Badge variant="outline">{bytes!.length} bytes</Badge>}
       </div>
       {capsError ? (
-        <div className="text-xs" role="status" style={{ color: "var(--color-danger)" }}>
+        <div className="text-xs text-destructive" role="status">
           Could not load your organizer permissions.
         </div>
       ) : !capId && !capsLoading ? (
-        <div className="text-xs" style={{ color: "var(--fg3)" }}>
+        <div className="text-xs text-muted-foreground">
           OrganizerCap required to register signers.
         </div>
       ) : null}
-      {ok && <TxLink digest={ok} label="added · tx" className="mono text-xs" style={{ color: "var(--color-success)" }} />}
-      {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
-    </div>
+    </Card>
   );
 }
 
@@ -473,64 +485,67 @@ function Attendance({ eventId }: { eventId: string }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="section-label">Recent check-ins</span>
-        <div className="flex gap-2">
-          <button className={`chip ${mode === "qr" ? "on" : ""}`} onClick={() => setMode("qr")}>
-            <Icon icon="ic:round-qr-code-scanner" size={14} /> QR
-          </button>
-          <button className={`chip ${mode === "search" ? "on" : ""}`} onClick={() => setMode("search")}>
-            <Icon icon="ic:round-search" size={14} /> Search
-          </button>
+      <Tabs value={mode} onValueChange={(v) => setMode(v as "qr" | "search")} className="space-y-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className="section-label">Recent check-ins</span>
+          <TabsList>
+            <TabsTrigger value="qr">
+              <Icon icon="ic:round-qr-code-scanner" size={14} /> QR
+            </TabsTrigger>
+            <TabsTrigger value="search">
+              <Icon icon="ic:round-search" size={14} /> Search
+            </TabsTrigger>
+          </TabsList>
         </div>
-      </div>
 
-      {mode === "qr" ? (
-        <div className="panel" style={{ padding: 22, textAlign: "center" }}>
-          <FauxQr seed={eventId} />
-          <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 12 }}>
-            Point an attendee&apos;s ticket QR at the staff scanner. On scan, the staff
-            device signs a voucher and the attendee submits the on-chain check-in.
-          </p>
-          <p className="text-xs mono" style={{ color: "var(--fg3)", marginTop: 6 }}>
-            event {eventId.slice(0, 14)}…
-          </p>
-        </div>
-      ) : (
-        <div style={{ position: "relative" }}>
-          <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--fg3)" }}>
-            <Icon icon="ic:round-search" size={18} />
-          </span>
-          <input
-            className="input"
-            placeholder="Search by address, suiNS or serial…"
-            aria-label="Search check-ins by address, suiNS or serial"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ paddingLeft: 42 }}
-          />
-        </div>
-      )}
+        <TabsContent value="qr">
+          <Card className="text-center" style={{ padding: 22 }}>
+            <FauxQr seed={eventId} />
+            <p className="text-sm text-muted-foreground mt-3">
+              Point an attendee&apos;s ticket QR at the staff scanner. On scan, the staff
+              device signs a voucher and the attendee submits the on-chain check-in.
+            </p>
+            <p className="text-xs mono text-muted-foreground mt-1.5">
+              event {eventId.slice(0, 14)}…
+            </p>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="search">
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--fg3)" }}>
+              <Icon icon="ic:round-search" size={18} />
+            </span>
+            <Input
+              placeholder="Search by address, suiNS or serial…"
+              aria-label="Search check-ins by address, suiNS or serial"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ paddingLeft: 42 }}
+            />
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {q.isLoading ? (
-        <div className="card mono" role="status">Loading attendance…</div>
+        <Card className="p-5 mono" role="status">Loading attendance…</Card>
       ) : filtered.length === 0 ? (
-        <div className="card" role="status">
+        <Card className="p-5" role="status">
           <div className="font-semibold">
             {rows.length === 0 ? "No check-ins yet." : "No matches."}
           </div>
-          <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+          <p className="text-sm text-muted-foreground mt-1">
             {rows.length === 0
               ? "Attendance will appear here live as attendees check in at the door."
               : "Try a different address, name or serial."}
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-2">
           {filtered.map((r, i) => (
-            <div
+            <Card
               key={`${r.json.ticket_id}-${i}`}
-              className="panel flex items-center justify-between gap-3"
+              className="flex flex-row items-center justify-between gap-3"
               style={{ padding: "12px 16px" }}
             >
               <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
@@ -541,15 +556,15 @@ function Attendance({ eventId }: { eventId: string }) {
                   <div className="text-sm">
                     <AddressDisplay address={r.json.attendee} suffix={4} />
                   </div>
-                  <div className="mono text-xs" style={{ color: "var(--fg3)" }}>
+                  <div className="mono text-xs text-muted-foreground">
                     #{String(r.json.serial)} · day {String(r.json.day)}
                   </div>
                 </div>
               </div>
-              <div className="mono text-xs" style={{ color: "var(--fg3)", textAlign: "right", flex: "none" }}>
+              <div className="mono text-xs text-muted-foreground" style={{ textAlign: "right", flex: "none" }}>
                 {r.ts ? new Date(Number(r.ts)).toLocaleString() : "—"}
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

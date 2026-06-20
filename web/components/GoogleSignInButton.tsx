@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useGoogleSignIn } from "@/lib/auth";
 import { Icon } from "./Icon";
+import { Button } from "@/components/ui/button";
 
 /**
  * "Continue with Google" — triggers Enoki zkLogin as a full-page redirect.
@@ -10,7 +11,7 @@ import { Icon } from "./Icon";
  * be blocked. Shows a brief redirecting state.
  */
 export function GoogleSignInButton({
-  className = "btn btn-primary",
+  className,
   label = "Continue with Google",
   style,
 }: {
@@ -22,7 +23,7 @@ export function GoogleSignInButton({
   const [busy, setBusy] = useState(false);
 
   return (
-    <button
+    <Button
       type="button"
       className={className}
       style={style}
@@ -38,6 +39,6 @@ export function GoogleSignInButton({
     >
       <Icon icon="logos:google-icon" size={16} />
       {busy ? "Redirecting…" : label}
-    </button>
+    </Button>
   );
 }

@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { explorerTxUrl } from "@/lib/config";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
  * Clickable transaction digest — opens the tx in the SuiVision explorer in a new
@@ -22,17 +23,26 @@ export function TxLink({
   className?: string;
   style?: CSSProperties;
 }) {
+  // Self-sufficient TooltipProvider: TxLink renders inside Sonner toast
+  // descriptions (a portal outside the app-level TooltipProvider) and in tests,
+  // and this repo's <Tooltip> (raw Radix Root) throws without a provider ancestor.
   return (
-    <a
-      href={explorerTxUrl(digest)}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`tx-link${className ? ` ${className}` : ""}`}
-      style={style}
-      title="Open transaction in Sui explorer"
-    >
-      {before}
-      {label} {digest.slice(0, chars)}…
-    </a>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a
+            href={explorerTxUrl(digest)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`tx-link${className ? ` ${className}` : ""}`}
+            style={style}
+          >
+            {before}
+            {label} {digest.slice(0, chars)}…
+          </a>
+        </TooltipTrigger>
+        <TooltipContent>Open transaction in Sui explorer</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

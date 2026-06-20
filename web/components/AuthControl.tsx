@@ -7,6 +7,8 @@ import { useCurrentAccount } from "@/lib/hooks";
 import { useIsGoogleSession, useSignOut } from "@/lib/auth";
 import { ENOKI_ENABLED } from "@/lib/config";
 import { Icon } from "./Icon";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // dapp-kit's ConnectButton is a web component that pulls in
 // @webcomponents/scoped-custom-element-registry, which touches `window` at
@@ -34,23 +36,30 @@ export function AuthControl() {
 
   if (account && isGoogle) {
     return (
-      <div className="acct" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span className="mono" title={account.address} style={{ fontSize: 13 }}>
-          {short(account.address)}
-        </span>
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{ minHeight: 44 }}
-          aria-label="Sign out"
-          title="Sign out"
-          onClick={async () => {
-            await signOut();
-            router.replace("/");
-          }}
-        >
-          <Icon icon="ic:round-logout" size={18} />
-        </button>
+      <div className="acct flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="mono text-[13px]">{short(account.address)}</span>
+          </TooltipTrigger>
+          <TooltipContent>{account.address}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Sign out"
+              onClick={async () => {
+                await signOut();
+                router.replace("/");
+              }}
+            >
+              <Icon icon="ic:round-logout" size={18} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Sign out</TooltipContent>
+        </Tooltip>
       </div>
     );
   }
@@ -59,9 +68,9 @@ export function AuthControl() {
 
   if (ENOKI_ENABLED) {
     return (
-      <Link href="/auth" className="btn btn-primary btn-sm" style={{ minHeight: 44 }}>
-        Sign in
-      </Link>
+      <Button asChild size="sm">
+        <Link href="/auth">Sign in</Link>
+      </Button>
     );
   }
   return <ConnectButton />;

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { useDAppKit } from "@mysten/dapp-kit-react";
 import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
 import type { SessionKey } from "@mysten/seal";
@@ -32,6 +33,12 @@ import {
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // PostCreated event payload anchored on-chain by `forum::post`.
 interface ForumPostJson {
@@ -111,14 +118,12 @@ export function ForumScreen({ id }: { id: string }) {
   // --- Seal SessionKey (created lazily on first decrypt/post) ----------------
   const sessionRef = useRef<SessionKey | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
-  const [sessionErr, setSessionErr] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
 
   const ensureSession = useCallback(async (): Promise<SessionKey | null> => {
     if (sessionRef.current) return sessionRef.current;
     if (!addr) return null;
     setSigning(true);
-    setSessionErr(null);
     try {
       const sk = await createSessionKey(suiClient, addr, async (message) => {
         const signer = new CurrentAccountSigner(dAppKit);
@@ -129,7 +134,7 @@ export function ForumScreen({ id }: { id: string }) {
       setSessionReady(true);
       return sk;
     } catch (e: unknown) {
-      setSessionErr(e instanceof Error ? e.message : String(e));
+      toast.error(humanizeError(e));
       return null;
     } finally {
       setSigning(false);
@@ -219,8 +224,6 @@ export function ForumScreen({ id }: { id: string }) {
 
   // --- Composer -------------------------------------------------------------
   const [draft, setDraft] = useState("");
-  const [postErr, setPostErr] = useState<string | null>(null);
-  const [postDigest, setPostDigest] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
 
@@ -237,7 +240,6 @@ export function ForumScreen({ id }: { id: string }) {
     const text = draft.trim();
     if (!text || !addr || !myTicketId) return;
     sendingRef.current = true;
-    setPostErr(null);
     try {
       // Encrypt body to the event policy and pin it on Walrus.
       const blobId = await encryptForumMessage(suiClient, id, {
@@ -250,7 +252,9 @@ export function ForumScreen({ id }: { id: string }) {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
-      setPostDigest(out.digest);
+      toast.success("Message posted", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       setDraft("");
       // Optimistically show our own message immediately (we know the plaintext).
       setDecoded((m) => ({
@@ -261,7 +265,7 @@ export function ForumScreen({ id }: { id: string }) {
       void ensureSession();
       postsQ.refetch();
     } catch (e: unknown) {
-      setPostErr(humanizeError(e));
+      toast.error(humanizeError(e));
     } finally {
       sendingRef.current = false;
     }
@@ -285,7 +289,7 @@ export function ForumScreen({ id }: { id: string }) {
   if (ownedQ.isLoading) {
     return (
       <ForumShell id={id}>
-        <div className="card mono">Checking your tickets…</div>
+        <Card className="mono p-4">Checking your tickets…</Card>
       </ForumShell>
     );
   }
@@ -293,12 +297,12 @@ export function ForumScreen({ id }: { id: string }) {
   if (ownedQ.isError) {
     return (
       <ForumShell id={id}>
-        <div className="card" style={{ color: "var(--color-danger)" }}>
+        <Card className="flex flex-row flex-wrap items-center gap-2 p-4 text-destructive">
           Could not verify your tickets.{" "}
-          <button className="btn btn-sm" onClick={() => ownedQ.refetch()}>
+          <Button variant="outline" size="sm" onClick={() => ownedQ.refetch()}>
             Retry
-          </button>
-        </div>
+          </Button>
+        </Card>
       </ForumShell>
     );
   }
@@ -326,34 +330,42 @@ export function ForumScreen({ id }: { id: string }) {
         style={{ alignItems: "start" }}
       >
         {/* Left rail: channels */}
-        <aside className="card" style={{ position: "sticky", top: 16 }}>
+        <Card className="p-4" style={{ position: "sticky", top: 16 }}>
           <span className="section-label">Channels</span>
-          <div className="flex flex-col gap-1.5 mt-3">
+          <ToggleGroup
+            type="single"
+            value={channel}
+            onValueChange={(v) => {
+              if (v) setChannel(v);
+            }}
+            orientation="vertical"
+            variant="outline"
+            className="mt-3 w-full"
+          >
             {FORUM_CHANNELS.map((c) => (
-              <button
+              <ToggleGroupItem
                 key={c.id}
-                className={`topnav-item ${channel === c.id ? "active" : ""}`}
-                aria-current={channel === c.id ? "page" : undefined}
-                onClick={() => setChannel(c.id)}
-                style={{ justifyContent: "flex-start", width: "100%" }}
+                value={c.id}
+                aria-label={c.label}
+                className="w-full justify-start"
               >
                 <Icon icon={c.icon} size={16} /> {c.label}
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
           <div
             className="mono"
             style={{ marginTop: 16, fontSize: 11, color: "var(--fg3)", lineHeight: 1.5 }}
           >
             <Icon icon="ic:round-lock" size={12} /> Seal-encrypted · ticket-gated
           </div>
-        </aside>
+        </Card>
 
         {/* Center: message stream + composer */}
-        <section className="panel flex flex-col" style={{ minHeight: 460 }}>
+        <Card className="flex flex-col gap-0 p-0" style={{ minHeight: 460 }}>
           <header
-            className="flex items-center justify-between"
-            style={{ padding: "14px 18px", borderBottom: "1px solid var(--hair)" }}
+            className="flex items-center justify-between border-b"
+            style={{ padding: "14px 18px" }}
           >
             <div className="flex items-center gap-2 font-semibold">
               <Icon icon={activeChannel?.icon ?? "ic:round-tag"} size={18} />
@@ -361,31 +373,29 @@ export function ForumScreen({ id }: { id: string }) {
             </div>
             <div className="flex items-center gap-2">
               {!sessionReady ? (
-                <button
-                  className="btn btn-sm"
-                  disabled={signing}
-                  onClick={unlockMessages}
-                  title="Sign a session message to decrypt the thread (valid ~10 min)."
-                >
-                  <Icon icon="ic:round-lock-open" size={14} />
-                  {signing ? "Signing…" : "Decrypt thread"}
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={signing}
+                      onClick={unlockMessages}
+                    >
+                      <Icon icon="ic:round-lock-open" size={14} />
+                      {signing ? "Signing…" : "Decrypt thread"}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Sign a session message to decrypt the thread (valid ~10 min).
+                  </TooltipContent>
+                </Tooltip>
               ) : (
-                <span className="badge badge-green">
+                <Badge variant="secondary">
                   <Icon icon="ic:round-lock-open" size={11} /> Session active
-                </span>
+                </Badge>
               )}
             </div>
           </header>
-
-          {sessionErr && (
-            <div
-              className="text-xs break-words"
-              style={{ color: "var(--color-danger)", padding: "8px 18px" }}
-            >
-              {sessionErr}
-            </div>
-          )}
 
           <div
             ref={streamRef}
@@ -403,9 +413,9 @@ export function ForumScreen({ id }: { id: string }) {
               >
                 <Icon icon="ic:round-error-outline" size={40} />
                 <div className="font-semibold">Could not load messages</div>
-                <button className="btn btn-sm" onClick={() => postsQ.refetch()}>
+                <Button variant="outline" size="sm" onClick={() => postsQ.refetch()}>
                   Retry
-                </button>
+                </Button>
               </div>
             ) : channelPosts.length === 0 ? (
               <div
@@ -440,12 +450,9 @@ export function ForumScreen({ id }: { id: string }) {
           </div>
 
           {/* Composer */}
-          <div
-            className="flex items-end gap-2"
-            style={{ padding: 14, borderTop: "1px solid var(--hair)" }}
-          >
-            <textarea
-              className="textarea grow"
+          <div className="flex items-end gap-2 border-t" style={{ padding: 14 }}>
+            <Textarea
+              className="grow"
               style={{ minHeight: 52 }}
               placeholder={`Message #${activeChannel?.label ?? channel}…`}
               value={draft}
@@ -461,15 +468,20 @@ export function ForumScreen({ id }: { id: string }) {
               }}
             />
             <div className="flex flex-col items-end gap-1.5">
-              <button
-                className="btn btn-primary"
-                disabled={posting || !draft.trim()}
-                onClick={() => void sendMessage()}
-                title="Encrypts to the event policy, pins to Walrus, anchors on-chain."
-              >
-                <Icon icon="ic:round-send" size={16} />
-                {posting ? "Posting…" : "Send"}
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    disabled={posting || !draft.trim()}
+                    onClick={() => void sendMessage()}
+                  >
+                    <Icon icon="ic:round-send" size={16} />
+                    {posting ? "Posting…" : "Send"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Encrypts to the event policy, pins to Walrus, anchors on-chain.
+                </TooltipContent>
+              </Tooltip>
               <span
                 className="mono"
                 style={{ fontSize: 10, color: "var(--fg3)", whiteSpace: "nowrap" }}
@@ -478,20 +490,7 @@ export function ForumScreen({ id }: { id: string }) {
               </span>
             </div>
           </div>
-          {postDigest && (
-            <div className="text-xs" style={{ padding: "0 18px 12px" }}>
-              <TxLink digest={postDigest} label="posted · tx" className="mono" style={{ color: "var(--color-success)" }} />
-            </div>
-          )}
-          {postErr && (
-            <div
-              className="text-xs break-words"
-              style={{ color: "var(--color-danger)", padding: "0 18px 12px" }}
-            >
-              {postErr}
-            </div>
-          )}
-        </section>
+        </Card>
       </div>
     </ForumShell>
   );
@@ -523,9 +522,11 @@ function ForumShell({ id, children }: { id: string; children: React.ReactNode })
           <h1 className="page-title" style={{ fontSize: 30 }}>
             Event chat
           </h1>
-          <Link href={`/event/${id}`} className="btn btn-sm">
-            <Icon icon="ic:round-arrow-back" size={15} /> Back to event
-          </Link>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/event/${id}`}>
+              <Icon icon="ic:round-arrow-back" size={15} /> Back to event
+            </Link>
+          </Button>
         </div>
         <p className="page-sub">
           Private, encrypted channels for ticket holders — powered by Walrus + Seal.
@@ -548,7 +549,7 @@ function LockOverlay({
   cta: string;
 }) {
   return (
-    <div className="card relative overflow-hidden" style={{ padding: 0 }}>
+    <Card className="relative gap-0 overflow-hidden p-0">
       <div className="poster" style={{ height: 140, ["--p1" as string]: "var(--hi-blue)", ["--p2" as string]: "var(--hi-magenta)" } as React.CSSProperties}>
         <div className="poster-noise" />
         <span className="poster-glyph">
@@ -562,11 +563,13 @@ function LockOverlay({
         <p className="page-sub" style={{ maxWidth: 460 }}>
           {body}
         </p>
-        <Link href={`/event/${id}`} className="btn btn-primary btn-lg" style={{ marginTop: 6 }}>
-          <Icon icon="ion:ticket" size={16} /> {cta}
-        </Link>
+        <Button asChild size="lg" style={{ marginTop: 6 }}>
+          <Link href={`/event/${id}`}>
+            <Icon icon="ion:ticket" size={16} /> {cta}
+          </Link>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -594,35 +597,35 @@ function MessageRow({
     >
       <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--fg3)" }}>
         {mine ? (
-          <span className="badge badge-blue">you</span>
+          <Badge variant="default">you</Badge>
         ) : (
           <AddressDisplay address={msg.author} suffix={4} />
         )}
         <span className="mono">{time}</span>
       </div>
-      <div
-        className="card"
-        style={{
-          padding: "10px 14px",
-          maxWidth: "78%",
-          background: mine ? "rgba(0,124,250,.12)" : "var(--raise)",
-          borderColor: mine ? "rgba(0,124,250,.32)" : "var(--hair)",
-        }}
+      <Card
+        className={mine ? "bg-primary/10" : "bg-muted"}
+        style={{ padding: "10px 14px", maxWidth: "78%" }}
       >
         {msg.text != null ? (
           <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.text}</span>
         ) : (
-          <button
-            className="flex items-center gap-1.5 text-sm"
-            style={{ color: "var(--hi-magenta)" }}
-            onClick={onResign}
-            title={sessionReady ? "Decrypt failed — re-sign your session." : "Sign a session to decrypt."}
-          >
-            <Icon icon="ic:round-lock" size={13} />
-            [encrypted — re-sign session]
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                onClick={onResign}
+              >
+                <Icon icon="ic:round-lock" size={13} />
+                [encrypted — re-sign session]
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {sessionReady ? "Decrypt failed — re-sign your session." : "Sign a session to decrypt."}
+            </TooltipContent>
+          </Tooltip>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

@@ -9,6 +9,10 @@ import { useSuiNSNames } from "@/lib/verification";
 import { CATEGORIES } from "@/lib/data";
 import { EventCard } from "@/components/EventCard";
 import { Icon } from "@/components/Icon";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export function DiscoverScreen() {
   const account = useCurrentAccount();
@@ -98,44 +102,57 @@ export function DiscoverScreen() {
 
       <div className="flex gap-2 flex-wrap items-center">
         <div className="grow" style={{ position: "relative", minWidth: 240 }}>
-          <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--fg3)" }}>
+          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg3)", zIndex: 1 }}>
             <Icon icon="ic:round-search" size={18} />
           </span>
-          <input
+          <Input
             id="discover-search"
             name="discover-search"
             aria-label="Search events"
-            className="input"
             placeholder="Search events, cities, organizers…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            style={{ paddingLeft: 42 }}
+            className="pl-10"
           />
         </div>
       </div>
 
-      <div className="flex gap-2 flex-wrap pb-1" role="group" aria-label="Categories">
+      <ToggleGroup
+        type="single"
+        value={cat}
+        onValueChange={(v) => v && setCat(v)}
+        variant="outline"
+        className="flex-wrap pb-1"
+        aria-label="Categories"
+      >
         {CATEGORIES.map((c) => (
-          <button key={c.id} className={`chip ${cat === c.id ? "on" : ""}`} aria-pressed={cat === c.id} onClick={() => setCat(c.id)}>
+          <ToggleGroupItem key={c.id} value={c.id} aria-label={c.label}>
             <Icon icon={c.icon} size={14} /> {c.label}
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
 
       {isLoading ? (
-        <div className="card mono" role="status" aria-live="polite">Loading events…</div>
+        <Card role="status" aria-live="polite">
+          <CardContent className="mono">Loading events…</CardContent>
+        </Card>
       ) : isError ? (
-        <div className="card" style={{ color: "var(--color-danger)" }} role="status" aria-live="polite">
-          Couldn&apos;t load events. <button className="btn btn-sm" onClick={() => refetch()}>Retry</button>
-        </div>
+        <Card role="status" aria-live="polite">
+          <CardContent className="flex flex-wrap items-center gap-2">
+            <span className="text-destructive">Couldn&apos;t load events.</span>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
-        <div className="card" role="status" aria-live="polite">
-          <div className="font-semibold">No events found.</div>
-          <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
-            Try a different search, or{" "}
-            <Link href="/create" style={{ color: "var(--hi-blue)" }}>host your own</Link>.
-          </p>
-        </div>
+        <Card role="status" aria-live="polite">
+          <CardContent>
+            <div className="font-semibold">No events found.</div>
+            <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+              Try a different search, or{" "}
+              <Link href="/create" style={{ color: "var(--hi-blue)" }}>host your own</Link>.
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="ev-grid">
           {filtered.map((e) => (

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   ENOKI_ENABLED,
   TICKET_STATUS,
@@ -17,6 +18,12 @@ import { MyTickets } from "@/components/MyTickets";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert } from "@/components/ui/alert";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type {
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
@@ -47,14 +54,14 @@ export function WalletScreen() {
           <h1 className="page-title" style={{ fontSize: 34 }}>Your tickets &amp; collectibles</h1>
           <p className="page-sub">Connect a wallet to see your tickets, POAPs and saved events.</p>
         </header>
-        <div className="card flex flex-col items-center text-center gap-3" style={{ padding: 40 }}>
+        <Card className="flex flex-col items-center text-center gap-3" style={{ padding: 40 }}>
           <span style={{ color: "var(--hi-blue)" }}><Icon icon="solar:wallet-bold" size={44} /></span>
           <div className="font-semibold" style={{ fontSize: 18 }}>No wallet connected</div>
           <p className="text-sm" style={{ color: "var(--fg2)", maxWidth: 380 }}>
             Connect your Sui wallet using the button in the top bar to access your wallet. In the meantime you can{" "}
             <Link href="/discover" style={{ color: "var(--hi-blue)" }}>discover events</Link>.
           </p>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -126,7 +133,7 @@ function WalletInner({ addr }: { addr: string }) {
   return (
     <div className="space-y-8 screen-in">
       {/* Profile header */}
-      <header className="card relative flex items-center gap-4" style={{ overflow: "hidden" }}>
+      <Card className="relative flex flex-row items-center gap-4 px-(--card-spacing)" style={{ overflow: "hidden" }}>
         <div className="glow" style={{ width: 300, height: 300, background: "rgba(0,124,250,.4)", top: -160, right: -40, opacity: 0.2 }} />
         <div
           className="poster flex items-center justify-center"
@@ -141,15 +148,15 @@ function WalletInner({ addr }: { addr: string }) {
           </div>
           <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 6 }}>
             <AddressDisplay address={addr} suffix={4} />
-            <span className="badge badge-soft"><Icon icon="ion:ticket" size={11} /> {tickets.length} ticket{tickets.length === 1 ? "" : "s"}</span>
-            {poaps.length > 0 && <span className="badge badge-magenta"><Icon icon="ph:medal-fill" size={11} /> {poaps.length} POAP{poaps.length === 1 ? "" : "s"}</span>}
+            <Badge variant="secondary"><Icon icon="ion:ticket" size={11} /> {tickets.length} ticket{tickets.length === 1 ? "" : "s"}</Badge>
+            {poaps.length > 0 && <Badge variant="secondary"><Icon icon="ph:medal-fill" size={11} /> {poaps.length} POAP{poaps.length === 1 ? "" : "s"}</Badge>}
           </div>
         </div>
-      </header>
+      </Card>
 
       {/* Claim POAP strip — checked-in tickets with an unclaimed proof-of-attendance */}
       {checkedIn.length > 0 && (
-        <section className="card space-y-3">
+        <Card className="px-(--card-spacing)">
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--hi-magenta)" }}><Icon icon="ph:medal-fill" size={18} /></span>
             <div>
@@ -173,30 +180,35 @@ function WalletInner({ addr }: { addr: string }) {
               />
             ))}
           </div>
-        </section>
+        </Card>
       )}
 
       {/* Segmented tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {TABS.map((t) => (
-          <button key={t.id} className={`chip ${tab === t.id ? "on" : ""}`} aria-pressed={tab === t.id} onClick={() => setTab(t.id)}>
-            <Icon icon={t.icon} size={14} /> {t.label}
-            {typeof t.count === "number" && t.count > 0 && (
-              <span style={{ opacity: 0.7 }}> ({t.count})</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="space-y-8">
+        <div className="overflow-x-auto pb-1">
+          <TabsList>
+            {TABS.map((t) => (
+              <TabsTrigger key={t.id} value={t.id}>
+                <Icon icon={t.icon} size={14} /> {t.label}
+                {typeof t.count === "number" && t.count > 0 && (
+                  <span style={{ opacity: 0.7 }}> ({t.count})</span>
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-      {/* Tab panels */}
-      {tab === "tickets" && (
-        <div>
+        {/* Tab panels */}
+        <TabsContent value="tickets">
           {ticketsQuery.isLoading ? (
-            <div className="card mono" role="status" aria-live="polite">Loading tickets…</div>
+            <Skeleton className="h-20 w-full" />
           ) : ticketsQuery.error ? (
-            <div className="card" style={{ color: "var(--color-danger)" }}>
-              Couldn&apos;t load tickets. <button className="btn btn-sm" onClick={() => ticketsQuery.refetch()}>Retry</button>
-            </div>
+            <Alert variant="destructive">
+              <div className="flex items-center justify-between gap-3">
+                <span>Couldn&apos;t load tickets.</span>
+                <Button variant="outline" size="sm" onClick={() => ticketsQuery.refetch()}>Retry</Button>
+              </div>
+            </Alert>
           ) : tickets.length === 0 ? (
             <EmptyState
               icon="ion:ticket"
@@ -206,17 +218,18 @@ function WalletInner({ addr }: { addr: string }) {
           ) : (
             <MyTickets address={addr} />
           )}
-        </div>
-      )}
+        </TabsContent>
 
-      {tab === "collectibles" && (
-        <div>
+        <TabsContent value="collectibles">
           {poapsQuery.isLoading ? (
-            <div className="card mono" role="status" aria-live="polite">Loading collectibles…</div>
+            <Skeleton className="h-20 w-full" />
           ) : poapsQuery.error ? (
-            <div className="card" style={{ color: "var(--color-danger)" }}>
-              Couldn&apos;t load collectibles. <button className="btn btn-sm" onClick={() => poapsQuery.refetch()}>Retry</button>
-            </div>
+            <Alert variant="destructive">
+              <div className="flex items-center justify-between gap-3">
+                <span>Couldn&apos;t load collectibles.</span>
+                <Button variant="outline" size="sm" onClick={() => poapsQuery.refetch()}>Retry</Button>
+              </div>
+            </Alert>
           ) : poaps.length === 0 ? (
             <EmptyState
               icon="ph:medal-fill"
@@ -230,27 +243,27 @@ function WalletInner({ addr }: { addr: string }) {
               ))}
             </div>
           )}
-        </div>
-      )}
+        </TabsContent>
 
-      {tab === "saved" && (
-        <EmptyState
-          icon="solar:bookmark-bold"
-          title="Nothing saved yet"
-          body={<>Bookmarks live on your device for now. Browse the{" "}<Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover</Link>{" "}feed and save events you want to come back to. (On-chain wishlists are coming in v2.)</>}
-        />
-      )}
+        <TabsContent value="saved">
+          <EmptyState
+            icon="solar:bookmark-bold"
+            title="Nothing saved yet"
+            body={<>Bookmarks live on your device for now. Browse the{" "}<Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover</Link>{" "}feed and save events you want to come back to. (On-chain wishlists are coming in v2.)</>}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
 
 function EmptyState({ icon, title, body }: { icon: string; title: string; body: React.ReactNode }) {
   return (
-    <div className="card flex flex-col items-center text-center gap-2" style={{ padding: 40 }} role="status" aria-live="polite">
+    <Card className="flex flex-col items-center text-center gap-2" style={{ padding: 40 }} role="status" aria-live="polite">
       <span style={{ color: "var(--fg3)" }}><Icon icon={icon} size={38} /></span>
       <div className="font-semibold" style={{ fontSize: 16 }}>{title}</div>
       <p className="text-sm" style={{ color: "var(--fg2)", maxWidth: 380 }}>{body}</p>
-    </div>
+    </Card>
   );
 }
 
@@ -262,23 +275,21 @@ function PoapCard({ fields }: { fields: Record<string, unknown> }) {
   const glyph = catGlyph(paletteCatForSeq(eventSeq));
 
   return (
-    <div className="ev-card">
+    <Card className="gap-0 py-0">
       <div
-        className="poster flex items-center justify-center"
+        className="poster flex items-center justify-center rounded-b-none"
         style={{ height: 150, ["--p1" as string]: p1, ["--p2" as string]: p2 } as React.CSSProperties}
       >
         <div className="poster-noise" />
         <span className="poster-glyph"><Icon icon={glyph} size={64} /></span>
         <div className="absolute" style={{ top: 12, left: 12 }}>
-          <span className="badge" style={{ background: "rgba(0,0,0,.4)", color: "#fff" }}>
-            <Icon icon="ph:medal-fill" size={11} /> POAP
-          </span>
+          <Badge variant="secondary"><Icon icon="ph:medal-fill" size={11} /> POAP</Badge>
         </div>
         <div className="relative flex flex-col items-center gap-1" style={{ color: "#fff" }}>
           <span style={{ opacity: 0.92 }}><Icon icon="ph:seal-check-fill" size={30} /></span>
         </div>
       </div>
-      <div className="ev-body">
+      <div className="flex flex-col gap-2 px-4 pb-4 pt-3.5">
         <div className="ev-title" style={{ color: "var(--fg1)" }}>{name}</div>
         <div className="flex items-center gap-1.5 text-[13px]" style={{ color: "var(--fg3)" }}>
           <Icon icon="proicons:calendar" size={14} />
@@ -290,7 +301,7 @@ function PoapCard({ fields }: { fields: Record<string, unknown> }) {
           </Link>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -311,29 +322,28 @@ function ClaimPoapRow({
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
   const isPending = regular.isPending || sponsored.isPending;
-  const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const [digest, setDigest] = useState<string | null>(null);
 
   async function claim() {
-    setErr(null);
     try {
       const tx = claimPoapTx(eventId, ticketId);
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: address })
         : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
       setDone(true);
+      toast.success("POAP claimed", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       onClaimed();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
   return (
-    <div className="panel flex items-center justify-between gap-3" style={{ padding: "12px 14px" }}>
+    <Card className="flex flex-row items-center justify-between gap-3 py-0" style={{ padding: "12px 14px" }}>
       <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-        <span className="badge badge-green" style={{ flex: "none" }}>Checked in</span>
+        <Badge variant="secondary" style={{ flex: "none" }}>Checked in</Badge>
         <div style={{ minWidth: 0 }}>
           <div className="font-medium" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
           <div className="mono">#{serial} · event {eventId.slice(0, 10)}…</div>
@@ -341,15 +351,13 @@ function ClaimPoapRow({
       </div>
       <div className="flex flex-col items-end gap-1" style={{ flex: "none" }}>
         {done ? (
-          <span className="badge badge-magenta"><Icon icon="ph:seal-check-fill" size={12} /> Claimed</span>
+          <Badge variant="secondary"><Icon icon="ph:seal-check-fill" size={12} /> Claimed</Badge>
         ) : (
-          <button className="btn btn-primary btn-sm" disabled={isPending} onClick={claim}>
+          <Button size="sm" disabled={isPending} onClick={claim}>
             <Icon icon="ph:medal-fill" size={14} /> {isPending ? "Claiming…" : "Claim POAP"}
-          </button>
+          </Button>
         )}
-        {digest && <TxLink digest={digest} className="mono text-xs" style={{ color: "var(--color-success)" }} />}
-        {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)", maxWidth: 200 }}>{err}</div>}
       </div>
-    </div>
+    </Card>
   );
 }

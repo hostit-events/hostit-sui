@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { fromHex } from "@mysten/sui/utils";
 import {
   COINS,
@@ -35,8 +36,24 @@ import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { catPalette, catGlyph } from "@/lib/data";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
+import { Copy } from "@/components/animate-ui/icons/copy";
+import { RefreshCw } from "@/components/animate-ui/icons/refresh-cw";
 import { TxLink } from "@/components/TxLink";
 import { CopilotLauncher } from "@/components/screens/CopilotLauncher";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   GetObjectParams,
   GetOwnedObjectsParams,
@@ -158,74 +175,75 @@ export function EventManageScreen({ id }: { id: string }) {
   // Withdraw + self-check-in toggle are both on the sponsor allowlist, so gas is
   // sponsored when Enoki is on — organizers never need SUI.
   async function send(tx: Transaction, after?: () => void) {
-    setActionErr(null);
     try {
       const out =
         ENOKI_ENABLED && addr
           ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
           : await regular.mutateAsync({ transaction: tx });
-      setActionDigest(out.digest);
+      toast.success("Transaction submitted", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       eventQ.refetch();
       after?.();
     } catch (e: unknown) {
-      setActionErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
-  const [actionErr, setActionErr] = useState<string | null>(null);
-  const [actionDigest, setActionDigest] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   // === Gating / loading / error ===
   if (!addr) {
     return (
       <div className="space-y-6 screen-in">
-        <div className="card">
+        <Card className="p-5">
           <div className="font-semibold">Connect your wallet</div>
           <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
             The organizer cockpit needs the wallet that holds this event&apos;s OrganizerCap.
           </p>
-        </div>
+        </Card>
       </div>
     );
   }
   if (eventQ.isLoading || capsQ.isLoading) {
-    return <div className="card mono screen-in">Loading event…</div>;
+    return <Card className="mono screen-in p-5">Loading event…</Card>;
   }
   if (!f) {
     return (
-      <div className="card screen-in">
+      <Card className="screen-in p-5">
         <div className="font-semibold">Event not found</div>
         <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
           <span className="mono">{id.slice(0, 14)}…</span> didn&apos;t resolve to an Event object.
         </p>
-      </div>
+      </Card>
     );
   }
   if (capsQ.isError) {
     return (
       <div className="space-y-5 screen-in">
-        <div className="card">
+        <Card className="p-5">
           <div className="font-semibold">Could not load your organizer permissions</div>
           <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
             We couldn&apos;t check whether this wallet holds the OrganizerCap for this event.
           </p>
           <div className="flex gap-2" style={{ marginTop: 16, flexWrap: "wrap" }}>
-            <button className="btn btn-primary btn-sm" onClick={() => capsQ.refetch()}>
-              <Icon icon="ic:round-refresh" size={16} /> Retry
-            </button>
-            <Link href={`/event/${id}`} className="btn btn-sm">
-              <Icon icon="ic:round-explore" size={16} /> View public page
-            </Link>
+            <Button size="sm" onClick={() => capsQ.refetch()}>
+              <RefreshCw size={16} animate={capsQ.isFetching} loop /> Retry
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/event/${id}`}>
+                <Icon icon="ic:round-explore" size={16} /> View public page
+              </Link>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
   if (!capId) {
     return (
       <div className="space-y-5 screen-in">
-        <div className="card">
+        <Card className="p-5">
           <span className="eyebrow">
             <Icon icon="material-symbols:lock-outline" size={14} /> Restricted
           </span>
@@ -237,14 +255,16 @@ export function EventManageScreen({ id }: { id: string }) {
             <span className="mono">{id.slice(0, 12)}…</span>. Only the organizer can manage it.
           </p>
           <div className="flex gap-2" style={{ marginTop: 16, flexWrap: "wrap" }}>
-            <Link href={`/event/${id}`} className="btn">
-              <Icon icon="ic:round-explore" size={16} /> View public page
-            </Link>
-            <Link href="/discover" className="btn">
-              Back to discover
-            </Link>
+            <Button asChild variant="outline">
+              <Link href={`/event/${id}`}>
+                <Icon icon="ic:round-explore" size={16} /> View public page
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/discover">Back to discover</Link>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -265,19 +285,19 @@ export function EventManageScreen({ id }: { id: string }) {
   const checkedInCount = checkins.length;
 
   let status: string;
-  let statusClass: string;
+  let statusVariant: "default" | "secondary" | "outline";
   if (now > endMs) {
     status = "Ended";
-    statusClass = "badge-line";
+    statusVariant = "outline";
   } else if (now >= startMs) {
     status = "Live";
-    statusClass = "badge-green";
+    statusVariant = "default";
   } else if (now >= purchaseStartMs) {
     status = "On sale";
-    statusClass = "badge-blue";
+    statusVariant = "default";
   } else {
     status = "Upcoming";
-    statusClass = "badge-amber";
+    statusVariant = "secondary";
   }
 
   const cat = meta?.category;
@@ -325,7 +345,7 @@ export function EventManageScreen({ id }: { id: string }) {
   return (
     <div className="space-y-8 screen-in">
       {/* === Header (gradient poster + identity) === */}
-      <header className="panel" style={{ position: "relative" }}>
+      <Card className="relative gap-0 p-0 overflow-hidden">
         <div
           className="poster"
           style={
@@ -343,10 +363,10 @@ export function EventManageScreen({ id }: { id: string }) {
         </div>
         <div style={{ padding: "18px 22px 22px" }} className="space-y-3">
           <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-            <span className={`badge ${statusClass}`}>{status}</span>
-            {isFree && <span className="badge badge-green">Free</span>}
-            {isRefundable && <span className="badge badge-soft">Refundable</span>}
-            {meta?.tag && <span className="badge badge-line">{meta.tag}</span>}
+            <Badge variant={statusVariant}>{status}</Badge>
+            {isFree && <Badge variant="secondary">Free</Badge>}
+            {isRefundable && <Badge variant="secondary">Refundable</Badge>}
+            {meta?.tag && <Badge variant="outline">{meta.tag}</Badge>}
           </div>
           <h1 className="page-title" style={{ fontSize: 30 }}>
             {name}
@@ -367,20 +387,29 @@ export function EventManageScreen({ id }: { id: string }) {
             </span>
           </div>
           <div className="flex gap-2" style={{ flexWrap: "wrap", marginTop: 4 }}>
-            <Link href="/checkin" className="btn btn-sm">
-              <Icon icon="zondicons:inbox-check" size={15} /> Check-in
-            </Link>
-            <Link href={`/door/${id}`} className="btn btn-sm">
-              <Icon icon="material-symbols:door-front-outline" size={15} /> Door view
-            </Link>
-            <Link href={`/forum/${id}`} className="btn btn-sm">
-              <Icon icon="ion:chatbubbles" size={15} /> Event chat
-            </Link>
-            <Link href={`/event/${id}`} className="btn btn-sm">
-              <Icon icon="ic:round-explore" size={15} /> View public page
-            </Link>
-            <button
-              className="btn btn-sm"
+            <Button asChild variant="outline" size="sm">
+              <Link href="/checkin">
+                <Icon icon="zondicons:inbox-check" size={15} /> Check-in
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/door/${id}`}>
+                <Icon icon="material-symbols:door-front-outline" size={15} /> Door view
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/forum/${id}`}>
+                <Icon icon="ion:chatbubbles" size={15} /> Event chat
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/event/${id}`}>
+                <Icon icon="ic:round-explore" size={15} /> View public page
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(publicUrl);
@@ -391,11 +420,16 @@ export function EventManageScreen({ id }: { id: string }) {
                 }
               }}
             >
-              <Icon icon="solar:copy-linear" size={15} /> {copied ? "Copied!" : "Copy link"}
-            </button>
+              {copied ? (
+                <Icon icon="ic:round-check" size={15} />
+              ) : (
+                <Copy size={15} animateOnHover />
+              )}{" "}
+              {copied ? "Copied!" : "Copy link"}
+            </Button>
           </div>
         </div>
-      </header>
+      </Card>
 
       {/* === Stat tiles === */}
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
@@ -423,7 +457,7 @@ export function EventManageScreen({ id }: { id: string }) {
       </p>
 
       {/* === Capacity bar === */}
-      <div className="card space-y-2">
+      <Card className="space-y-2 p-5">
         <div className="flex items-center justify-between text-sm">
           <span className="section-label" style={{ color: "var(--fg2)" }}>
             Capacity
@@ -449,7 +483,7 @@ export function EventManageScreen({ id }: { id: string }) {
             }}
           />
         </div>
-      </div>
+      </Card>
 
       {/* === Payout panel === */}
       <section className="space-y-4">
@@ -465,7 +499,7 @@ export function EventManageScreen({ id }: { id: string }) {
             refund window.
           </p>
         </div>
-        <div className="card space-y-3">
+        <Card className="space-y-3 p-5">
           {isFree ? (
             <div className="text-sm" style={{ color: "var(--fg2)" }}>
               This is a free event — there are no balances to withdraw.
@@ -487,27 +521,31 @@ export function EventManageScreen({ id }: { id: string }) {
                         {fmtAmount(gross, c.decimals)} {c.symbol} grossed
                       </div>
                     </div>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      disabled={isPending || noGross}
-                      onClick={() =>
-                        send(
-                          withdrawEventBalanceTx({
-                            capId,
-                            eventId: id,
-                            coinType: c.type,
-                            recipient: addr,
-                          }),
-                        )
-                      }
-                      title={
-                        noGross
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          disabled={isPending || noGross}
+                          onClick={() =>
+                            send(
+                              withdrawEventBalanceTx({
+                                capId,
+                                eventId: id,
+                                coinType: c.type,
+                                recipient: addr,
+                              }),
+                            )
+                          }
+                        >
+                          <Icon icon="solar:download-minimalistic-bold" size={15} /> Withdraw {c.symbol}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {noGross
                           ? `No recent ${c.symbol} sales to withdraw`
-                          : `Withdraw all accrued ${c.symbol} to ${addr}`
-                      }
-                    >
-                      <Icon icon="solar:download-minimalistic-bold" size={15} /> Withdraw {c.symbol}
-                    </button>
+                          : `Withdraw all accrued ${c.symbol} to ${addr}`}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 );
               })}
@@ -517,22 +555,14 @@ export function EventManageScreen({ id }: { id: string }) {
               </p>
             </div>
           )}
-          {actionDigest && (
-            <TxLink digest={actionDigest} className="mono text-xs" style={{ color: "var(--color-success)" }} />
-          )}
-          {actionErr && (
-            <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>
-              {actionErr}
-            </div>
-          )}
-        </div>
+        </Card>
       </section>
 
       {/* === Controls: pricing + check-in === */}
       <section className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
         {!isFree && <PricePanel capId={capId} eventId={id} onDone={() => eventQ.refetch()} />}
 
-        <div className="card space-y-4">
+        <Card className="space-y-4 p-5">
           <div className="flex items-center justify-between gap-2">
             <div>
               <div className="font-medium">Self check-in</div>
@@ -540,14 +570,11 @@ export function EventManageScreen({ id }: { id: string }) {
                 Let holders check themselves in within the event window.
               </div>
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={allowSelf}
+            <Switch
               aria-label="Self check-in"
+              checked={allowSelf}
               disabled={isPending}
-              className={`switch ${allowSelf ? "on" : ""}`}
-              onClick={() => {
+              onCheckedChange={() => {
                 if (!isPending) send(setAllowSelfCheckinTx({ capId, eventId: id, allow: !allowSelf }));
               }}
             />
@@ -556,7 +583,7 @@ export function EventManageScreen({ id }: { id: string }) {
           <div style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }}>
             <SignerPanel capId={capId} eventId={id} />
           </div>
-        </div>
+        </Card>
       </section>
 
       {/* === Prediction markets (organizer view: open + pool volume) === */}
@@ -581,16 +608,16 @@ export function EventManageScreen({ id }: { id: string }) {
           </div>
         </div>
         {mintedQ.isLoading ? (
-          <div className="card mono">Loading attendees…</div>
+          <Card className="mono p-5">Loading attendees…</Card>
         ) : mints.length === 0 ? (
-          <div className="card">
+          <Card className="p-5">
             <div className="font-semibold">No tickets yet.</div>
             <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
               Share your event link to start selling.
             </p>
-          </div>
+          </Card>
         ) : (
-          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <Card className="gap-0 py-0" style={{ overflow: "hidden" }}>
             {mints.slice(0, 12).map((m, i) => {
               const ci = coinInfo(resolveCoinType(m.coin_type));
               const isCheckedIn = checkins.some((c) => c.ticket_id === m.ticket_id);
@@ -604,7 +631,7 @@ export function EventManageScreen({ id }: { id: string }) {
                   }}
                 >
                   <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-                    <span className="badge badge-soft mono">#{String(m.serial)}</span>
+                    <Badge variant="secondary" className="mono">#{String(m.serial)}</Badge>
                     <AddressDisplay address={m.recipient} suffix={4} />
                   </div>
                   <div className="flex items-center gap-2.5">
@@ -613,14 +640,14 @@ export function EventManageScreen({ id }: { id: string }) {
                         {fmtAmount(BigInt(m.total_paid), ci.decimals)} {ci.symbol}
                       </span>
                     ) : (
-                      <span className="badge badge-line">Free</span>
+                      <Badge variant="outline">Free</Badge>
                     )}
-                    {isCheckedIn && <span className="badge badge-green">In</span>}
+                    {isCheckedIn && <Badge variant="default">In</Badge>}
                   </div>
                 </div>
               );
             })}
-          </div>
+          </Card>
         )}
       </section>
 
@@ -728,7 +755,7 @@ function PredictionMarketsPanel({
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}
       >
         {/* --- Sellout Clock --- */}
-        <div className="card space-y-3">
+        <Card className="space-y-3 p-5">
           <div className="flex items-center gap-2">
             <Icon icon="mdi:timer-sand" size={16} style={{ color: "var(--fg2)" }} />
             <div className="font-medium">Sellout Clock</div>
@@ -745,9 +772,9 @@ function PredictionMarketsPanel({
               <div className="text-sm" style={{ color: "var(--color-danger)" }}>
                 Couldn&apos;t load this market&apos;s pool.
               </div>
-              <button className="btn btn-sm" onClick={() => selloutQ.refetch()}>
-                <Icon icon="ic:round-refresh" size={14} /> Retry
-              </button>
+              <Button variant="outline" size="sm" onClick={() => selloutQ.refetch()}>
+                <RefreshCw size={14} animate={selloutQ.isFetching} loop /> Retry
+              </Button>
             </div>
           ) : selloutMarketId ? (
             <div className="space-y-1">
@@ -758,34 +785,34 @@ function PredictionMarketsPanel({
                 </span>
               </div>
               <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-                <span className="badge badge-green">YES {fmtAmount(sellout?.totalYes ?? 0n, usdcInfo.decimals)}</span>
-                <span className="badge badge-line">NO {fmtAmount(sellout?.totalNo ?? 0n, usdcInfo.decimals)}</span>
+                <Badge variant="default">YES {fmtAmount(sellout?.totalYes ?? 0n, usdcInfo.decimals)}</Badge>
+                <Badge variant="outline">NO {fmtAmount(sellout?.totalNo ?? 0n, usdcInfo.decimals)}</Badge>
                 {sellout?.settled && (
-                  <span className="badge badge-soft">
+                  <Badge variant="secondary">
                     {sellout.outcomeYes ? "Sold out" : "Did not sell out"}
-                  </span>
+                  </Badge>
                 )}
               </div>
             </div>
           ) : (
             <>
-              <button
-                className="btn btn-primary btn-sm"
+              <Button
+                size="sm"
                 disabled={isPending}
                 onClick={() => send(createSelloutMarketTx(eventId, USDC_COIN_TYPE), afterCreate)}
               >
                 <Icon icon="mdi:timer-sand" size={15} />
                 {isPending ? "Opening…" : "Open Sellout Clock"}
-              </button>
+              </Button>
               <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
                 Parimutuel USDC pool, settled on-chain. No effect on ticket revenue.
               </div>
             </>
           )}
-        </div>
+        </Card>
 
         {/* --- Final tickets sold (range) --- */}
-        <div className="card space-y-3">
+        <Card className="space-y-3 p-5">
           <div className="flex items-center gap-2">
             <Icon icon="mdi:chart-bar" size={16} style={{ color: "var(--fg2)" }} />
             <div className="font-medium">Final tickets sold</div>
@@ -807,15 +834,15 @@ function PredictionMarketsPanel({
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {range.totals.map((t, i) => (
-                  <span key={i} className="badge badge-line mono" style={{ fontSize: 11 }}>
+                  <Badge key={i} variant="outline" className="mono" style={{ fontSize: 11 }}>
                     {bucketLabel(range.cutoffs, i)}: {fmtAmount(t, usdcInfo.decimals)}
-                  </span>
+                  </Badge>
                 ))}
               </div>
               {range.settled && (
-                <span className="badge badge-soft mono">
+                <Badge variant="secondary" className="mono">
                   Winner: {bucketLabel(range.cutoffs, range.winningBucket)}
-                </span>
+                </Badge>
               )}
             </div>
           ) : rangeMarketId && rangeQ.isError ? (
@@ -823,9 +850,9 @@ function PredictionMarketsPanel({
               <div className="text-sm" style={{ color: "var(--color-danger)" }}>
                 Couldn&apos;t load this market&apos;s pool.
               </div>
-              <button className="btn btn-sm" onClick={() => rangeQ.refetch()}>
-                <Icon icon="ic:round-refresh" size={14} /> Retry
-              </button>
+              <Button variant="outline" size="sm" onClick={() => rangeQ.refetch()}>
+                <RefreshCw size={14} animate={rangeQ.isFetching} loop /> Retry
+              </Button>
             </div>
           ) : rangeMarketId ? (
             <div className="mono text-sm" style={{ color: "var(--fg2)" }}>
@@ -835,13 +862,13 @@ function PredictionMarketsPanel({
             <>
               <div className="flex flex-wrap gap-1.5">
                 {Array.from({ length: cutoffs.length + 1 }, (_, i) => (
-                  <span key={i} className="badge badge-line mono" style={{ fontSize: 11 }}>
+                  <Badge key={i} variant="outline" className="mono" style={{ fontSize: 11 }}>
                     {bucketLabel(cutoffs, i)}
-                  </span>
+                  </Badge>
                 ))}
               </div>
-              <button
-                className="btn btn-primary btn-sm"
+              <Button
+                size="sm"
                 disabled={isPending}
                 onClick={() =>
                   send(createRangeMarketTx(eventId, USDC_COIN_TYPE, cutoffs), afterCreate)
@@ -849,13 +876,13 @@ function PredictionMarketsPanel({
               >
                 <Icon icon="mdi:chart-bar" size={15} />
                 {isPending ? "Opening…" : "Open final-sales market"}
-              </button>
+              </Button>
               <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
                 Ranges default to quartiles of {String(maxTickets)} max tickets. Settled on-chain.
               </div>
             </>
           )}
-        </div>
+        </Card>
       </div>
     </section>
   );
@@ -877,9 +904,6 @@ function PricePanel({
   const isPending = regular.isPending || sponsored.isPending;
   const [coin, setCoin] = useState(COINS[0].type);
   const [priceStr, setPriceStr] = useState("1");
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-  const [digest, setDigest] = useState<string | null>(null);
 
   // Parse the decimal string into smallest-unit bigint without float rounding.
   // Returns null on malformed input or excess fractional digits.
@@ -888,21 +912,19 @@ function PricePanel({
   }
 
   async function submit() {
-    setErr(null);
-    setOk(false);
     const dec = coinInfo(coin).decimals;
     const units = priceUnits();
     if (units === null) {
-      setErr(`Enter a valid price with at most ${dec} decimal places.`);
+      toast.error(`Enter a valid price with at most ${dec} decimal places.`);
       return;
     }
     if (units <= 0n) {
-      setErr("Enter a price greater than zero.");
+      toast.error("Enter a price greater than zero.");
       return;
     }
     const addr = account?.address;
     if (!addr) {
-      setErr("Connect a wallet to set a price.");
+      toast.error("Connect a wallet to set a price.");
       return;
     }
     try {
@@ -912,16 +934,17 @@ function PricePanel({
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
-      setOk(true);
+      toast.success("Price updated", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       onDone();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
   return (
-    <div className="card space-y-3">
+    <Card className="space-y-3 p-5">
       <div>
         <div className="font-medium">Set price</div>
         <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
@@ -929,50 +952,43 @@ function PricePanel({
         </div>
       </div>
       <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
-        <div>
-          <label className="label">Coin</label>
-          <select
-            className="select"
+        <div className="space-y-1.5">
+          <Label>Coin</Label>
+          <Select
             value={coin}
-            onChange={(e) => {
-              setCoin(e.target.value);
-              setOk(false);
-              setDigest(null);
+            onValueChange={(v) => {
+              setCoin(v);
             }}
           >
-            {COINS.map((c) => (
-              <option key={c.type} value={c.type}>
-                {c.symbol}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COINS.map((c) => (
+                <SelectItem key={c.type} value={c.type}>
+                  {c.symbol}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="grow">
-          <label className="label">Price ({coinInfo(coin).symbol})</label>
-          <input
-            className="input"
+        <div className="grow space-y-1.5">
+          <Label>Price ({coinInfo(coin).symbol})</Label>
+          <Input
             type="number"
             min={0}
             step={(10 ** -coinInfo(coin).decimals).toFixed(coinInfo(coin).decimals)}
             value={priceStr}
             onChange={(e) => {
               setPriceStr(e.target.value);
-              setOk(false);
-              setDigest(null);
             }}
           />
         </div>
-        <button className="btn btn-primary" disabled={isPending} onClick={submit}>
+        <Button disabled={isPending} onClick={submit}>
           {isPending ? "Setting…" : "Set price"}
-        </button>
+        </Button>
       </div>
-      {ok && (
-        <div className="text-xs flex items-center gap-2" style={{ color: "var(--color-success)" }}>
-          Price updated.{digest && <TxLink digest={digest} className="mono" />}
-        </div>
-      )}
-      {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
-    </div>
+    </Card>
   );
 }
 
@@ -983,32 +999,27 @@ function SignerPanel({ capId, eventId }: { capId: string; eventId: string }) {
   const sponsored = useSponsorAndExecute();
   const isPending = regular.isPending || sponsored.isPending;
   const [hex, setHex] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-  const [digest, setDigest] = useState<string | null>(null);
 
   async function add() {
-    setErr(null);
-    setOk(false);
     const clean = hex.trim().replace(/^0x/i, "");
     if (!/^[0-9a-fA-F]*$/.test(clean) || clean.length === 0) {
-      setErr("Enter a hex-encoded ed25519 public key.");
+      toast.error("Enter a hex-encoded ed25519 public key.");
       return;
     }
     let bytes: Uint8Array;
     try {
       bytes = fromHex(clean);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Invalid hex.");
+      toast.error(e instanceof Error ? e.message : "Invalid hex.");
       return;
     }
     if (bytes.length !== 32) {
-      setErr(`Public key must be 32 bytes (got ${bytes.length}).`);
+      toast.error(`Public key must be 32 bytes (got ${bytes.length}).`);
       return;
     }
     const addr = account?.address;
     if (!addr) {
-      setErr("Connect a wallet to add a signer.");
+      toast.error("Connect a wallet to add a signer.");
       return;
     }
     try {
@@ -1016,11 +1027,12 @@ function SignerPanel({ capId, eventId }: { capId: string; eventId: string }) {
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
-      setOk(true);
+      toast.success("Signer added", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       setHex("");
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     }
   }
 
@@ -1032,27 +1044,19 @@ function SignerPanel({ capId, eventId }: { capId: string; eventId: string }) {
       </div>
       <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
         <div className="grow" style={{ minWidth: 200 }}>
-          <input
-            className="input mono"
+          <Input
+            className="mono"
             placeholder="0x… (64 hex chars)"
             value={hex}
             onChange={(e) => {
               setHex(e.target.value);
-              setOk(false);
-              setDigest(null);
             }}
           />
         </div>
-        <button className="btn btn-primary" disabled={isPending} onClick={add}>
+        <Button disabled={isPending} onClick={add}>
           {isPending ? "Adding…" : "Add signer"}
-        </button>
+        </Button>
       </div>
-      {ok && (
-        <div className="text-xs flex items-center gap-2" style={{ color: "var(--color-success)" }}>
-          Signer added.{digest && <TxLink digest={digest} className="mono" />}
-        </div>
-      )}
-      {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
     </div>
   );
 }

@@ -13,6 +13,12 @@
   --ease: cubic-bezier(.16,1,.3,1);
   --ease-long: cubic-bezier(.19,1,.22,1);
   --gut: clamp(20px, 5vw, 96px);
+  /* The brand fonts live only on the landing now — the app defaults to Geist
+     (globals.css). Re-scope the type vars here so .lv-* classes resolve to the
+     brand Hanken / Space Mono / Poppins. */
+  --font-sans: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+  --font-display: 'Poppins', 'Hanken Grotesk', sans-serif;
   background: var(--ink); color: var(--paper);
   font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
   position: relative; overflow-x: clip;

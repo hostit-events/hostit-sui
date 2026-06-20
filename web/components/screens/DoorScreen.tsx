@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { toast } from "sonner";
 import type { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { ENOKI_ENABLED, PACKAGE_ID } from "@/lib/config";
 import { checkInTx, getFields } from "@/lib/ticketing";
@@ -19,8 +20,17 @@ import {
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { Icon } from "@/components/Icon";
+import { Copy } from "@/components/animate-ui/icons/copy";
+import { RefreshCw } from "@/components/animate-ui/icons/refresh-cw";
 import { TxLink } from "@/components/TxLink";
 import { AddressDisplay } from "@/components/AddressDisplay";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   GetObjectParams,
   QueryEventsParams,
@@ -34,9 +44,9 @@ import type {
 const QrScanner = dynamic(() => import("@/components/QrScanner").then((m) => m.QrScanner), {
   ssr: false,
   loading: () => (
-    <div className="card mono" style={{ textAlign: "center" }}>
+    <Card className="mono p-4 text-center">
       Starting camera…
-    </div>
+    </Card>
   ),
 });
 
@@ -143,26 +153,35 @@ export function DoorScreen({ id }: { id: string }) {
         <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/logo-white.png" alt="HostIt" style={{ height: 22, width: "auto", display: "block" }} />
-          <span
-            className="badge badge-green inline-flex items-center gap-1.5"
-            title="Scoped door-staff view"
-          >
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: 999,
-                background: "var(--hi-green, var(--color-success))",
-                boxShadow: "0 0 8px var(--hi-green, var(--color-success))",
-                display: "inline-block",
-              }}
-            />
-            Door staff
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="secondary" className="inline-flex items-center gap-1.5">
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: 999,
+                    background: "var(--hi-green, var(--color-success))",
+                    boxShadow: "0 0 8px var(--hi-green, var(--color-success))",
+                    display: "inline-block",
+                  }}
+                />
+                Door staff
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>Scoped door-staff view</TooltipContent>
+          </Tooltip>
         </div>
-        <Link href="/checkin" className="btn btn-sm" title="Close door view">
-          <Icon icon="ic:round-close" size={16} /> Close
-        </Link>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/checkin">
+                <Icon icon="ic:round-close" size={16} /> Close
+              </Link>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Close door view</TooltipContent>
+        </Tooltip>
       </header>
 
       <main className="grow w-full" style={{ maxWidth: 640, margin: "0 auto", padding: "20px 18px 0", width: "100%" }}>
@@ -219,44 +238,35 @@ export function DoorScreen({ id }: { id: string }) {
               checked in
             </div>
           </div>
-          <button
-            className="btn btn-sm"
-            onClick={() => checkinQ.refetch()}
-            title="Refresh live count"
-          >
-            <Icon icon="ic:round-refresh" size={16} /> Refresh
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" onClick={() => checkinQ.refetch()}>
+                <RefreshCw size={16} animate={checkinQ.isFetching} loop /> Refresh
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh live count</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* === Mode toggle === */}
-        <div className="flex gap-2" style={{ marginTop: 18 }}>
-          <button
-            className={`chip ${mode === "admit" ? "on" : ""}`}
-            onClick={() => setMode("admit")}
-            style={{ flex: 1, justifyContent: "center" }}
-          >
-            <Icon icon="zondicons:inbox-check" size={15} /> Admit
-          </button>
-          <button
-            className={`chip ${mode === "monitor" ? "on" : ""}`}
-            onClick={() => setMode("monitor")}
-            style={{ flex: 1, justifyContent: "center" }}
-          >
-            <Icon icon="ic:round-monitor" size={15} /> Monitor
-          </button>
-          <button
-            className={`chip ${mode === "search" ? "on" : ""}`}
-            onClick={() => setMode("search")}
-            style={{ flex: 1, justifyContent: "center" }}
-          >
-            <Icon icon="ic:round-search" size={15} /> Search
-          </button>
-        </div>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)} className="mt-[18px]">
+          <TabsList className="w-full">
+            <TabsTrigger value="admit" className="flex-1">
+              <Icon icon="zondicons:inbox-check" size={15} /> Admit
+            </TabsTrigger>
+            <TabsTrigger value="monitor" className="flex-1">
+              <Icon icon="ic:round-monitor" size={15} /> Monitor
+            </TabsTrigger>
+            <TabsTrigger value="search" className="flex-1">
+              <Icon icon="ic:round-search" size={15} /> Search
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {mode === "admit" ? (
           <AdmitPanel eventId={id} onAdmitted={() => checkinQ.refetch()} />
         ) : mode === "monitor" ? (
-          <div className="card" style={{ marginTop: 12, textAlign: "center" }}>
+          <Card className="mt-3 p-4 text-center">
             <div
               className="inline-flex items-center justify-center"
               style={{
@@ -274,20 +284,19 @@ export function DoorScreen({ id }: { id: string }) {
             <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
               Attendees self-admit or are voucher-checked-in on-chain. New admits appear below in real time.
             </p>
-          </div>
+          </Card>
         ) : (
           <div style={{ position: "relative", marginTop: 12 }}>
-            <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--fg3)" }}>
+            <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--fg3)", zIndex: 1 }}>
               <Icon icon="ic:round-search" size={18} />
             </span>
-            <input
+            <Input
               id="door-search"
               aria-label="Search attendees"
-              className="input"
               placeholder="Filter admits by address or serial…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              style={{ paddingLeft: 42 }}
+              className="pl-[42px]"
             />
           </div>
         )}
@@ -296,24 +305,25 @@ export function DoorScreen({ id }: { id: string }) {
         <div style={{ marginTop: 20 }}>
           <div className="section-label">Recent admits</div>
           {checkinQ.isLoading ? (
-            <div className="card mono">Loading admits…</div>
+            <Card className="mono p-4">Loading admits…</Card>
           ) : checkinQ.error ? (
-            <div className="card" style={{ color: "var(--color-danger)" }}>
-              Couldn&apos;t load admits. <button className="btn btn-sm" onClick={() => checkinQ.refetch()}>Retry</button>
-            </div>
+            <Card className="p-4" style={{ color: "var(--color-danger)" }}>
+              Couldn&apos;t load admits.{" "}
+              <Button variant="outline" size="sm" onClick={() => checkinQ.refetch()}>Retry</Button>
+            </Card>
           ) : shown.length === 0 ? (
-            <div className="card">
+            <Card className="p-4">
               <div className="font-semibold">{query.trim() ? "No matches." : "No one in yet."}</div>
               <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
                 {query.trim()
                   ? "Try a different address or serial."
                   : "Admits land here the moment attendees check in."}
               </p>
-            </div>
+            </Card>
           ) : (
-            <div
-              className="card"
-              style={{ padding: 0, maxHeight: 420, overflowY: "auto" }}
+            <Card
+              className="p-0"
+              style={{ maxHeight: 420, overflowY: "auto" }}
             >
               {shown.map((a, i) => (
                 <div
@@ -325,13 +335,14 @@ export function DoorScreen({ id }: { id: string }) {
                   }}
                 >
                   <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-                    <span
-                      className="badge badge-green inline-flex"
-                      style={{ flex: "none" }}
-                      title="Admitted"
-                    >
-                      <Icon icon="zondicons:inbox-check" size={13} />
-                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="secondary" className="inline-flex" style={{ flex: "none" }}>
+                          <Icon icon="zondicons:inbox-check" size={13} />
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>Admitted</TooltipContent>
+                    </Tooltip>
                     <div style={{ minWidth: 0 }}>
                       <div className="font-medium" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         <AddressDisplay address={a.attendee} suffix={4} />
@@ -353,7 +364,7 @@ export function DoorScreen({ id }: { id: string }) {
                   </div>
                 </div>
               ))}
-            </div>
+            </Card>
           )}
         </div>
       </main>
@@ -392,11 +403,10 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
   const [useCamera, setUseCamera] = useState(false);
   const [ticketInput, setTicketInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  // Camera/decode errors live in a SEPARATE slot from admit/tx errors so the
-  // scanner's onError can't clobber a real check-in error (`err`).
+  // Camera/decode errors are surfaced inline (separate from admit/tx errors,
+  // which now route to Sonner toast) so the scanner's onError can't clobber a
+  // real check-in result.
   const [camErr, setCamErr] = useState<string | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
   const [lastTicket, setLastTicket] = useState<string | null>(null);
 
   // Dedup + cooldown: a QR scanner re-fires the same value many times a second.
@@ -409,19 +419,17 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
 
   // Admit a ticket: sign the voucher with the staff key, submit the check-in.
   async function admit(rawTicket: string) {
-    setErr(null);
-    setDigest(null);
     const ticketId = extractTicketId(rawTicket);
     if (!ticketId) {
-      setErr("Couldn't read a ticket id from that input. Expect a 0x… object id.");
+      toast.error("Couldn't read a ticket id from that input. Expect a 0x… object id.");
       return;
     }
     if (!keypair) {
-      setErr("Set up a staff signing key first (below).");
+      toast.error("Set up a staff signing key first (below).");
       return;
     }
     if (!account?.address) {
-      setErr("Connect the ticket-holder's wallet to submit the check-in.");
+      toast.error("Connect the ticket-holder's wallet to submit the check-in.");
       return;
     }
     setBusy(true);
@@ -437,13 +445,15 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: account.address })
         : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
+      toast.success("Admitted", {
+        description: <TxLink digest={out.digest} chars={10} />,
+      });
       setTicketInput("");
       lastAdmittedId.current = ticketId;
       lastAdmittedAt.current = Date.now();
       onAdmitted();
     } catch (e: unknown) {
-      setErr(humanizeError(e));
+      toast.error(humanizeError(e));
     } finally {
       setBusy(false);
     }
@@ -452,20 +462,24 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
   return (
     <div className="space-y-3" style={{ marginTop: 12 }}>
       {/* Reader: camera QR or typed/pasted ticket id */}
-      <div className="card space-y-3">
+      <Card className="space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
           <span className="section-label">Admit attendee</span>
-          <button
-            className={`chip ${useCamera ? "on" : ""}`}
-            onClick={() => {
-              setErr(null);
-              setCamErr(null);
-              setUseCamera((v) => !v);
-            }}
-            title="Toggle the camera QR scanner"
-          >
-            <Icon icon="ic:round-qr-code-scanner" size={14} /> {useCamera ? "Camera on" : "Scan QR"}
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={useCamera ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setCamErr(null);
+                  setUseCamera((v) => !v);
+                }}
+              >
+                <Icon icon="ic:round-qr-code-scanner" size={14} /> {useCamera ? "Camera on" : "Scan QR"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Toggle the camera QR scanner</TooltipContent>
+          </Tooltip>
         </div>
 
         {useCamera && (
@@ -501,49 +515,35 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
         )}
 
         <div className="field">
-          <label className="label" htmlFor="door-ticket">
-            Ticket id
-          </label>
-          <input
+          <Label htmlFor="door-ticket">Ticket id</Label>
+          <Input
             id="door-ticket"
-            className="input mono"
+            className="mono"
             placeholder="0x… ticket object id"
             value={ticketInput}
-            onChange={(e) => {
-              setTicketInput(e.target.value);
-              setErr(null);
-            }}
+            onChange={(e) => setTicketInput(e.target.value)}
             spellCheck={false}
           />
         </div>
-        <button
-          className="btn btn-primary"
+        <Button
+          className="w-full"
           disabled={busy || !ticketInput.trim() || !keypair}
           onClick={() => admit(ticketInput)}
         >
           <Icon icon="zondicons:inbox-check" size={16} />
           {busy ? "Admitting…" : "Sign voucher & check in"}
-        </button>
+        </Button>
 
         {lastTicket && (
           <div className="mono text-xs" style={{ color: "var(--fg3)" }}>
             ticket {lastTicket.slice(0, 12)}…{lastTicket.slice(-4)}
           </div>
         )}
-        {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
-        {digest && (
-          <TxLink
-            digest={digest}
-            label="admitted · tx"
-            className="mono text-xs"
-            style={{ color: "var(--color-success)" }}
-          />
-        )}
         <p className="text-xs" style={{ color: "var(--fg3)" }}>
           The check-in is submitted by the connected wallet (the ticket holder). At a kiosk, the
           attendee taps in their wallet; the staff key only signs the voucher.
         </p>
-      </div>
+      </Card>
 
       <StaffKeyManager keypair={keypair} onChange={setKeypair} />
     </div>
@@ -592,7 +592,7 @@ function StaffKeyManager({
   }
 
   return (
-    <div className="card space-y-3">
+    <Card className="space-y-3 p-4">
       <div>
         <span className="section-label">Staff signing key</span>
         <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
@@ -605,35 +605,47 @@ function StaffKeyManager({
       {keypair ? (
         <>
           <div className="field">
-            <label className="label">Public key (register this on the event)</label>
+            <Label>Public key (register this on the event)</Label>
             <div className="flex items-center gap-2">
-              <input className="input mono" value={pubHex ?? ""} readOnly spellCheck={false} />
-              <button className="btn btn-sm" onClick={copyPub} title="Copy public key">
-                <Icon icon={copied ? "ic:round-check" : "ic:round-content-copy"} size={15} />
-                {copied ? "Copied" : "Copy"}
-              </button>
+              <Input className="mono" value={pubHex ?? ""} readOnly spellCheck={false} />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={copyPub}>
+                    {copied ? (
+                      <Icon icon="ic:round-check" size={15} />
+                    ) : (
+                      <Copy size={15} animateOnHover />
+                    )}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Copy public key</TooltipContent>
+              </Tooltip>
             </div>
           </div>
-          <button
-            className="btn btn-sm"
-            onClick={() => {
-              clearStaffKeypair();
-              onChange(null);
-            }}
-            title="Forget this device's staff key"
-          >
-            <Icon icon="ic:round-delete-outline" size={15} /> Forget key
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  clearStaffKeypair();
+                  onChange(null);
+                }}
+              >
+                <Icon icon="ic:round-delete-outline" size={15} /> Forget key
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Forget this device&apos;s staff key</TooltipContent>
+          </Tooltip>
         </>
       ) : importing ? (
         <>
           <div className="field">
-            <label className="label" htmlFor="staff-secret">
-              Sui private key
-            </label>
-            <input
+            <Label htmlFor="staff-secret">Sui private key</Label>
+            <Input
               id="staff-secret"
-              className="input mono"
+              className="mono"
               type="password"
               placeholder="suiprivkey1…"
               value={secret}
@@ -646,11 +658,12 @@ function StaffKeyManager({
             />
           </div>
           <div className="flex gap-2 flex-wrap">
-            <button className="btn btn-primary btn-sm" disabled={!secret.trim()} onClick={doImport}>
+            <Button size="sm" disabled={!secret.trim()} onClick={doImport}>
               Import key
-            </button>
-            <button
-              className="btn btn-sm"
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
                 setImporting(false);
                 setSecret("");
@@ -658,28 +671,28 @@ function StaffKeyManager({
               }}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </>
       ) : (
         <div className="flex gap-2 flex-wrap">
-          <button
-            className="btn btn-primary btn-sm"
+          <Button
+            size="sm"
             onClick={() => {
               setErr(null);
               onChange(generateStaffKeypair());
             }}
           >
             <Icon icon="ic:round-add" size={15} /> Generate key
-          </button>
-          <button className="btn btn-sm" onClick={() => setImporting(true)}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
             Import existing
-          </button>
+          </Button>
         </div>
       )}
 
       {err && <div className="text-xs break-words" style={{ color: "var(--color-danger)" }}>{err}</div>}
-    </div>
+    </Card>
   );
 }
 

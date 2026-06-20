@@ -1,6 +1,8 @@
 "use client";
 
 import { useSuiNSName } from "@/lib/suins";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface AddressDisplayProps {
   address: string;
@@ -43,24 +45,33 @@ export function AddressDisplay({
 
   if (name) {
     return (
-      <span
-        className={`inline-flex items-center gap-1 ${className}`}
-        title={`${name} · ${address}`}
-      >
-        <span className="font-medium">@{name}</span>
-        {showBadge && (
-          <span className="text-[10px] text-[var(--color-verified)] inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[var(--color-verified)]/15">
-            <span aria-hidden="true">✓</span>
-            <span className="sr-only">suiNS verified</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={`inline-flex items-center gap-1 ${className}`}>
+            <span className="font-medium">@{name}</span>
+            {showBadge && (
+              <Badge variant="secondary" className="px-1 py-0">
+                <span aria-hidden="true">✓</span>
+                <span className="sr-only">suiNS verified</span>
+              </Badge>
+            )}
           </span>
-        )}
-      </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          {name} · {address}
+        </TooltipContent>
+      </Tooltip>
     );
   }
 
   return (
-    <span className={`mono ${className}`} title={address}>
-      {address.slice(0, 8)}…{address.slice(-suffix)}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={`mono ${className}`}>
+          {address.slice(0, 8)}…{address.slice(-suffix)}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{address}</TooltipContent>
+    </Tooltip>
   );
 }

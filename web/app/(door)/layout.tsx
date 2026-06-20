@@ -1,3 +1,5 @@
 export default function DoorLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return (
+    <div className="app-shell flex min-h-dvh flex-1 flex-col bg-background text-foreground">{children}</div>
+  );
 }
