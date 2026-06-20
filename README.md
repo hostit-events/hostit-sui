@@ -146,13 +146,13 @@ Live on **Sui testnet**. `web/lib/config.ts` is the source of truth (all values 
 
 | Object | ID |
 |---|---|
-| Package — original (type origin for core modules) | `0x423336143d4e5a810d24b97762bfa10be56b7d5dc86b75e831cb0897264b1e8d` |
-| Package — latest (predict; all `predict` calls) | `0xb5c95242b1a2acc8a2561246f95f8de182b3cbc67d71a370ee413c9dcdffcc0f` |
-| Shared `Hub` | `0xa2b9ceb63babc6897932c6f4cfdbbddc9d3493d36691e4520278fc58090efabd` |
-| Shared `PoapRegistry` | `0x57e285538f99b6bcc4d42e6adca2d2bb305cfb0c8b292094677fb70963d6021f` |
+| Package (fresh v1 — original == latest; all calls + type origins) | `0xd61c2a9a79f48c0ebe60d8240fc3e14c7d5a52503aa8a8e9f7a3a96bc0dd48c3` |
+| Shared `Hub` | `0x059d4a96832edbaca1cdae2abf0d5ba1b45e5db126c4883ff4b02f0b21594cd8` |
+| Shared `PoapRegistry` | `0x10a8e9ae971df483ec13a4cd8bc38d587761771276c2290a89eb79b9540591eb` |
+| Shared `TransferPolicy<Ticket>` | `0x8b32532990d89319ae4bcffc7a43819daa83378cd33e49c167481ca8520a9d61` |
 | Collateral coin (testnet USDC) | `0xa1ec7fc0…::usdc::USDC` |
 
-> **Package versioning (Sui upgrades):** the package is **upgraded in place**, not re-published. Sui anchors a type's identity to the version that *introduced* it, so core modules keep the original id while `predict` types live at the upgrade that added them. The frontend encodes this via `PACKAGE_ID`, `PACKAGE_ID_LATEST`, and `PREDICT_SELLOUT_PKG`. See [`CLAUDE.md`](./CLAUDE.md) for the full model.
+> **Package versioning (Sui upgrades):** this is a **fresh publish (version 1)** — the predict `settle_after_ms` struct change was upgrade-incompatible, so the package was re-published rather than upgraded. With no upgrades yet, `PACKAGE_ID`, `PACKAGE_ID_LATEST`, `PREDICT_SELLOUT_PKG`, and `PREDICT_RANGE_PKG` are all the same id; a future in-place upgrade re-splits them (latest rolls forward, type origins stay pinned). See [`CLAUDE.md`](./CLAUDE.md) for the full model.
 
 ---
 

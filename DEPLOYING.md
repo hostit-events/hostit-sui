@@ -16,16 +16,18 @@ The frontend encodes this in `web/lib/config.ts`:
 
 | Constant | Value (testnet) | Use |
 |---|---|---|
-| `PACKAGE_ID` | `0x4233…1e8d` (original) | type identity for core modules |
-| `PREDICT_SELLOUT_PKG` | `0x4829…ce1848` (v2) | `SelloutMarket` type/events |
-| `PACKAGE_ID_LATEST` | `0xb5c952…dffcc0f` (v3) | **all `predict` calls** + `RangeMarket` type/events |
+| `PACKAGE_ID` | `0xd61c2a…dd48c3` (fresh v1) | type identity for core modules |
+| `PREDICT_SELLOUT_PKG` | `0xd61c2a…dd48c3` (= v1) | `SelloutMarket` type/events |
+| `PACKAGE_ID_LATEST` | `0xd61c2a…dd48c3` (= v1) | **all `predict` calls** + `RangeMarket` type/events |
+
+> Fresh publish (2026-06-20): all pins equal `0xd61c2a…dd48c3` until the first in-place upgrade, which re-splits them (latest rolls forward, type origins stay).
 
 `Published.toml` (Sui automated address management) is the **single source of truth** for `published-at` / `original-id` / `version` and the `UpgradeCap`. `Move.toml` no longer pins `published-at`.
 
 ## Prerequisites
 
 - The [Sui CLI](https://docs.sui.io/references/cli) on the target env (`sui client active-env` → `testnet`).
-- The deployer address holds the package **`UpgradeCap`** `0x82729a8d…3bbfb` and enough gas (`sui client gas`).
+- The deployer address holds the package **`UpgradeCap`** `0x12a2a3c5…ec22bf` and enough gas (`sui client gas`).
 - A green tree: `sui move build` and `sui move test` both pass.
 - Upgrades must be **compatibility-safe**: you may *add* modules, structs, and public functions, but you may **not** change existing struct layouts or public function signatures incompatibly. `sui client upgrade` enforces this.
 
@@ -34,7 +36,7 @@ The frontend encodes this in `web/lib/config.ts`:
 ```mermaid
 flowchart TD
   A["Green build + tests<br/>sui move build &amp;&amp; sui move test"] --> B["Maintainer authorization<br/>explicit, per-deploy"]
-  B --> C["sui client upgrade<br/>--upgrade-capability 0x8272…<br/>(Published.toml tracks published-at)"]
+  B --> C["sui client upgrade<br/>--upgrade-capability 0x12a2a3…<br/>(Published.toml tracks published-at)"]
   C --> D["Capture new package version id<br/>from objectChanges (type: published)"]
   D --> E["web/lib/config.ts:<br/>PACKAGE_ID_LATEST = new id<br/>+ pin any NEW struct's type-origin"]
   E --> F["If new sponsored fns:<br/>add targets to route.ts + sponsor.ts"]
@@ -48,7 +50,7 @@ flowchart TD
    ```
 2. **Upgrade** (from the repo root). With automated address management, `Published.toml` supplies `published-at`; pass the cap explicitly:
    ```bash
-   sui client upgrade --upgrade-capability 0x82729a8d95e0f83de08f3488fdf649cd29737d917d54776ef0f4d16924f3bbfb \
+   sui client upgrade --upgrade-capability 0x12a2a3c5fa6dd53de253dc1327d3aaaba08839e8e86b6e0a188dc19c45ec22bf \
      --gas-budget 2000000000 --json > /tmp/upgrade.json
    ```
 3. **Capture the new package version id** — the `objectChanges` entry with `"type":"published"` → `packageId`. (Also note the digest and that the `UpgradeCap` version bumped.)
