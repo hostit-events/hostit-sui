@@ -1,9 +1,12 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { motion } from "motion/react";
 import { AuthControl } from "./AuthControl";
 import { Icon } from "./Icon";
+import { Logo } from "./Logo";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -14,14 +17,27 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "material-symbols-light:analytics-rounded" },
 ];
 
-export function Header() {
+/**
+ * App header (desktop only — mobile nav lives in MobileTabBar).
+ *
+ * `notificationsSlot` / `userAvatarSlot` are optional ReactNode seams so future
+ * issues can inject a notifications bell / command palette / avatar without the
+ * Header importing those components. They render nothing when unset and sit in
+ * the right-side cluster; `AuthControl` stays the source of truth for sign-in.
+ */
+export function Header({
+  notificationsSlot,
+  userAvatarSlot,
+}: {
+  notificationsSlot?: ReactNode;
+  userAvatarSlot?: ReactNode;
+} = {}) {
   const pathname = usePathname() || "/";
   return (
     <header className="sticky top-0 z-50 hidden border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:block">
       <div className="mx-auto flex h-14 max-w-[1340px] items-center gap-2 px-4 sm:px-6">
         <Link href="/" className="mr-1 flex flex-none items-center" aria-label="HostIt home">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/logo-white.png" alt="HostIt" className="block h-6 w-auto" />
+          <Logo size={24} />
         </Link>
         <nav className="hidden items-center gap-0.5 md:flex" aria-label="Primary">
           {NAV.map((n) => {
@@ -32,11 +48,21 @@ export function Header() {
                 asChild
                 variant="ghost"
                 size="sm"
-                className={cn("text-muted-foreground", active && "bg-accent text-foreground")}
+                className={cn(
+                  "relative text-muted-foreground",
+                  active && "bg-accent text-foreground",
+                )}
               >
                 <Link href={n.href} aria-current={active ? "page" : undefined}>
                   <Icon icon={n.icon} size={16} />
                   {n.label}
+                  {active && (
+                    <motion.span
+                      layoutId="nav-active"
+                      className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary"
+                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    />
+                  )}
                 </Link>
               </Button>
             );
@@ -59,6 +85,8 @@ export function Header() {
             </TooltipTrigger>
             <TooltipContent>Settings</TooltipContent>
           </Tooltip>
+          {notificationsSlot}
+          {userAvatarSlot}
           <AuthControl />
         </div>
       </div>
