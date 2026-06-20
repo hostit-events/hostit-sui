@@ -13,6 +13,7 @@ import {
   useSuiQuery,
 } from "@/lib/hooks";
 import { useEventPrices } from "@/lib/events";
+import { useEventMarkets } from "@/lib/markets";
 import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
@@ -84,12 +85,28 @@ export function EventPageScreen({ id }: { id: string }) {
   const [, setNowTick] = useState(0);
   // Which coin button is mid-purchase, so only that one shows "Buying…".
   const [pendingCoin, setPendingCoin] = useState<string | null>(null);
+  // Markets opt-in: when no market exists yet, the section is hidden behind a
+  // subtle "+ Add a prediction market" link. Clicking it reveals the create UI.
+  const [showCreateMarket, setShowCreateMarket] = useState(false);
 
   const f = getFields(q.data ?? {});
   const uri = f ? String(f.uri ?? "") : "";
   const organizer = f ? String(f.organizer ?? "") : "";
+  // Derived early (before the loading/not-found returns) so the markets hook —
+  // which must run unconditionally — can take it. Empty until fields load; the
+  // hook simply matches nothing for an empty seq, so there's no premature fetch.
+  const eventSeqEarly = f ? String(f.event_seq) : "";
 
   const verified = useIsVerified(organizer || null);
+
+  // Opt-in markets: only render the full Markets section once a market exists.
+  const {
+    selloutMarketId,
+    rangeMarketId,
+    loading: marketsLoading,
+    refetch: refetchMarkets,
+  } = useEventMarkets(eventSeqEarly);
+  const hasMarket = Boolean(selloutMarketId || rangeMarketId);
 
   useEffect(() => {
     let alive = true;
@@ -348,13 +365,35 @@ export function EventPageScreen({ id }: { id: string }) {
             </div>
           </div>
 
-          {/* Markets — parimutuel prediction markets (Sellout Clock + range) */}
-          <div className="space-y-3">
-            <h2 className="section-label flex items-center gap-1.5">
-              <Icon icon="mdi:chart-line" size={14} /> Markets
-            </h2>
-            <EventMarketsScreen eventId={id} eventSeq={eventSeq} maxTickets={maxTickets} />
-          </div>
+          {/* Markets — parimutuel prediction markets (Sellout Clock + range).
+              Opt-in: the full section renders only once a market exists. While the
+              existence query is loading we render NOTHING (no skeleton/flash). When
+              none exists, a subtle ghost link lets ANY connected wallet open one —
+              clicking it reveals the create cards (EventMarketsScreen, which shows
+              its permissionless "Create …" CTAs in the no-market state). A new
+              market appears live via refetchMarkets() (passed as onMarketChange). */}
+          {marketsLoading ? null : hasMarket || showCreateMarket ? (
+            <div className="space-y-3">
+              <h2 className="section-label flex items-center gap-1.5">
+                <Icon icon="mdi:chart-line" size={14} /> Markets
+              </h2>
+              <EventMarketsScreen
+                eventId={id}
+                eventSeq={eventSeq}
+                maxTickets={maxTickets}
+                onMarketChange={refetchMarkets}
+              />
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start text-muted-foreground"
+              onClick={() => setShowCreateMarket(true)}
+            >
+              <Icon icon="mdi:plus" size={15} /> Add a prediction market
+            </Button>
+          )}
         </div>
 
         {/* ---- Sticky ticket panel ---- */}

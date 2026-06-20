@@ -142,9 +142,10 @@ fun create_end_too_early_fails() {
     clock.set_for_testing(CREATE_NOW);
     sc.next_tx(ORG);
     let mut hub = sc.take_shared<Hub>();
+    // end_ms == start_ms violates end_ms > start_ms.
     let cap = event::create_event(
         &mut hub, s(b"E"), s(b"X"), s(b"uri"),
-        START, START + 1, PSTART, 10, 1, false, false, &clock, sc.ctx(),
+        START, START, PSTART, 10, 1, false, false, &clock, sc.ctx(),
     );
     destroy(cap);
     ts::return_shared(hub);
@@ -158,9 +159,10 @@ fun create_purchase_too_late_fails() {
     clock.set_for_testing(CREATE_NOW);
     sc.next_tx(ORG);
     let mut hub = sc.take_shared<Hub>();
+    // purchase_start_ms > start_ms violates purchase_start_ms <= start_ms.
     let cap = event::create_event(
         &mut hub, s(b"E"), s(b"X"), s(b"uri"),
-        START, END, START - 1, 10, 1, false, false, &clock, sc.ctx(),
+        START, END, START + 1, 10, 1, false, false, &clock, sc.ctx(),
     );
     destroy(cap);
     ts::return_shared(hub);
@@ -1109,6 +1111,156 @@ fun checkin_multiday_ok() {
     ts::return_shared(ev);
 
     destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// === Instant create / same-instant timing (check-in timing fix) ===
+
+// Instant timeline: start_ms == now, purchase_start_ms == now, end_ms == now + 1h.
+// With the relaxed asserts (start >= now, end > start, purchase_start <= start),
+// such an event is valid and is immediately in both the purchase window
+// [purchase_start, end] and the use/check-in window [start, end].
+const INSTANT_NOW: u64 = 1_000_000;
+const INSTANT_END: u64 = 4_600_000; // INSTANT_NOW + 3_600_000 (1 hour)
+
+/// Create an event whose start/purchase open at `now` and end 1h later.
+fun create_instant_event(
+    sc: &mut Scenario,
+    clock: &Clock,
+    max_tickets: u64,
+    max_per_user: u64,
+    is_free: bool,
+    is_refundable: bool,
+): OrganizerCap {
+    sc.next_tx(ORG);
+    let mut hub = sc.take_shared<Hub>();
+    let cap = event::create_event(
+        &mut hub,
+        s(b"Instant Meetup"),
+        s(b"INST"),
+        s(b"https://img/ticket.png"),
+        INSTANT_NOW,       // start_ms == now
+        INSTANT_END,       // end_ms == now + 1h
+        INSTANT_NOW,       // purchase_start_ms == now
+        max_tickets,
+        max_per_user,
+        is_free,
+        is_refundable,
+        clock,
+        sc.ctx(),
+    );
+    ts::return_shared(hub);
+    cap
+}
+
+// A free instant event can be claimed AND self-checked-in at the very instant
+// it is created (now == start == purchase_start).
+#[test]
+fun instant_free_claim_and_self_checkin_ok() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(INSTANT_NOW);
+    let cap = create_instant_event(&mut sc, &clock, 100, 5, true, false);
+
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_allow_self_checkin(&cap, &mut ev, true);
+    ts::return_shared(ev);
+
+    // Claim immediately (clock still at INSTANT_NOW == purchase_start).
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    market::claim_free(&mut ev, BUYER, &clock, sc.ctx());
+    assert!(event::minted(&ev) == 1, 0);
+    ts::return_shared(ev);
+
+    // Self-check-in immediately (now == start, day 0).
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    let mut t = sc.take_from_sender<Ticket>();
+    checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
+    assert!(ticket::is_checked_in(&t), 1);
+    assert!(event::is_checked_in(&ev, BUYER), 2);
+    assert!(event::is_checked_in_for_day(&ev, 0, BUYER), 3);
+    sc.return_to_sender(t);
+    ts::return_shared(ev);
+
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// A paid instant event can be bought AND self-checked-in at the very instant
+// it is created.
+#[test]
+fun instant_paid_buy_and_self_checkin_ok() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(INSTANT_NOW);
+    let cap = create_instant_event(&mut sc, &clock, 100, 5, false, false);
+
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_price<SUI>(&cap, &mut ev, PRICE);
+    event::set_allow_self_checkin(&cap, &mut ev, true);
+    ts::return_shared(ev);
+
+    // Buy immediately (clock still at INSTANT_NOW == purchase_start).
+    sc.next_tx(BUYER);
+    let mut hub = sc.take_shared<Hub>();
+    let mut ev = sc.take_shared<Event>();
+    let pay = mint(PRICE + HOSTIT_FEE, &mut sc);
+    market::buy<SUI>(&mut ev, &mut hub, pay, BUYER, &clock, sc.ctx());
+    assert!(event::minted(&ev) == 1, 0);
+    ts::return_shared(hub);
+    ts::return_shared(ev);
+
+    // Self-check-in immediately (now == start, day 0).
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    let mut t = sc.take_from_sender<Ticket>();
+    checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
+    assert!(ticket::is_checked_in(&t), 1);
+    assert!(event::is_checked_in_for_day(&ev, 0, BUYER), 2);
+    sc.return_to_sender(t);
+    ts::return_shared(ev);
+
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// create_event aborts E_END_TOO_EARLY when end_ms <= start_ms (here equal).
+#[test, expected_failure(abort_code = hostit_ticket::event::E_END_TOO_EARLY)]
+fun instant_end_not_after_start_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(INSTANT_NOW);
+    sc.next_tx(ORG);
+    let mut hub = sc.take_shared<Hub>();
+    // end_ms == start_ms -> not strictly after start.
+    let cap = event::create_event(
+        &mut hub, s(b"E"), s(b"X"), s(b"uri"),
+        INSTANT_NOW, INSTANT_NOW, INSTANT_NOW, 10, 1, false, false, &clock, sc.ctx(),
+    );
+    destroy(cap);
+    ts::return_shared(hub);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// create_event aborts E_PURCHASE_START_TOO_LATE when purchase_start_ms > start_ms.
+#[test, expected_failure(abort_code = hostit_ticket::event::E_PURCHASE_START_TOO_LATE)]
+fun instant_purchase_start_after_start_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(INSTANT_NOW);
+    sc.next_tx(ORG);
+    let mut hub = sc.take_shared<Hub>();
+    // purchase_start_ms == start_ms + 1 -> later than start.
+    let cap = event::create_event(
+        &mut hub, s(b"E"), s(b"X"), s(b"uri"),
+        INSTANT_NOW, INSTANT_END, INSTANT_NOW + 1, 10, 1, false, false, &clock, sc.ctx(),
+    );
+    destroy(cap);
+    ts::return_shared(hub);
     clock.destroy_for_testing();
     sc.end();
 }

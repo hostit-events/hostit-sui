@@ -13,7 +13,7 @@ export interface Tier {
 
 export interface EventMetadata {
   v: 1;
-  description: string;
+  description?: string; // optional: instant-create omits it (added later from manage)
   category: string; // music | web3 | tech | sports | arts | food | community
   tag?: string; // "Festival", "Conference"…
   venue?: string;
@@ -27,6 +27,17 @@ export interface EventMetadata {
 
 export async function putEventMetadata(m: EventMetadata): Promise<string> {
   return storeJson(m);
+}
+
+/**
+ * Minimal sentinel metadata for instant ("Quick") event creation. Carries only
+ * the schema version + category so `event.move`'s non-empty-`uri` assert is
+ * satisfied with a tiny, fast Walrus upload — no cover, description, venue, city
+ * or tiers. Those are added later from the manage screen (`update_metadata`).
+ * Readers (Discover, event page, card) already fall back when fields are absent.
+ */
+export function minimalEventMetadata(category: string): EventMetadata {
+  return { v: 1, category };
 }
 
 const cache = new Map<string, EventMetadata | null>();
