@@ -7,7 +7,7 @@
 import { SealClient, SessionKey } from "@mysten/seal";
 import { Transaction } from "@mysten/sui/transactions";
 import { fromHex, toHex } from "@mysten/sui/utils";
-import { PACKAGE_ID, SEAL_AGGREGATOR_URL, SEAL_KEY_SERVER_ID } from "./config";
+import { PACKAGE_ID, SEAL_AGGREGATOR_URL, SEAL_KEY_SERVER_ID, SEAL_VERIFY_KEY_SERVERS } from "./config";
 
 export function makeSealClient(suiClient: any): SealClient {
   return new SealClient({
@@ -18,7 +18,7 @@ export function makeSealClient(suiClient: any): SealClient {
     serverConfigs: [
       { objectId: SEAL_KEY_SERVER_ID, weight: 1, aggregatorUrl: SEAL_AGGREGATOR_URL },
     ],
-    verifyKeyServers: false, // true in production
+    verifyKeyServers: SEAL_VERIFY_KEY_SERVERS, // on for every network except localnet
   } as any);
 }
 

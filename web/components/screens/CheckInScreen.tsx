@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { fromHex } from "@mysten/sui/utils";
@@ -8,7 +8,7 @@ import {
   ORGANIZER_CAP_TYPE,
   PACKAGE_ID,
 } from "@/lib/config";
-import { useEventList } from "@/lib/events";
+import { useAllEvents, useEventList } from "@/lib/events";
 import {
   getFields,
   addCheckinSignerTx,
@@ -33,9 +33,7 @@ import type { EventInfo } from "@/lib/events";
 import type {
   GetObjectParams,
   GetOwnedObjectsParams,
-  PaginatedEvents,
   PaginatedObjectsResponse,
-  QueryEventsParams,
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
 
@@ -433,14 +431,22 @@ function SignerManager({
 
 function Attendance({ eventId }: { eventId: string }) {
   const [mode, setMode] = useState<"qr" | "search">("qr");
-  const q = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: CHECKED_IN_EVENT }, order: "descending", limit: 50 },
-    { refetchInterval: 8_000 },
-  );
+  // FULLY enumerate the global CheckedIn log (cursor-followed via useAllEvents,
+  // ~1000-log bound) instead of a single capped 50-log page — newest-first the
+  // list would otherwise drop this event's older check-ins once ~50 newer ones
+  // exist platform-wide. Liveness (the old 8s refetchInterval) is restored by the
+  // interval effect below, since useAllEvents has no built-in polling.
+  const q = useAllEvents(CHECKED_IN_EVENT);
+
+  useEffect(() => {
+    const t = setInterval(() => void q.refetch(), 8_000);
+    return () => clearInterval(t);
+  }, [q.refetch]);
 
   const rows = useMemo(() => {
     if (!q.data) return [];
+    // q.data is useAllEvents' { data, truncated } envelope (≅ the old
+    // PaginatedEvents): .data is the SuiEvent[], same hop count as before.
     return q.data.data
       .map((ev) => ({ json: ev.parsedJson as CheckedInJson, ts: ev.timestampMs }))
       .filter((r) => r.json?.event_id === eventId);
@@ -567,6 +573,11 @@ function Attendance({ eventId }: { eventId: string }) {
             </Card>
           ))}
         </div>
+      )}
+      {q.data?.truncated && (
+        <p className="mono text-sm" style={{ color: "var(--fg3)", textAlign: "center" }}>
+          Showing the most recent check-ins — older ones aren&apos;t all loaded yet.
+        </p>
       )}
     </div>
   );

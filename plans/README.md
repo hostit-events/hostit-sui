@@ -26,7 +26,7 @@ rest. Numeric order below ≈ priority order.
 |------|-------|-----|--------|------|------------|--------|
 | 001 | Frontend CI gate (tsc/lint/vitest on `web/**`) | P1 | S | LOW | — | TODO |
 | 002 | Sponsor routes: auth/rate-limit/body-cap + stop error leak | P1 | S | LOW | — (see 003) | TODO |
-| 003 | Durable KV rate-limiter + replay nonce | P1 | M | MED | after 002 | TODO |
+| 003 | Durable KV rate-limiter + replay nonce | P1 | M | MED | after 002 | DONE |
 | 004 | Security headers / CSP | P1 | M | MED | — | TODO |
 | 005 | Seal `verifyKeyServers` driven off NETWORK | P2 | S | LOW | — | TODO |
 | 006 | Copilot route: error hygiene + content clamp | P2 | S | LOW | — | TODO |
@@ -39,7 +39,7 @@ rest. Numeric order below ≈ priority order.
 | 013 | Real scannable ticket QR (add generator) | P1 | S | LOW | — | TODO |
 | 014 | `humanizeError` predict codes 7/8 | P2 | S | LOW | partial until FE-1 (deferred) | TODO |
 | 015 | Testnet banner visible on mobile | P2 | S | LOW | — | DONE |
-| 016 | Buy balance pre-check + faucet hint | P2 | S | LOW | — | TODO |
+| 016 | Buy balance pre-check + faucet hint | P2 | S | LOW | — | DONE |
 | 017 | Mobile-correct empty-wallet guidance | P2 | S | LOW | — | DONE |
 | 018 | Cover-image perf attrs (lazy/decode/dims) | P2 | S | LOW | — | TODO |
 | 019 | react-query global retry cap | P2 | S | LOW | — | DONE |

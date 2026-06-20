@@ -10,11 +10,10 @@ import type {
   GetObjectParams,
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
-  QueryEventsParams,
-  PaginatedEvents,
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
 import { TICKET_TYPE, ORGANIZER_CAP_TYPE, ENOKI_ENABLED } from "@/lib/config";
+import { useAllEvents } from "@/lib/events";
 import { getFields } from "@/lib/ticketing";
 import {
   useCurrentAccount,
@@ -70,8 +69,6 @@ interface DecodedMessage {
   tsMs: number;
   text: string | null; // null => decrypt failed / not yet decrypted
 }
-
-const POLL_MS = 12_000;
 
 export function ForumScreen({ id }: { id: string }) {
   const account = useCurrentAccount();
@@ -163,20 +160,21 @@ export function ForumScreen({ id }: { id: string }) {
   const [channel, setChannel] = useState<string>(FORUM_CHANNELS[0]?.id ?? "general");
 
   // --- Posts (on-chain anchors) for this event ------------------------------
-  const postsQ = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_FORUM_POST }, order: "descending", limit: 200 },
-    { enabled: gatedIn, refetchInterval: gatedIn ? POLL_MS : false },
-  );
+  // FULLY enumerate the global PostCreated/PostModerated logs (cursor-followed via
+  // useAllEvents, ~1000-log bound) instead of a single capped 200-log page: once
+  // platform-wide activity exceeds the page, this event's own rows — and, for
+  // moderation, an old `hide` tombstone — would silently fall off, un-hiding a
+  // hidden post. useAllEvents has no enabled/refetchInterval; the hooks run
+  // unconditionally, but every downstream effect/UI stays gated on `gatedIn`, so
+  // the (cheap) background query when not gated in is simply unused.
+  const postsQ = useAllEvents(EV_FORUM_POST);
 
   // --- Moderation tombstones (organizer hide/pin) ---------------------------
-  const modQ = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_FORUM_MODERATED }, order: "descending", limit: 200 },
-    { enabled: gatedIn, refetchInterval: gatedIn ? POLL_MS : false },
-  );
+  const modQ = useAllEvents(EV_FORUM_MODERATED);
 
   const modState = useMemo<Map<string, ModerationState>>(() => {
+    // modQ.data is useAllEvents' { data, truncated } envelope (≅ the old
+    // PaginatedEvents): .data is the SuiEvent[], same hop count as before.
     const rows = (modQ.data?.data ?? [])
       .map((ev) => ev.parsedJson as ModerationJson)
       .filter((m) => m && m.event_id === id);
@@ -190,6 +188,10 @@ export function ForumScreen({ id }: { id: string }) {
       .filter((p) => p && p.event_id === id && p.channel === channel)
       .sort((a, b) => Number(a.ts_ms) - Number(b.ts_ms)); // oldest -> newest
   }, [postsQ.data, id, channel]);
+
+  // True when either source hit the page bound (older posts / moderation actions
+  // exist but aren't loaded) — surfaced as a banner below the channel list.
+  const forumTruncated = Boolean(modQ.data?.truncated || postsQ.data?.truncated);
 
   // Pinned posts surface to the top; the rest stay chronological.
   const orderedPosts = useMemo<ForumPostJson[]>(() => {
@@ -587,6 +589,16 @@ export function ForumScreen({ id }: { id: string }) {
               ))
             )}
           </div>
+
+          {forumTruncated && (
+            <p
+              className="mono text-sm"
+              style={{ color: "var(--fg3)", textAlign: "center", padding: "0 14px 6px" }}
+            >
+              Showing the most recent forum activity — older posts and moderation actions
+              aren&apos;t all loaded yet.
+            </p>
+          )}
 
           {/* Composer */}
           <div className="flex items-end gap-2 border-t" style={{ padding: 14 }}>

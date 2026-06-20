@@ -17,4 +17,4 @@ Execution: sequential waves on one branch; parallel Opus implementers within a w
 - Move plans (007–011): code + `sui move build` + `sui move test` only. NO `sui client upgrade/publish` (gated, needs explicit per-deploy auth).
 
 ## Status
-(none complete yet)
+- W1 complete (001,002,004,006,015,017,018,019) — gates green: tsc clean, lint 0 errors (25 pre-existing warnings), 84 tests. Commit d6ed50d.

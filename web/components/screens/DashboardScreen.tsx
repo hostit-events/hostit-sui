@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { useCurrentAccount, useSuiQuery } from "@/lib/hooks";
-import { useEventList } from "@/lib/events";
+import { useCurrentAccount } from "@/lib/hooks";
+import { useAllEvents, useEventList } from "@/lib/events";
 import { listDrafts, deleteDraft, type DraftIndexEntry } from "@/lib/drafts";
 import { COINS, PACKAGE_ID, EV_TICKET_MINTED, coinInfo, fmtAmount, matchesCoinType } from "@/lib/config";
 import { MyEvents } from "@/components/MyEvents";
@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import type { PaginatedEvents, QueryEventsParams } from "@mysten/sui/jsonRpc";
 
 // Inline event-type strings (built the same way config builds EV_TICKET_MINTED).
 const EV_POAP_CLAIMED = `${PACKAGE_ID}::poap::PoapClaimed`;
@@ -130,27 +129,20 @@ export function DashboardScreen() {
     return m;
   }, [myEvents]);
 
-  // TicketMinted logs (newest first). Filtered client-side to my events' seqs.
-  const minted = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_TICKET_MINTED }, order: "descending", limit: 50 },
-    { enabled: Boolean(addr), staleTime: 30_000 },
-  );
-  // CheckedIn logs — counts checked-in tickets for my events.
-  const checkins = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_CHECKED_IN }, order: "descending", limit: 50 },
-    { enabled: Boolean(addr), staleTime: 30_000 },
-  );
-  // PoapClaimed logs — counts POAPs minted across my events.
-  const poaps = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_POAP_CLAIMED }, order: "descending", limit: 50 },
-    { enabled: Boolean(addr), staleTime: 30_000 },
-  );
+  // TicketMinted / CheckedIn / PoapClaimed logs, FULLY enumerated (cursor-followed
+  // via useAllEvents, ~1000-log bound) instead of single capped 50-log pages.
+  // queryEvents returns platform-wide newest-first logs, so a single page silently
+  // dropped this organizer's older rows once ~50 newer logs existed anywhere —
+  // making revenue / tickets-sold / checked-in / POAP totals undercount. Rows are
+  // filtered to `mySeqs` (empty when not connected, so the result is simply unused
+  // before the not-connected branch returns). `*.data?.truncated` flags overflow.
+  const minted = useAllEvents(EV_TICKET_MINTED);
+  const checkins = useAllEvents(EV_CHECKED_IN);
+  const poaps = useAllEvents(EV_POAP_CLAIMED);
 
   const mintRows: MintRow[] = useMemo(() => {
     if (!minted.data) return [];
+    // minted.data is the { data, truncated } envelope; .data is the SuiEvent[].
     return minted.data.data.flatMap((ev) => {
       const p = ev.parsedJson as TicketMintedJson;
       const seq = String(p.event_seq);
@@ -193,6 +185,12 @@ export function DashboardScreen() {
 
   const ticketsSold = mintRows.length;
   const statsLoading = eventsLoading || minted.isLoading || checkins.isLoading;
+  // Any of the three logs hit the ~1000-log page bound (older mint/check-in/POAP
+  // activity exists but isn't loaded) — surfaced in the disclaimers below so a
+  // real overflow shows as "may undercount" instead of being silently dropped.
+  const statsTruncated = Boolean(
+    minted.data?.truncated || checkins.data?.truncated || poaps.data?.truncated,
+  );
 
   // --- not connected gate ---
   if (!addr) {
@@ -264,9 +262,17 @@ export function DashboardScreen() {
             />
           </section>
           <p className="text-xs" style={{ color: "var(--fg3)", marginTop: -16 }}>
-            Sales, check-in and revenue figures are derived from the most recent on-chain activity
-            and may undercount over the full history of your events.
+            Sales, check-in and revenue figures are aggregated from on-chain logs (up to the ~1000
+            most recent), filtered to your events.
+            {statsTruncated
+              ? " You have more activity than that — older mint, check-in and POAP events aren't all loaded yet, so these figures may undercount."
+              : ""}
           </p>
+          {statsTruncated && (
+            <p className="mono text-sm" style={{ color: "var(--fg3)", textAlign: "center" }}>
+              Showing the most recent on-chain activity — older events aren&apos;t all loaded yet.
+            </p>
+          )}
 
           {/* Local event drafts — hidden entirely when there are none. */}
           {drafts.length > 0 && (
@@ -486,8 +492,11 @@ export function DashboardScreen() {
             />
           </div>
           <p className="text-xs" style={{ color: "var(--fg3)" }}>
-            These totals are aggregated from the most recent on-chain mint, check-in and POAP events
-            and may undercount across the full history of your events.
+            These totals are aggregated from on-chain mint, check-in and POAP logs (up to the ~1000
+            most recent), filtered to your events.
+            {statsTruncated
+              ? " You have more activity than that — older events aren't all loaded yet, so these totals may undercount."
+              : ""}
           </p>
 
           {/* Per-event breakdown of gross by coin */}
