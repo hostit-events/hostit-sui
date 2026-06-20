@@ -172,7 +172,15 @@ export function EventQuickViewModal({ id }: { id: string }) {
                   </Badge>
                 )}
               </div>
-              <div className="absolute" style={{ top: 12, right: 48 }}>
+              <div className="absolute flex items-center gap-1.5" style={{ top: 12, right: 48 }}>
+                {/* Hard <a> nav (not <Link>): the modal is already at /event/[id]
+                    via the interceptor, so only a full document load escapes to
+                    the real EventPageScreen. */}
+                <Button asChild size="icon" variant="secondary" className="size-8 rounded-full" title="Open full page">
+                  <a href={`/event/${id}`} aria-label="Open full event page">
+                    <Icon icon="ic:round-open-in-full" size={15} />
+                  </a>
+                </Button>
                 <SocialShare title={name} url={eventShareUrl(id)} variant="icon" />
               </div>
             </div>
@@ -238,9 +246,10 @@ export function EventQuickViewModal({ id }: { id: string }) {
 
             <DialogFooter className="flex-row items-center justify-between gap-2">
               <Button asChild variant="ghost" size="sm">
-                <Link href={`/event/${id}`}>
-                  <Icon icon="ic:round-explore" size={15} /> View full page
-                </Link>
+                {/* hard nav escapes the interceptor → full EventPageScreen */}
+                <a href={`/event/${id}`}>
+                  <Icon icon="ic:round-open-in-full" size={15} /> View full page
+                </a>
               </Button>
 
               {isFree ? (

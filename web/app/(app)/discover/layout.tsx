@@ -1,7 +1,8 @@
 // Discover segment layout: renders the page (`children`) plus a parallel
 // `@modal` slot. The slot is normally empty (its default.tsx returns null); an
 // in-app <Link href="/event/[id]"> originating from /discover is caught by the
-// `@modal/(.)event/[id]` interceptor and rendered there as a Dialog overlay,
+// `@modal/(..)event/[id]` interceptor (event/[id] is a SIBLING of discover, so
+// one level up) and rendered there as a Dialog overlay,
 // giving the modal feel while the URL becomes a shareable /event/[id]. A direct
 // load / refresh / shared link bypasses the interceptor and hits the real
 // /event/[id] page (full EventPageScreen).
