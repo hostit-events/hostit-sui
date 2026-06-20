@@ -24,16 +24,12 @@
   --color-success: #38F06A;
   --color-verified: #FA00D4;       /* stage-light magenta — suiNS/KYC trust badge */
   --color-verified-soft: #2a1140;
-  /* App default = Geist (shadcn's interface fonts). The landing re-scopes these
-     vars back to the brand Hanken/Space Mono on `.lv` (landing-v2.css). Geist
-     being the default means Radix portals (dialogs, selects, toasts) — which
-     render at <body>, outside the app subtree — also get Geist. */
-  --font-sans: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  /* The app uses ONE typeface (Geist Sans). --font-mono points at the same
-     stack so addresses/hashes (.mono/.hi-mono/.kicker, the footer net·pkg line,
-     AddressDisplay) match the rest of the app instead of rendering monospace.
-     The landing re-scopes --font-mono back to Space Mono on `.lv`. */
-  --font-mono: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  /* Fonts (--font-sans/-mono/-display) are defined in :root below, NOT here.
+     Declaring --font-sans in a regular @theme AND in `@theme inline` (as
+     `--font-sans: var(--font-sans)`) produced a circular var() → --font-sans
+     resolved EMPTY → all text fell back to Times (serif). Putting them in :root
+     makes them runtime cascade vars (the landing re-scopes them on `.lv`), and
+     `@theme inline` just maps the Tailwind font-* utilities onto them. */
 }
 
 :root {
@@ -81,7 +77,10 @@
   --shadow-inset: inset 0 4px 4px 0 rgba(0, 0, 0, 0.25);
   --glow-blue: 0 0 80px rgba(0, 124, 250, 0.45);
 
-  /* type — display defaults to Geist too (the landing overrides to Poppins on .lv) */
+  /* type — Geist app-wide. Runtime cascade vars (NOT @theme) so `var(--font-sans)`
+     resolves and the landing can re-scope to its brand fonts on `.lv`. */
+  --font-sans: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-geist-sans), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -370,6 +369,7 @@ button[class*="connect" i] {
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
