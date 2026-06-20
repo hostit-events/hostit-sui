@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ENOKI_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, setPriceTx } from "@/lib/ticketing";
@@ -14,6 +15,16 @@ import {
   useSignAndExecute,
   useSponsorAndExecute,
 } from "@/lib/hooks";
+import { createSessionKey } from "@/lib/seal";
+import { useDAppKit } from "@mysten/dapp-kit-react";
+import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
+import {
+  saveDraft,
+  loadDraft,
+  deleteDraft,
+  type EventDraft,
+  type EventDraftForm,
+} from "@/lib/drafts";
 import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
 import { Icon } from "@/components/Icon";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
@@ -130,6 +141,22 @@ type CreateMode = "quick" | "advanced";
  * input is never silently dropped.
  */
 export function CreateEventScreen() {
+  // useSearchParams (resume-from-draft) must sit inside a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <CreateEventInner />
+    </Suspense>
+  );
+}
+
+function CreateEventInner() {
+  const account = useCurrentAccount();
+  const addr = account?.address ?? null;
+  const client = useCurrentClient();
+  const dAppKit = useDAppKit();
+  const searchParams = useSearchParams();
+  const resumeId = searchParams.get("draft");
+
   const [mode, setMode] = useState<CreateMode>("quick");
   // Per-mode dirtiness, reported up from each child form.
   const [quickDirty, setQuickDirty] = useState(false);
@@ -140,6 +167,63 @@ export function CreateEventScreen() {
   // discard — so "Switch & discard" actually drops the in-progress input.
   const [quickKey, setQuickKey] = useState(0);
   const [advancedKey, setAdvancedKey] = useState(0);
+
+  // ── Resume from a saved draft (?draft=<id>, GH#46) ──────────────────────────
+  // One-time: decrypt the Seal+Walrus draft, switch to its mode, and rehydrate
+  // the matching sub-component via `initial` + a fresh mount key. On error we
+  // toast and fall through to an empty form (the URL param is otherwise ignored).
+  const [loadingDraft, setLoadingDraft] = useState<boolean>(Boolean(resumeId));
+  const [draftInitial, setDraftInitial] = useState<Partial<EventDraftForm> | null>(null);
+  const [resumedId, setResumedId] = useState<string | null>(null);
+  const resumeRanRef = useRef(false);
+
+  useEffect(() => {
+    if (!resumeId) return;
+    // Need a connected wallet (for the Seal session key) before we can decrypt.
+    // If it's not ready (initial load) or the wallet disconnects, clear the
+    // one-shot guard so a (re)connect re-triggers the resume.
+    if (!addr) {
+      resumeRanRef.current = false;
+      return;
+    }
+    if (resumeRanRef.current) return;
+    resumeRanRef.current = true;
+    setLoadingDraft(true);
+    let alive = true;
+    (async () => {
+      try {
+        const signer = new CurrentAccountSigner(dAppKit);
+        const sessionKey = await createSessionKey(client, addr, async (message: Uint8Array) => {
+          const { signature } = await signer.signPersonalMessage(message);
+          return { signature };
+        });
+        const draft = await loadDraft(client, addr, resumeId, sessionKey);
+        if (!alive) return;
+        setMode(draft.mode);
+        setDraftInitial(draft.form);
+        setResumedId(resumeId);
+        // Remount the target form so its useState initializers read `initial`.
+        if (draft.mode === "quick") setQuickKey((k) => k + 1);
+        else setAdvancedKey((k) => k + 1);
+        toast.success("Draft loaded");
+      } catch (e: unknown) {
+        if (!alive) return;
+        toast.error(humanizeError(e));
+      } finally {
+        if (alive) setLoadingDraft(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [resumeId, addr, client, dAppKit]);
+
+  // Hand `initial` to a sub-component ONLY when its mode matches the loaded draft,
+  // so switching modes after a resume starts the other form empty.
+  const quickInitial = mode === "quick" && draftInitial ? draftInitial : undefined;
+  const advancedInitial = mode === "advanced" && draftInitial ? draftInitial : undefined;
+  const quickDraftId = mode === "quick" ? resumedId ?? undefined : undefined;
+  const advancedDraftId = mode === "advanced" ? resumedId ?? undefined : undefined;
 
   const currentDirty = mode === "quick" ? quickDirty : advancedDirty;
 
@@ -175,13 +259,29 @@ export function CreateEventScreen() {
         </Tabs>
       </div>
 
+      {loadingDraft && (
+        <div className="mono flex justify-center" style={{ color: "var(--hi-blue)" }}>
+          <Icon icon="svg-spinners:3-dots-fade" size={16} /> Loading draft…
+        </div>
+      )}
+
       {/* Both forms are kept mounted (hidden, not unmounted) so a half-filled
           form survives a glance at the other mode once the user confirms. */}
       <div hidden={mode !== "quick"}>
-        <QuickCreate key={quickKey} onDirtyChange={setQuickDirty} />
+        <QuickCreate
+          key={quickKey}
+          onDirtyChange={setQuickDirty}
+          initial={quickInitial}
+          draftId={quickDraftId}
+        />
       </div>
       <div hidden={mode !== "advanced"}>
-        <AdvancedCreate key={advancedKey} onDirtyChange={setAdvancedDirty} />
+        <AdvancedCreate
+          key={advancedKey}
+          onDirtyChange={setAdvancedDirty}
+          initial={advancedInitial}
+          draftId={advancedDraftId}
+        />
       </div>
 
       <Dialog open={pendingMode !== null} onOpenChange={(o) => !o && setPendingMode(null)}>
@@ -209,7 +309,17 @@ export function CreateEventScreen() {
   );
 }
 
-function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
+function AdvancedCreate({
+  onDirtyChange,
+  initial,
+  draftId: initialDraftId,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+  // Rehydration source when resuming a saved draft (GH#46). useState initializers
+  // read `initial?.x ?? <default>`; a fresh mount key makes those run on resume.
+  initial?: Partial<EventDraftForm>;
+  draftId?: string;
+}) {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
   const client = useCurrentClient();
@@ -217,17 +327,22 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
   const sponsored = useSponsorAndExecute();
   const txPending = regular.isPending || sponsored.isPending;
 
+  // Id of the draft this form represents. Set when resuming, and overwritten with
+  // the entry id returned by each "Save as draft" so re-saves REPLACE (no dupes).
+  const [draftId, setDraftId] = useState<string | null>(initialDraftId ?? null);
+  const [savingDraft, setSavingDraft] = useState(false);
+
   const [step, setStep] = useState(0);
 
   // ── Step 1: Details ──
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState(PICKABLE[0].id);
-  const [tag, setTag] = useState("");
-  const [start, setStart] = useState(() => isoLocal(25 * 60)); // now + 25h
-  const [end, setEnd] = useState(() => isoLocal(50 * 60)); // now + 50h
-  const [venue, setVenue] = useState("");
-  const [city, setCity] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState(initial?.name ?? "");
+  const [category, setCategory] = useState(initial?.category ?? PICKABLE[0].id);
+  const [tag, setTag] = useState(initial?.tag ?? "");
+  const [start, setStart] = useState(() => initial?.start ?? isoLocal(25 * 60)); // now + 25h
+  const [end, setEnd] = useState(() => initial?.end ?? isoLocal(50 * 60)); // now + 50h
+  const [venue, setVenue] = useState(initial?.venue ?? "");
+  const [city, setCity] = useState(initial?.city ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const coverPreview = useMemo(
     () => (coverFile ? URL.createObjectURL(coverFile) : null),
@@ -235,17 +350,19 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
   );
 
   // ── Step 2: Tickets ──
-  const [basePrice, setBasePrice] = useState("");
-  const [coinType, setCoinType] = useState(COINS[0].type);
-  const [maxTickets, setMaxTickets] = useState("100");
-  const [maxPerUser, setMaxPerUser] = useState("5");
-  const [tiers, setTiers] = useState<ExtraTier[]>([]);
+  const [basePrice, setBasePrice] = useState(initial?.basePrice ?? "");
+  const [coinType, setCoinType] = useState(initial?.coinType ?? COINS[0].type);
+  const [maxTickets, setMaxTickets] = useState(initial?.maxTickets ?? "100");
+  const [maxPerUser, setMaxPerUser] = useState(initial?.maxPerUser ?? "5");
+  const [tiers, setTiers] = useState<ExtraTier[]>(
+    () => (initial?.tiers as ExtraTier[] | undefined) ?? [],
+  );
 
   // ── Step 3: Promote ──
-  const [poap, setPoap] = useState(true);
-  const [refundable, setRefundable] = useState(false);
-  const [isFree, setIsFree] = useState(false);
-  const [web3, setWeb3] = useState(category === "web3");
+  const [poap, setPoap] = useState(initial?.poap ?? true);
+  const [refundable, setRefundable] = useState(initial?.refundable ?? false);
+  const [isFree, setIsFree] = useState(initial?.isFree ?? false);
+  const [web3, setWeb3] = useState(initial?.web3 ?? category === "web3");
 
   // ── Step 4: Publish ──
   const [agreed, setAgreed] = useState(false);
@@ -574,6 +691,12 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
         description: <TxLink digest={out.digest} chars={10} />,
       });
 
+      // The draft is now a real event — drop it from the index (GH#46).
+      if (draftId && addr) {
+        deleteDraft(addr, draftId);
+        setDraftId(null);
+      }
+
       // 4) CREATE-PRICE-DROPPED fix: pricing is a separate cap-gated call (the
       // Event is shared on creation), so the Step-2 price must be applied with a
       // follow-up `set_price`. The sponsored path returns only { digest }, so we
@@ -640,6 +763,61 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
       toast.error(humanizeError(e));
     } finally {
       setBusy(null);
+    }
+  }
+
+  // ── Save as draft (GH#46) ───────────────────────────────────────────────────
+  // Encrypts the current form (Seal) and stores it as a Walrus blob via
+  // lib/drafts; the returned entry id is stashed so a re-save REPLACES (no dupes).
+  // A cover image is uploaded to Walrus FIRST (reusing the publish coverCache) so
+  // the draft only carries a coverBlobId, never the raw File.
+  async function saveAsDraft() {
+    if (!addr) return; // guarded by the disabled button — needs addr for Seal + index
+    setSavingDraft(true);
+    try {
+      let coverBlobId: string | undefined;
+      if (coverFile) {
+        if (coverCache && coverCache.file === coverFile) {
+          coverBlobId = coverCache.blobId;
+        } else {
+          coverBlobId = await storeFile(coverFile);
+          setCoverCache({ file: coverFile, blobId: coverBlobId });
+        }
+      }
+      const form: EventDraftForm = {
+        name,
+        category,
+        tag,
+        start,
+        end,
+        venue,
+        city,
+        description,
+        basePrice,
+        coinType,
+        maxTickets,
+        maxPerUser,
+        isFree,
+        tiers,
+        poap,
+        refundable,
+        web3,
+        ...(coverBlobId ? { coverBlobId } : {}),
+      };
+      const draft: EventDraft = {
+        v: 1,
+        mode: "advanced",
+        title: name.trim() || "Untitled draft",
+        savedAt: Date.now(),
+        form,
+      };
+      const entry = await saveDraft(client, addr, draft, draftId ?? undefined);
+      setDraftId(entry.id);
+      toast.success("Draft saved");
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setSavingDraft(false);
     }
   }
 
@@ -1261,24 +1439,55 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
             <Button variant="outline" onClick={back} disabled={step === 0 || !!busy}>
               <Icon icon="ph:arrow-left-bold" size={14} /> Back
             </Button>
-            {step < 3 ? (
-              <AnimateIcon asChild animateOnHover>
-                <Button onClick={next}>
-                  Next <ArrowRight size={14} />
+            <div className="flex items-center gap-2">
+              {/* Save as draft (GH#46) — encrypts the form to Walrus via Seal.
+                  Needs a connected wallet for the Seal policy + index key. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={!addr ? 0 : -1}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={saveAsDraft}
+                      disabled={!addr || savingDraft || !!busy || txPending}
+                    >
+                      {savingDraft ? (
+                        <>
+                          <Icon icon="svg-spinners:3-dots-fade" size={14} /> Saving…
+                        </>
+                      ) : (
+                        <>
+                          <Icon icon="ph:floppy-disk-fill" size={14} /> Save as draft
+                        </>
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {!addr
+                    ? "Connect a wallet to save an encrypted draft"
+                    : "Encrypt and save this draft to Walrus"}
+                </TooltipContent>
+              </Tooltip>
+              {step < 3 ? (
+                <AnimateIcon asChild animateOnHover>
+                  <Button onClick={next}>
+                    Next <ArrowRight size={14} />
+                  </Button>
+                </AnimateIcon>
+              ) : !addr ? (
+                <Badge variant="outline">Connect a wallet to publish</Badge>
+              ) : (
+                <Button
+                  size="lg"
+                  onClick={publish}
+                  disabled={!agreed || !!busy || txPending}
+                >
+                  <Icon icon="mdi:rocket-launch" size={18} />
+                  {busy || txPending ? "Publishing…" : "Publish event"}
                 </Button>
-              </AnimateIcon>
-            ) : !addr ? (
-              <Badge variant="outline">Connect a wallet to publish</Badge>
-            ) : (
-              <Button
-                size="lg"
-                onClick={publish}
-                disabled={!agreed || !!busy || txPending}
-              >
-                <Icon icon="mdi:rocket-launch" size={18} />
-                {busy || txPending ? "Publishing…" : "Publish event"}
-              </Button>
-            )}
+              )}
+            </div>
           </div>
         </Card>
 
@@ -1388,7 +1597,16 @@ function AdvancedCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) =>
 // description, tiers) is added later from the manage screen.
 const QUICK_DEFAULT_DURATION_MIN = 3 * 60; // default end = start + 3h
 
-function QuickCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
+function QuickCreate({
+  onDirtyChange,
+  initial,
+  draftId: initialDraftId,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+  // Rehydration source when resuming a saved draft (GH#46).
+  initial?: Partial<EventDraftForm>;
+  draftId?: string;
+}) {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
   const client = useCurrentClient();
@@ -1396,14 +1614,20 @@ function QuickCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => vo
   const sponsored = useSponsorAndExecute();
   const txPending = regular.isPending || sponsored.isPending;
 
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState(PICKABLE[0].id);
-  const [start, setStart] = useState(() => isoLocal()); // now
-  const [end, setEnd] = useState(() => isoLocal(QUICK_DEFAULT_DURATION_MIN)); // now + 3h
-  const [maxTickets, setMaxTickets] = useState("100");
-  const [isFree, setIsFree] = useState(false);
-  const [basePrice, setBasePrice] = useState("");
-  const [coinType, setCoinType] = useState(COINS[0].type);
+  const [name, setName] = useState(initial?.name ?? "");
+  const [category, setCategory] = useState(initial?.category ?? PICKABLE[0].id);
+  const [start, setStart] = useState(() => initial?.start ?? isoLocal()); // now
+  const [end, setEnd] = useState(
+    () => initial?.end ?? isoLocal(QUICK_DEFAULT_DURATION_MIN),
+  ); // now + 3h
+  const [maxTickets, setMaxTickets] = useState(initial?.maxTickets ?? "100");
+  const [isFree, setIsFree] = useState(initial?.isFree ?? false);
+  const [basePrice, setBasePrice] = useState(initial?.basePrice ?? "");
+  const [coinType, setCoinType] = useState(initial?.coinType ?? COINS[0].type);
+
+  // Draft id for save/replace (GH#46): set on resume, refreshed on each save.
+  const [draftId, setDraftId] = useState<string | null>(initialDraftId ?? null);
+  const [savingDraft, setSavingDraft] = useState(false);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -1512,6 +1736,12 @@ function QuickCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => vo
         description: <TxLink digest={out.digest} chars={10} />,
       });
 
+      // The draft is now a real event — drop it from the index (GH#46).
+      if (draftId && addr) {
+        deleteDraft(addr, draftId);
+        setDraftId(null);
+      }
+
       // 3) CREATE-PRICE-DROPPED: pricing is a separate cap-gated call. Resolve the
       // new Event + OrganizerCap ids from the create tx, then apply set_price.
       const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
@@ -1547,6 +1777,41 @@ function QuickCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => vo
       toast.error(humanizeError(e));
     } finally {
       setBusy(null);
+    }
+  }
+
+  // ── Save as draft (GH#46) ───────────────────────────────────────────────────
+  // Encrypts the Quick form (Seal) and stores it on Walrus via lib/drafts. Quick
+  // has no cover, so no upload step; max_per_user is fixed at 1 here as well.
+  async function saveAsDraft() {
+    if (!addr) return; // guarded by the disabled button — needs addr for Seal + index
+    setSavingDraft(true);
+    try {
+      const form: EventDraftForm = {
+        name,
+        category,
+        start,
+        end,
+        maxTickets,
+        maxPerUser: "1",
+        isFree,
+        basePrice,
+        coinType,
+      };
+      const draft: EventDraft = {
+        v: 1,
+        mode: "quick",
+        title: name.trim() || "Untitled draft",
+        savedAt: Date.now(),
+        form,
+      };
+      const entry = await saveDraft(client, addr, draft, draftId ?? undefined);
+      setDraftId(entry.id);
+      toast.success("Draft saved");
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setSavingDraft(false);
     }
   }
 
@@ -1818,18 +2083,48 @@ function QuickCreate({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => vo
           <span className="text-xs" style={{ color: "var(--fg3)" }}>
             {dateLabel}
           </span>
-          {!addr ? (
-            <Badge variant="outline">Connect a wallet to publish</Badge>
-          ) : (
-            <Button
-              size="lg"
-              onClick={publish}
-              disabled={!!busy || txPending || !!formError}
-            >
-              <Icon icon="ph:lightning-fill" size={18} />
-              {busy || txPending ? "Publishing…" : "Publish event"}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Save as draft (GH#46) — needs a wallet for the Seal policy + index. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={!addr ? 0 : -1}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={saveAsDraft}
+                    disabled={!addr || savingDraft || !!busy || txPending}
+                  >
+                    {savingDraft ? (
+                      <>
+                        <Icon icon="svg-spinners:3-dots-fade" size={14} /> Saving…
+                      </>
+                    ) : (
+                      <>
+                        <Icon icon="ph:floppy-disk-fill" size={14} /> Save as draft
+                      </>
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {!addr
+                  ? "Connect a wallet to save an encrypted draft"
+                  : "Encrypt and save this draft to Walrus"}
+              </TooltipContent>
+            </Tooltip>
+            {!addr ? (
+              <Badge variant="outline">Connect a wallet to publish</Badge>
+            ) : (
+              <Button
+                size="lg"
+                onClick={publish}
+                disabled={!!busy || txPending || !!formError}
+              >
+                <Icon icon="ph:lightning-fill" size={18} />
+                {busy || txPending ? "Publishing…" : "Publish event"}
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
     </div>

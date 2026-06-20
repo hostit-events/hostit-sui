@@ -78,6 +78,15 @@ export const WALRUS_PUBLISHER =
 export const WALRUS_AGGREGATOR =
   process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR ?? "https://aggregator.walrus-testnet.walrus.space";
 export const WALRUS_EPOCHS = 10;
+/**
+ * Walrus storage epochs for SAVED EVENT DRAFTS (GH#46). Drafts are work-in-
+ * progress that an organizer may sit on for a while before publishing, so they
+ * get a longer TTL than the default `WALRUS_EPOCHS` (10). On testnet an epoch is
+ * ~24h, so 30 epochs ≈ 30 days. v1 CEILING: this is a hard Walrus TTL — a draft's
+ * encrypted blob is garbage-collected after it lapses (the device-local index
+ * entry will then dangle and `loadDraft` will fail to read it). No auto-renew.
+ */
+export const WALRUS_DRAFT_EPOCHS = 30;
 
 // === Seal testnet (threshold encryption for sensitive data) ===
 export const SEAL_KEY_SERVER_ID =
