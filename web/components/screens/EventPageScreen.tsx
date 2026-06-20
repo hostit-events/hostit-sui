@@ -2,27 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
-import type { Transaction } from "@mysten/sui/transactions";
-import { ENOKI_ENABLED, REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
-import { buyTx, claimFreeTx, getFields, totalWithFee } from "@/lib/ticketing";
-import {
-  useCurrentAccount,
-  useSignAndExecute,
-  useSponsorAndExecute,
-  useSuiQuery,
-} from "@/lib/hooks";
+import { REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
+import { getFields, totalWithFee } from "@/lib/ticketing";
+import { useCurrentAccount, useSuiQuery } from "@/lib/hooks";
 import { useEventPrices } from "@/lib/events";
 import { recordRecentlyViewed } from "@/lib/discovery";
 import { useEventMarkets } from "@/lib/markets";
-import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
 import { useIsVerified } from "@/lib/verification";
+import { eventShareUrl } from "@/lib/share";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
-import { TxLink } from "@/components/TxLink";
 import { EventPoster } from "@/components/EventPoster";
+import { SocialShare } from "@/components/SocialShare";
+import { BuyTicketDialog, type BuyPayload } from "@/components/BuyTicketDialog";
 import { EventMarketsScreen } from "@/components/screens/EventMarketsScreen";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -67,18 +61,16 @@ export function EventPageScreen({ id }: { id: string }) {
 
   const { pricesBySeq } = useEventPrices();
 
-  const regular = useSignAndExecute();
-  const sponsored = useSponsorAndExecute();
-  const isPending = regular.isPending || sponsored.isPending;
-
   const [meta, setMeta] = useState<EventMetadata | null>(null);
   // Re-render every ~30s so sale-window state (open/ended) stays fresh without a reload.
   const [, setNowTick] = useState(0);
-  // Which coin button is mid-purchase, so only that one shows "Buying…".
-  const [pendingCoin, setPendingCoin] = useState<string | null>(null);
   // Markets opt-in: when no market exists yet, the section is hidden behind a
   // subtle "+ Add a prediction market" link. Clicking it reveals the create UI.
   const [showCreateMarket, setShowCreateMarket] = useState(false);
+  // Buy/claim flow is delegated to BuyTicketDialog (single source of submit
+  // logic, shared with EventQuickViewModal). Opening it sets the payload.
+  const [buyOpen, setBuyOpen] = useState(false);
+  const [buyPayload, setBuyPayload] = useState<BuyPayload | null>(null);
 
   const f = getFields(q.data ?? {});
   const uri = f ? String(f.uri ?? "") : "";
@@ -182,22 +174,15 @@ export function EventPageScreen({ id }: { id: string }) {
       ? "Free"
       : "—";
 
-  async function run(tx: Transaction, coinKey?: string) {
+  function openClaim() {
     if (!addr) return;
-    setPendingCoin(coinKey ?? null);
-    try {
-      const out = ENOKI_ENABLED
-        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
-        : await regular.mutateAsync({ transaction: tx });
-      toast.success(isFree ? "Ticket claimed" : "Ticket purchased", {
-        description: <TxLink digest={out.digest} chars={10} />,
-      });
-      q.refetch();
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-    } finally {
-      setPendingCoin(null);
-    }
+    setBuyPayload({ kind: "free", eventId: id, eventName: name, recipient: addr });
+    setBuyOpen(true);
+  }
+  function openBuy(coinType: string, priceUnits: bigint) {
+    if (!addr) return;
+    setBuyPayload({ kind: "paid", eventId: id, eventName: name, coinType, priceUnits, recipient: addr });
+    setBuyOpen(true);
   }
 
   function statusLabel(): string {
@@ -232,6 +217,9 @@ export function EventPageScreen({ id }: { id: string }) {
               <Icon icon="streamline:star-badge-solid" size={11} /> Verified
             </Badge>
           )}
+        </div>
+        <div className="absolute" style={{ top: 14, right: 14 }}>
+          <SocialShare title={name} url={eventShareUrl(id)} variant="icon" />
         </div>
         <div
           className="absolute mono"
@@ -404,15 +392,11 @@ export function EventPageScreen({ id }: { id: string }) {
               </div>
             )}
 
-            {/* Buy / claim actions */}
+            {/* Buy / claim actions — open BuyTicketDialog (real submit lives there) */}
             {isFree ? (
-              <Button
-                className="w-full"
-                disabled={!canAct || isPending}
-                onClick={() => run(claimFreeTx({ eventId: id, recipient: addr! }))}
-              >
+              <Button className="w-full" disabled={!canAct} onClick={openClaim}>
                 <Icon icon="ion:ticket" size={16} />
-                {isPending ? "Claiming…" : canAct ? "Claim free ticket" : statusLabel()}
+                {canAct ? "Claim free ticket" : statusLabel()}
               </Button>
             ) : prices.length === 0 ? (
               <Badge variant="outline" role="status">Price not set by organizer</Badge>
@@ -421,32 +405,18 @@ export function EventPageScreen({ id }: { id: string }) {
                 {prices.map((p) => {
                   const ci = coinInfo(p.coinType);
                   const total = totalWithFee(BigInt(p.price));
-                  const buying = isPending && pendingCoin === p.coinType;
                   return (
                     <Tooltip key={p.coinType}>
                       <TooltipTrigger asChild>
                         <Button
                           className="w-full"
-                          disabled={!canAct || isPending}
-                          onClick={() =>
-                            run(
-                              buyTx({
-                                eventId: id,
-                                coinType: p.coinType,
-                                priceUnits: BigInt(p.price),
-                                recipient: addr!,
-                                sponsored: ENOKI_ENABLED,
-                              }),
-                              p.coinType,
-                            )
-                          }
+                          disabled={!canAct}
+                          onClick={() => openBuy(p.coinType, BigInt(p.price))}
                         >
                           <Icon icon="ion:ticket" size={16} />
-                          {buying
-                            ? "Buying…"
-                            : canAct
-                              ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
-                              : statusLabel()}
+                          {canAct
+                            ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
+                            : statusLabel()}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -482,6 +452,13 @@ export function EventPageScreen({ id }: { id: string }) {
           </Card>
         </div>
       </div>
+
+      <BuyTicketDialog
+        open={buyOpen}
+        onOpenChange={setBuyOpen}
+        payload={buyPayload}
+        onSuccess={() => q.refetch()}
+      />
     </div>
   );
 }
