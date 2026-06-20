@@ -42,6 +42,26 @@ interface RecallResponse {
   total?: number;
 }
 
+/**
+ * Context the create wizard hands to the AI-draft endpoint (GH#19). All optional
+ * except `name`; mirrors the `ctx` half of the /api/create-assist contract.
+ */
+export interface DraftCtx {
+  name: string;
+  category?: string;
+  venue?: string;
+  city?: string;
+  /** Event start, as the wizard's local datetime string. */
+  date?: string;
+  tag?: string;
+}
+
+/** Shape returned by /api/create-assist. `sourced` flags the generator used. */
+export interface DraftResponse {
+  description: string;
+  sourced: "groq" | "fallback";
+}
+
 /** Shape returned by any /api/memory/* route when the server layer is off. */
 interface DisabledResponse {
   disabled: true;
@@ -91,6 +111,12 @@ function fetchServerEnabled(): Promise<boolean> {
  *    null as "no memory available" and degrade gracefully).
  *  - `remember(text)`: sign + POST /api/memory/remember. Returns true on accept,
  *    false when off / no wallet, and throws on a hard error so the UI can show it.
+ *  - `draft(ctx)`: POST /api/create-assist to draft an event description. When
+ *    memory is on it ALSO signs + sends the same envelope recall uses (so the
+ *    route may ground the draft in the organizer's past events); when memory is
+ *    off (or no wallet) it sends `ctx` only and the route returns a form-only
+ *    draft. Returns { description, sourced }; throws on a hard error so the
+ *    caller can toast it.
  *
  * Each call signs ONE fresh challenge (Date.now() timestamp, ~5 min server replay
  * window). For zkLogin/Enoki sessions the signature is produced with the Enoki
@@ -193,5 +219,41 @@ export function useOrganizerMemory() {
     [owner, signEnvelope],
   );
 
-  return { enabled, owner, recall, remember };
+  const draft = useCallback(
+    async (ctx: DraftCtx): Promise<DraftResponse> => {
+      // Always send `ctx`. When memory is live AND a wallet is connected, also
+      // attach the signed envelope (same one recall uses) so the route may ground
+      // the draft in past events. When memory is off / no wallet, send ctx only —
+      // the route still returns a form-only draft and never blocks.
+      let body: Record<string, unknown> = { ctx };
+      if (enabled && owner) {
+        try {
+          const envelope = await signEnvelope(owner);
+          body = { ctx, ...envelope };
+        } catch {
+          // Signature declined / unavailable — fall back to the form-only draft
+          // rather than failing the whole request.
+          body = { ctx };
+        }
+      }
+      const res = await fetch("/api/create-assist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = (await res.json().catch(() => ({}))) as
+        | DraftResponse
+        | { error?: string };
+      if (!res.ok || typeof (j as DraftResponse).description !== "string") {
+        const msg =
+          (j as { error?: string }).error ??
+          `Could not draft a description (${res.status}).`;
+        throw new Error(msg);
+      }
+      return j as DraftResponse;
+    },
+    [enabled, owner, signEnvelope],
+  );
+
+  return { enabled, owner, recall, remember, draft };
 }
