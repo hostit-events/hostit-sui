@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ENOKI_ENABLED, EV_TICKET_MINTED, coinInfo, fmtAmount } from "@/lib/config";
@@ -61,6 +62,9 @@ export interface BuyTicketDialogProps {
   payload: BuyPayload | null;
   /** Called after a successful mint so the caller can refetch on-chain counters. */
   onSuccess?: () => void;
+  /** What the success-step "Done" button does. Defaults to just closing the
+   *  dialog; the quick-view passes router.back() so Done lands on /discover. */
+  onDone?: () => void;
 }
 
 type Step = "connect" | "review" | "minting" | "done";
@@ -117,7 +121,8 @@ function parseMintResult(out: unknown, requestedQty: number): { count: number; s
  * Single source of submit logic: EventQuickViewModal, EventCard and
  * EventPageScreen all open THIS dialog rather than hand-rolling a `run()`.
  */
-export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess }: BuyTicketDialogProps) {
+export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone }: BuyTicketDialogProps) {
+  const router = useRouter();
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
   const regular = useSignAndExecute();
@@ -461,9 +466,14 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess }: BuyT
             </Button>
           )}
           {step === "done" && (
-            <Button className="ml-auto" onClick={() => onOpenChange(false)}>
-              Done
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => router.push("/wallet")}>
+                <Icon icon="ph:wallet-fill" size={15} /> View wallet
+              </Button>
+              <Button className="flex-1" onClick={() => (onDone ? onDone() : onOpenChange(false))}>
+                Done
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>

@@ -303,6 +303,7 @@ export function EventQuickViewModal({ id }: { id: string }) {
         onOpenChange={setBuyOpen}
         payload={buyPayload}
         onSuccess={() => q.refetch()}
+        onDone={() => router.back()}
       />
     </Dialog>
   );
