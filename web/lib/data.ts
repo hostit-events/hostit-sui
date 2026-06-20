@@ -46,3 +46,31 @@ export function catPalette(cat?: string | null): [string, string] {
 export function catGlyph(cat?: string | null): string {
   return (cat && GLYPH[cat]) || GLYPH.default;
 }
+
+// ---- deterministic seeded helpers (SSR/hydration-safe — no Math.random) ----
+// FNV-1a 32-bit hash of a string. Shared so every surface that derives a look
+// from an id (EventCard, EventPageScreen, EventPoster) hashes identically.
+function fnv1a(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0; // force unsigned 32-bit
+}
+
+/** Map a seed string to a hue in [0, 359]. */
+export function hashHue(seed: string): number {
+  return fnv1a(seed) % 360;
+}
+
+/**
+ * Deterministic integer in [min, max] (inclusive) from a seed + salt. The salt
+ * lets one seed drive many independent params (angle, scale, edge, …) that don't
+ * correlate. Pure — same inputs always yield the same output (hydration-safe).
+ */
+export function seededInt(seed: string, salt: string, min: number, max: number): number {
+  if (max <= min) return min;
+  const span = max - min + 1;
+  return min + (fnv1a(`${seed}::${salt}`) % span);
+}

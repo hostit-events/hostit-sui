@@ -17,6 +17,7 @@ import { humanizeError } from "@/lib/moveErrors";
 import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { Icon } from "./Icon";
 import { TxLink } from "./TxLink";
+import { EventPoster } from "@/components/EventPoster";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -147,16 +148,6 @@ export function MyTickets({ address }: { address: string }) {
   );
 }
 
-function posterVars(seed: string): React.CSSProperties {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  const hue = Math.abs(h) % 360;
-  return { "--p1": `hsl(${hue} 92% 60%)`, "--p2": `hsl(${(hue + 46) % 360} 90% 48%)` } as React.CSSProperties;
-}
-
 function TicketStub({
   ticketId,
   fields,
@@ -212,10 +203,10 @@ function TicketStub({
   }
 
   return (
-    <div className="ev-card" style={posterVars(ticketId)}>
+    <div className="ev-card">
       {/* poster header strip */}
       <div className="poster flex items-center justify-between" style={{ padding: "14px 16px" }}>
-        <div className="poster-noise" />
+        <EventPoster seed={ticketId} glyph={false} className="absolute inset-0" />
         <div className="relative">
           <div className="ev-title" style={{ color: "#fff" }}>
             {name}

@@ -17,11 +17,11 @@ import { useEventMarkets } from "@/lib/markets";
 import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
-import { catPalette, catGlyph } from "@/lib/data";
 import { useIsVerified } from "@/lib/verification";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
+import { EventPoster } from "@/components/EventPoster";
 import { EventMarketsScreen } from "@/components/screens/EventMarketsScreen";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,16 +29,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { GetObjectParams, SuiObjectResponse } from "@mysten/sui/jsonRpc";
-
-// Inline FNV hash for a deterministic fallback poster hue when no category meta.
-function hashHue(seed: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return Math.abs(h) % 360;
-}
 
 function fmtDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, {
@@ -176,15 +166,8 @@ export function EventPageScreen({ id }: { id: string }) {
   const prices = pricesBySeq.get(eventSeq) ?? [];
 
   const cat = meta?.category;
-  const [p1, p2] = cat
-    ? catPalette(cat)
-    : (() => {
-        const hue = hashHue(id);
-        return [`hsl(${hue} 90% 58%)`, `hsl(${(hue + 46) % 360} 88% 46%)`] as [string, string];
-      })();
   const coverUrl =
     meta?.coverBlobId && isBlobId(meta.coverBlobId) ? blobUrl(meta.coverBlobId) : undefined;
-  const glyphIcon = catGlyph(cat);
 
   const venueCity = [meta?.venue, meta?.city].filter(Boolean).join(" · ");
   const coinLabels = prices.length
@@ -228,26 +211,10 @@ export function EventPageScreen({ id }: { id: string }) {
           {
             height: 280,
             borderRadius: "var(--r-lg)",
-            ["--p1" as string]: p1,
-            ["--p2" as string]: p2,
           } as React.CSSProperties
         }
       >
-        {coverUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={coverUrl}
-            alt={name}
-            className="absolute inset-0 w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        )}
-        <div className="poster-noise" />
-        <span className="poster-glyph">
-          <Icon icon={glyphIcon} size={120} />
-        </span>
+        <EventPoster seed={id} category={cat} coverUrl={coverUrl} className="absolute inset-0" />
         <div
           className="absolute flex gap-1.5"
           style={{ top: 14, left: 14, flexWrap: "wrap" }}
