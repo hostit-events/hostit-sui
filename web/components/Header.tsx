@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { AuthControl } from "./AuthControl";
+import { NotificationsBellContainer } from "./NotificationsBell";
 import { Icon } from "./Icon";
 import { Logo } from "./Logo";
 import { Button } from "@/components/ui/button";
@@ -21,10 +22,13 @@ const NAV = [
 /**
  * App header (desktop only — mobile nav lives in MobileTabBar).
  *
- * `notificationsSlot` / `userAvatarSlot` are optional ReactNode seams so future
- * issues can inject a notifications bell / command palette / avatar without the
- * Header importing those components. They render nothing when unset and sit in
- * the right-side cluster; `AuthControl` stays the source of truth for sign-in.
+ * Right-side cluster order: ⌘K command trigger (#56), Create event, Settings,
+ * the notifications bell (#59), then the optional injection seams and AuthControl.
+ *
+ * `notificationsSlot` / `userAvatarSlot` are optional ReactNode seams so callers
+ * can inject extra notifications/avatar UI without the Header importing those
+ * components. They render nothing when unset and sit in the right-side cluster;
+ * `AuthControl` stays the source of truth for sign-in.
  */
 export function Header({
   notificationsSlot,
@@ -101,6 +105,10 @@ export function Header({
             </TooltipTrigger>
             <TooltipContent>Settings</TooltipContent>
           </Tooltip>
+          {/* notifications bell — on-chain-derived inbox (renders nothing signed out) */}
+          <NotificationsBellContainer />
+          {/* optional injection seams (#55): default to nothing, kept so callers
+              can still inject extra notifications/avatar UI without Header imports */}
           {notificationsSlot}
           {userAvatarSlot}
           <AuthControl />
