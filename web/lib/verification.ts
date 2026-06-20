@@ -38,9 +38,9 @@ export function useSuiNSNames(addresses: string[]): Map<string, string | null> {
 
 /**
  * v1 verification: an organizer address is "verified" iff it holds a registered
- * suiNS name. Used by `<EventCard verified={...} />` and the curated
- * `<VerifiedEvents />` section — the permissionless quality signal in place of
- * any gating (anyone can create an event; suiNS/KYC distinguishes trusted ones).
+ * suiNS name. Used by `<EventCard verified={...} />` to show the permissionless
+ * quality signal in place of any gating (anyone can create an event; suiNS/KYC
+ * distinguishes trusted ones — it never hides or reorders events).
  *
  * v2 will layer a KYC tier on top; the consumer interface stays the same
  * (single boolean), with a separate hook for the KYC bit.
