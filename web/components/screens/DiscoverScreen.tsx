@@ -3,12 +3,19 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useCurrentAccount } from "@/lib/hooks";
-import { useEventList, useEventObjects } from "@/lib/events";
+import { useEventList, useEventObjects, useActivityFeed, buildDiscoverEvents } from "@/lib/events";
 import { useEventsWithMarkets } from "@/lib/markets";
 import { useSuiNSNames } from "@/lib/verification";
 import { CATEGORIES } from "@/lib/data";
 import { EventCard } from "@/components/EventCard";
 import { Icon } from "@/components/Icon";
+import { ActivityTicker } from "@/components/discovery/ActivityTicker";
+import { TrendingRow } from "@/components/discovery/TrendingRow";
+import { FeaturedCarousel } from "@/components/discovery/FeaturedCarousel";
+import { RecentlyViewedRow } from "@/components/discovery/RecentlyViewedRow";
+import { RecommendedRow } from "@/components/discovery/RecommendedRow";
+import { CalendarViewDialog } from "@/components/discovery/CalendarViewDialog";
+import { openCommandPalette } from "@/components/discovery/DiscoveryCommand";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,8 +34,11 @@ export function DiscoverScreen() {
   const organizers = useMemo(() => Array.from(new Set(events.map((e) => e.organizer))), [events]);
   const names = useSuiNSNames(organizers);
 
+  const { mints } = useActivityFeed();
+
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
+  const [calendarOpen, setCalendarOpen] = useState(false);
   // event_id -> searchable metadata (from Walrus metadata, fetched lazily by cards)
   const [eventMeta, setEventMeta] = useState<
     Record<string, { category?: string; city?: string; venue?: string }>
@@ -74,6 +84,19 @@ export function DiscoverScreen() {
     });
   }, [events, q, cat, eventMeta, names]);
 
+  // Flattened, on-chain-derived events for the curated discovery rows + calendar.
+  // Reuses the data already fetched here (list + objects + prices + lazy meta) —
+  // no widget re-queries.
+  const discoverEvents = useMemo(
+    () => buildDiscoverEvents(events, eventObjects, pricesBySeq, eventMeta),
+    [events, eventObjects, pricesBySeq, eventMeta],
+  );
+
+  // Curated rows only show in the default browse view (no active search/filter),
+  // above the grid. Searching/filtering collapses straight to the grid.
+  const browsing = q.trim() === "" && cat === "all";
+  const showRows = browsing && !isLoading && !isError && events.length > 0;
+
   return (
     <div className="space-y-8 screen-in">
       <header className="relative">
@@ -81,6 +104,8 @@ export function DiscoverScreen() {
         <h1 className="page-title" style={{ fontSize: 34 }}>Find your next experience</h1>
         <p className="page-sub">Events, tickets and proof-of-attendance — live on Sui.</p>
       </header>
+
+      <ActivityTicker mints={mints} />
 
       <div className="flex gap-2 flex-wrap items-center">
         <div className="grow" style={{ position: "relative", minWidth: 240 }}>
@@ -97,6 +122,19 @@ export function DiscoverScreen() {
             className="pl-10"
           />
         </div>
+        <Button variant="outline" size="sm" onClick={() => setCalendarOpen(true)}>
+          <Icon icon="proicons:calendar" size={16} /> Calendar
+        </Button>
+        {/* Mobile palette affordance (Header Cmd+K button is desktop-only). */}
+        <Button
+          variant="outline"
+          size="icon-sm"
+          aria-label="Open command palette"
+          className="md:hidden"
+          onClick={openCommandPalette}
+        >
+          <Icon icon="ic:round-bolt" size={16} />
+        </Button>
       </div>
 
       <ToggleGroup
@@ -113,6 +151,15 @@ export function DiscoverScreen() {
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
+
+      {showRows && (
+        <div className="space-y-10">
+          <FeaturedCarousel events={discoverEvents} />
+          <TrendingRow events={discoverEvents} />
+          <RecommendedRow events={discoverEvents} address={addr} />
+          <RecentlyViewedRow events={discoverEvents} />
+        </div>
+      )}
 
       {isLoading ? (
         <Card role="status" aria-live="polite">
@@ -161,6 +208,8 @@ export function DiscoverScreen() {
           )}
         </>
       )}
+
+      <CalendarViewDialog open={calendarOpen} onOpenChange={setCalendarOpen} events={discoverEvents} />
     </div>
   );
 }

@@ -296,6 +296,10 @@ export const RANGE_MARKET_TYPE = `${PREDICT_RANGE_PKG}::predict::RangeMarket`;
 export const EV_EVENT_CREATED = `${PACKAGE_ID}::event::EventCreated`;
 export const EV_PRICE_SET = `${PACKAGE_ID}::event::PriceSet`;
 export const EV_TICKET_MINTED = `${PACKAGE_ID}::market::TicketMinted`;
+// poap::PoapClaimed — origin = PACKAGE_ID (the original/fresh package introduced
+// `poap`, per the package-versioning rule). Emitted from poap::claim_poap with
+// fields { event_seq, event_id, ticket_id, poap_id, recipient }.
+export const EV_POAP_CLAIMED = `${PACKAGE_ID}::poap::PoapClaimed`;
 // predict (parimutuel sellout market) log type strings for queryEvents
 export const EV_MARKET_CREATED = `${PREDICT_SELLOUT_PKG}::predict::MarketCreated`;
 export const EV_BET = `${PREDICT_SELLOUT_PKG}::predict::Bet`;

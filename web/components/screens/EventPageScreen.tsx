@@ -13,6 +13,7 @@ import {
   useSuiQuery,
 } from "@/lib/hooks";
 import { useEventPrices } from "@/lib/events";
+import { recordRecentlyViewed } from "@/lib/discovery";
 import { useEventMarkets } from "@/lib/markets";
 import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
@@ -114,6 +115,11 @@ export function EventPageScreen({ id }: { id: string }) {
     const t = setInterval(() => setNowTick((n) => n + 1), 30_000);
     return () => clearInterval(t);
   }, []);
+
+  // Record this event in the device-local "recently viewed" list (GH#56).
+  useEffect(() => {
+    recordRecentlyViewed(id);
+  }, [id]);
 
   // ---- loading / error / not-found ----
   if (q.isLoading) {

@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { toUnits, fmtAmount } from "../config";
+import {
+  toUnits,
+  fmtAmount,
+  EV_POAP_CLAIMED,
+  EV_TICKET_MINTED,
+  PACKAGE_ID,
+} from "../config";
 
 describe("toUnits", () => {
   it("converts whole and fractional exactly", () => {
@@ -33,5 +39,14 @@ describe("fmtAmount", () => {
   });
   it("groups with ',' so it never collides with the '.' decimal", () => {
     expect(fmtAmount(1_234_500_000n, 6)).toBe("1,234.5");
+  });
+});
+
+describe("activity-feed event types (GH#56)", () => {
+  it("EV_POAP_CLAIMED is pinned to PACKAGE_ID (the original package introduced poap)", () => {
+    expect(EV_POAP_CLAIMED).toBe(`${PACKAGE_ID}::poap::PoapClaimed`);
+  });
+  it("EV_TICKET_MINTED is pinned to PACKAGE_ID (market is an original module)", () => {
+    expect(EV_TICKET_MINTED).toBe(`${PACKAGE_ID}::market::TicketMinted`);
   });
 });
