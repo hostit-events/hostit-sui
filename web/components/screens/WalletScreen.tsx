@@ -59,8 +59,11 @@ export function WalletScreen() {
           <span style={{ color: "var(--hi-blue)" }}><Icon icon="solar:wallet-bold" size={44} /></span>
           <div className="font-semibold" style={{ fontSize: 18 }}>No wallet connected</div>
           <p className="text-sm" style={{ color: "var(--fg2)", maxWidth: 380 }}>
-            Connect your Sui wallet using the button in the top bar to access your wallet. In the meantime you can{" "}
-            <Link href="/discover" style={{ color: "var(--hi-blue)" }}>discover events</Link>.
+            Sign in to see your tickets and collectibles. On mobile, tap{" "}
+            <span className="font-medium" style={{ color: "var(--fg1)" }}>Account</span>{" "}
+            in the bottom bar; on desktop, use the Sign in button in the top bar. Or just{" "}
+            <Link href="/discover" style={{ color: "var(--hi-blue)" }}>browse events</Link>{" "}
+            first.
           </p>
         </Card>
       </div>
@@ -214,7 +217,14 @@ function WalletInner({ addr }: { addr: string }) {
             <EmptyState
               icon="ion:ticket"
               title="No tickets yet"
-              body={<>Tickets you buy or claim show up here.{" "}<Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover events</Link>.</>}
+              body={
+                <>
+                  Buy or claim a ticket and it lands in your wallet as an on-chain
+                  pass you scan at the door.{" "}
+                  <Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover events</Link>{" "}
+                  to get your first one.
+                </>
+              }
             />
           ) : (
             <MyTickets address={addr} />

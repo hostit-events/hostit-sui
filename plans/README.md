@@ -38,11 +38,11 @@ rest. Numeric order below ≈ priority order.
 | 012 | Capped-page reads → cursor enumeration + truncation banner | P1 | M | LOW | — | TODO |
 | 013 | Real scannable ticket QR (add generator) | P1 | S | LOW | — | TODO |
 | 014 | `humanizeError` predict codes 7/8 | P2 | S | LOW | partial until FE-1 (deferred) | TODO |
-| 015 | Testnet banner visible on mobile | P2 | S | LOW | — | TODO |
+| 015 | Testnet banner visible on mobile | P2 | S | LOW | — | DONE |
 | 016 | Buy balance pre-check + faucet hint | P2 | S | LOW | — | TODO |
-| 017 | Mobile-correct empty-wallet guidance | P2 | S | LOW | — | TODO |
+| 017 | Mobile-correct empty-wallet guidance | P2 | S | LOW | — | DONE |
 | 018 | Cover-image perf attrs (lazy/decode/dims) | P2 | S | LOW | — | TODO |
-| 019 | react-query global retry cap | P2 | S | LOW | — | TODO |
+| 019 | react-query global retry cap | P2 | S | LOW | — | DONE |
 | 020 | Config/doc package-id drift + pin framework SHA | P1 | S | LOW | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
