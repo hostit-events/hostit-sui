@@ -1,11 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   averageRating,
   sortReviews,
   authorHasReviewed,
-  listReviews,
-  hasReviewed,
-  addReview,
+  dedupeByAuthor,
   type Review,
 } from "../reviews";
 
@@ -71,46 +69,28 @@ describe("authorHasReviewed (pure)", () => {
   });
 });
 
-describe("localStorage store round-trip (jsdom)", () => {
-  const EVENT = "0xevent1";
-  const OTHER = "0xevent2";
-  const ME = "0x" + "a".repeat(64);
-  const YOU = "0x" + "b".repeat(64);
-
-  beforeEach(() => {
-    window.localStorage.clear();
+describe("dedupeByAuthor (pure)", () => {
+  it("keeps only the latest review per author, newest-first", () => {
+    // Two authors; ME re-reviewed (200 supersedes 100). Expect ME@200 + YOU@150,
+    // ordered newest-first.
+    const list = [
+      review({ id: "me-old", author: "0xme", createdAt: 100, comment: "first" }),
+      review({ id: "you", author: "0xyou", createdAt: 150, comment: "yo" }),
+      review({ id: "me-new", author: "0xme", createdAt: 200, comment: "second" }),
+    ];
+    const out = dedupeByAuthor(list);
+    expect(out.map((r) => r.id)).toEqual(["me-new", "you"]);
+    // the surviving ME review is the newest one
+    expect(out.find((r) => r.author === "0xme")?.comment).toBe("second");
   });
 
-  it("lists [] for an event with no reviews", () => {
-    expect(listReviews(EVENT)).toEqual([]);
-  });
-
-  it("addReview persists and listReviews returns it (newest first)", () => {
-    addReview({ eventId: EVENT, rating: 4, comment: "a", author: ME });
-    addReview({ eventId: EVENT, rating: 5, comment: "b", author: YOU });
-    const list = listReviews(EVENT);
-    expect(list).toHaveLength(2);
-    expect(list[0].comment).toBe("b"); // newest first (added last)
-    expect(list[0].author).toBe(YOU);
-  });
-
-  it("enforces one-review-per-wallet (re-review is a no-op)", () => {
-    addReview({ eventId: EVENT, rating: 4, comment: "first", author: ME });
-    const after = addReview({ eventId: EVENT, rating: 1, comment: "second", author: ME });
-    expect(after).toHaveLength(1);
-    expect(after[0].comment).toBe("first");
-    expect(hasReviewed(EVENT, ME)).toBe(true);
-    expect(hasReviewed(EVENT, YOU)).toBe(false);
-  });
-
-  it("isolates reviews by event id", () => {
-    addReview({ eventId: EVENT, rating: 5, comment: "x", author: ME });
-    expect(listReviews(OTHER)).toEqual([]);
-    expect(hasReviewed(OTHER, ME)).toBe(false);
-  });
-
-  it("returns [] (never throws) when stored value is corrupt JSON", () => {
-    window.localStorage.setItem(`hostit:reviews:${EVENT}`, "{not-json");
-    expect(listReviews(EVENT)).toEqual([]);
+  it("returns one entry per author and is empty for an empty input", () => {
+    expect(dedupeByAuthor([])).toEqual([]);
+    const out = dedupeByAuthor([
+      review({ author: "0xa", createdAt: 1 }),
+      review({ author: "0xa", createdAt: 2 }),
+      review({ author: "0xb", createdAt: 3 }),
+    ]);
+    expect(out).toHaveLength(2);
   });
 });

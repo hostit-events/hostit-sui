@@ -129,6 +129,10 @@ export const SPONSORED_TARGETS: readonly string[] = [
   // Organizer admin — introduced in the organizer-admin upgrade (PACKAGE_ID_LATEST).
   `${PACKAGE_ID_LATEST}::forum::post_as_organizer`,
   `${PACKAGE_ID_LATEST}::forum::moderate`,
+  // Event reviews (GH#58) — `reviews` is introduced in the reviews UPGRADE, so
+  // its call target is PACKAGE_ID_LATEST. After that upgrade deploys, roll
+  // PACKAGE_ID_LATEST to the new version so this (and EV_REVIEW_POSTED) resolve.
+  `${PACKAGE_ID_LATEST}::reviews::post_review`,
   `${PACKAGE_ID_LATEST}::predict::create_sellout_market`,
   `${PACKAGE_ID_LATEST}::predict::bet_yes`,
   `${PACKAGE_ID_LATEST}::predict::bet_no`,
@@ -305,6 +309,12 @@ export const EV_TICKET_MINTED = `${PACKAGE_ID}::market::TicketMinted`;
 // `poap`, per the package-versioning rule). Emitted from poap::claim_poap with
 // fields { event_seq, event_id, ticket_id, poap_id, recipient }.
 export const EV_POAP_CLAIMED = `${PACKAGE_ID}::poap::PoapClaimed`;
+// reviews::ReviewPosted (GH#58) — the `reviews` module is introduced in the
+// reviews UPGRADE, so this struct's type origin is PACKAGE_ID_LATEST (like the
+// predict structs / forum::PostModerated). AFTER the reviews upgrade deploys,
+// roll PACKAGE_ID_LATEST in config.ts to the new version so this resolves.
+// Fields: { event_id, event_seq, author, rating, blob_id, ts_ms }.
+export const EV_REVIEW_POSTED = `${PACKAGE_ID_LATEST}::reviews::ReviewPosted`;
 // predict (parimutuel sellout market) log type strings for queryEvents
 export const EV_MARKET_CREATED = `${PREDICT_SELLOUT_PKG}::predict::MarketCreated`;
 export const EV_BET = `${PREDICT_SELLOUT_PKG}::predict::Bet`;
