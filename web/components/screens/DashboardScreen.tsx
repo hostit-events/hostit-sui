@@ -278,9 +278,6 @@ export function DashboardScreen() {
           {drafts.length > 0 && (
             <section className="space-y-5">
               <div>
-                <span className="eyebrow">
-                  <Icon icon="solar:document-text-bold" size={14} /> Drafts
-                </span>
                 <h2 className="page-title" style={{ marginTop: 12, fontSize: 26 }}>
                   Saved drafts <span style={{ color: "var(--fg3)" }}>({drafts.length})</span>
                 </h2>
@@ -557,9 +554,6 @@ function Header() {
         style={{ width: 360, height: 360, background: "rgba(0,124,250,.4)", top: -150, right: -60, opacity: 0.2 }}
       />
       <div>
-        <span className="eyebrow">
-          <Icon icon="material-symbols-light:analytics-rounded" size={14} /> Organizer
-        </span>
         <h1 className="page-title" style={{ marginTop: 12, fontSize: 34 }}>
           Dashboard
         </h1>

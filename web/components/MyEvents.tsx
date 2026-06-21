@@ -13,7 +13,6 @@ import {
 } from "@/lib/ticketing";
 import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { humanizeError } from "@/lib/moveErrors";
-import { Icon } from "./Icon";
 import { TxLink } from "./TxLink";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -69,9 +68,6 @@ export function MyEvents({ address }: { address: string }) {
   return (
     <section className="space-y-5">
       <div>
-        <span className="eyebrow">
-          <Icon icon="material-symbols-light:analytics-rounded" size={14} /> Organizer
-        </span>
         <h2 className="page-title" style={{ marginTop: 12, fontSize: 26 }}>
           Events you organize <span style={{ color: "var(--fg3)" }}>({mine.length})</span>
         </h2>

@@ -198,7 +198,6 @@ export function EventQuickViewModal({ id }: { id: string }) {
 
             <div className="space-y-4 px-5 py-4">
               <div className="space-y-1.5">
-                {cat && <span className="eyebrow">{cat}</span>}
                 <h2 className="page-title" style={{ fontSize: 22 }}>
                   {name}
                 </h2>

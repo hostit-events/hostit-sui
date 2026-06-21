@@ -196,9 +196,6 @@ export function DoorScreen({ id }: { id: string }) {
       <main className="grow w-full" style={{ maxWidth: 640, margin: "0 auto", padding: "20px 18px 0", width: "100%" }}>
         {/* === Event identity === */}
         <div className="space-y-1">
-          <span className="eyebrow">
-            <Icon icon="zondicons:inbox-check" size={14} /> Live door
-          </span>
           {eventQ.isLoading ? (
             <h1 className="page-title mono" style={{ fontSize: 24, color: "var(--fg3)" }}>
               Loading event…
