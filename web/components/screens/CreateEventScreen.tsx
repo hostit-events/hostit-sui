@@ -30,6 +30,7 @@ import { Icon } from "@/components/Icon";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import { ArrowRight } from "@/components/animate-ui/icons/arrow-right";
 import { DateTimePicker } from "@/components/DateTimePicker";
+import { TicketStub } from "@/components/TicketStub";
 import { TxLink } from "@/components/TxLink";
 import { useOrganizerMemory } from "@/lib/memoryClient";
 import {
@@ -131,12 +132,15 @@ function buildCreateEventTx(
   );
 }
 
-function isoLocal(addMinutes = 0): string {
-  const d = new Date(Date.now() + addMinutes * 60_000);
+function isoFromMs(ms: number): string {
+  const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
     d.getHours(),
   )}:${pad(d.getMinutes())}`;
+}
+function isoLocal(addMinutes = 0): string {
+  return isoFromMs(Date.now() + addMinutes * 60_000);
 }
 
 // CATEGORIES[0] is the "all" filter — not a real event category.
@@ -401,8 +405,8 @@ function AdvancedCreate({
   const [name, setName] = useState(initial?.name ?? "");
   const [category, setCategory] = useState(initial?.category ?? PICKABLE[0].id);
   const [tag, setTag] = useState(initial?.tag ?? "");
-  const [start, setStart] = useState(() => initial?.start ?? isoLocal(25 * 60)); // now + 25h
-  const [end, setEnd] = useState(() => initial?.end ?? isoLocal(50 * 60)); // now + 50h
+  const [start, setStart] = useState(() => initial?.start ?? isoLocal(60)); // now + 1h
+  const [end, setEnd] = useState(() => initial?.end ?? isoLocal(60 + 3 * 60)); // start + 3h
   const [venue, setVenue] = useState(initial?.venue ?? "");
   const [city, setCity] = useState(initial?.city ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -1632,10 +1636,12 @@ function QuickCreate({
 
   const [name, setName] = useState(initial?.name ?? "");
   const [category, setCategory] = useState(initial?.category ?? PICKABLE[0].id);
-  const [start, setStart] = useState(() => initial?.start ?? isoLocal()); // now
+  const [start, setStart] = useState(() => initial?.start ?? isoLocal(60)); // now + 1h
   const [end, setEnd] = useState(
-    () => initial?.end ?? isoLocal(QUICK_DEFAULT_DURATION_MIN),
-  ); // now + 3h
+    () => initial?.end ?? isoLocal(60 + QUICK_DEFAULT_DURATION_MIN),
+  ); // start + 3h
+  // End auto-tracks start + 3h until the user edits End themselves (#78).
+  const endTouched = useRef(initial?.end != null);
   const [maxTickets, setMaxTickets] = useState(initial?.maxTickets ?? "100");
   const [isFree, setIsFree] = useState(initial?.isFree ?? false);
   const [basePrice, setBasePrice] = useState(initial?.basePrice ?? "");
@@ -1653,7 +1659,7 @@ function QuickCreate({
   // Walrus upload cache so a create retry doesn't re-upload an identical blob.
   const [metaCache, setMetaCache] = useState<{ key: string; blobId: string } | null>(null);
 
-  const [p1, p2] = catPalette(category);
+  const [p1] = catPalette(category);
   const ci = coinInfo(coinType);
 
   const quickDirty =
@@ -1702,6 +1708,19 @@ function QuickCreate({
 
   const dateError = validateTimes();
   const formError = validate();
+
+  // Smart time UX (#78): End follows Start by +3h until the user edits End.
+  function onStartChange(v: string) {
+    setStart(v);
+    if (!endTouched.current) {
+      const ms = Date.parse(v);
+      if (Number.isFinite(ms)) setEnd(isoFromMs(ms + 3 * 3_600_000));
+    }
+  }
+  function onEndChange(v: string) {
+    endTouched.current = true;
+    setEnd(v);
+  }
 
   async function publish() {
     if (!addr) return setErr("Connect a wallet to publish.");
@@ -1816,38 +1835,26 @@ function QuickCreate({
     }
   }
 
-  const dateLabel = Number.isFinite(startMs)
-    ? new Date(startMs).toLocaleString(undefined, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "Date TBA";
-
   // ── success ──
   if (digest) {
     return (
-      <div className="space-y-6 screen-in" style={{ maxWidth: 560, margin: "0 auto" }}>
-        <Card className="text-center" style={{ padding: 36 }}>
-          <div
-            className="poster"
-            style={
-              {
-                width: 92,
-                height: 92,
-                margin: "0 auto 18px",
-                borderRadius: "50%",
-                display: "grid",
-                placeItems: "center",
-                ["--p1" as string]: p1,
-                ["--p2" as string]: p2,
-              } as React.CSSProperties
-            }
-          >
-            <Icon icon="ph:lightning-fill" size={40} style={{ color: "#fff", position: "relative" }} />
-          </div>
+      <div className="space-y-6 screen-in" style={{ maxWidth: 420, margin: "0 auto" }}>
+        <div style={{ maxWidth: 340, margin: "0 auto" }}>
+          <TicketStub
+            name={name}
+            category={category}
+            startMs={startMs}
+            endMs={endMs}
+            isFree={isFree}
+            price={basePrice}
+            coinSymbol={ci.symbol}
+            capacity={maxTickets}
+            organizer={addr}
+            gasSponsored={ENOKI_ENABLED}
+            published
+          />
+        </div>
+        <Card className="text-center" style={{ padding: 28 }}>
           <h1 className="page-title" style={{ fontSize: 26 }}>
             Your event is live
           </h1>
@@ -1898,8 +1905,9 @@ function QuickCreate({
                 setName("");
                 setBasePrice("");
                 setCategory(PICKABLE[0].id);
-                setStart(isoLocal());
-                setEnd(isoLocal(QUICK_DEFAULT_DURATION_MIN));
+                setStart(isoLocal(60));
+                setEnd(isoLocal(60 + QUICK_DEFAULT_DURATION_MIN));
+                endTouched.current = false;
                 setMaxTickets("100");
                 setIsFree(false);
                 setCoinType(COINS[0].type);
@@ -1914,26 +1922,27 @@ function QuickCreate({
   }
 
   return (
-    <div className="space-y-7 screen-in">
+    <div className="space-y-6 screen-in">
       <header className="relative">
         <div
           className="glow"
-          style={{ width: 360, height: 360, background: "rgba(0,124,250,.4)", top: -150, right: -40, opacity: 0.2 }}
+          style={{ width: 360, height: 360, background: p1, top: -150, right: -40, opacity: 0.16 }}
         />
         <span className="eyebrow">
           <Icon icon="ph:lightning-fill" size={14} /> Quick host
         </span>
         <h1 className="page-title" style={{ marginTop: 12, fontSize: 32 }}>
-          Create an event
+          Forge an event
         </h1>
         <p className="page-sub">
-          Publish in seconds — sales open immediately. Add a cover, description and tiers later from
-          the manage page.
+          Fill the stub — it becomes the ticket attendees hold and scan. Publishes in seconds; sales
+          open immediately.
           {ENOKI_ENABLED && <span style={{ color: "var(--color-success)" }}> Gas is sponsored.</span>}
         </p>
       </header>
 
-      <Card className="space-y-5" style={{ padding: 20, maxWidth: 620 }}>
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
+      <Card className="space-y-5 order-2 lg:order-1" style={{ padding: 20 }}>
         <div className="space-y-1.5">
           <Label htmlFor="qc-event-name">Event name</Label>
           <Input
@@ -1962,19 +1971,23 @@ function QuickCreate({
 
         <div className="grid sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="qc-start">Event starts</Label>
-            <DateTimePicker id="qc-start" value={start} min={isoLocal()} onChange={setStart} />
+            <Label htmlFor="qc-start">Starts</Label>
+            <DateTimePicker id="qc-start" value={start} min={isoLocal()} onChange={onStartChange} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="qc-end">Event ends</Label>
-            <DateTimePicker id="qc-end" value={end} min={start} onChange={setEnd} />
+            <Label htmlFor="qc-end">Ends</Label>
+            <DateTimePicker id="qc-end" value={end} min={start} onChange={onEndChange} />
           </div>
         </div>
-        {dateError && (
-          <p className="text-xs" style={{ color: "var(--color-danger)" }}>
-            <Icon icon="ph:warning-circle-fill" size={12} /> {dateError}
-          </p>
-        )}
+        <p className="text-xs" style={{ color: dateError ? "var(--color-danger)" : "var(--fg3)" }}>
+          {dateError ? (
+            <>
+              <Icon icon="ph:warning-circle-fill" size={12} /> {dateError}
+            </>
+          ) : (
+            <>End follows start by 3h until you change it.</>
+          )}
+        </p>
 
         <div className="space-y-1.5" style={{ maxWidth: 220 }}>
           <Label htmlFor="qc-capacity">Capacity</Label>
@@ -2054,54 +2067,68 @@ function QuickCreate({
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <span className="text-xs" style={{ color: "var(--fg3)" }}>
-            {dateLabel}
-          </span>
-          <div className="flex items-center gap-2">
-            {/* Save as draft (GH#46) — needs a wallet for the Seal policy + index. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span tabIndex={!addr ? 0 : -1}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={saveAsDraft}
-                    disabled={!addr || savingDraft || !!busy || txPending}
-                  >
-                    {savingDraft ? (
-                      <>
-                        <Icon icon="svg-spinners:3-dots-fade" size={14} /> Saving…
-                      </>
-                    ) : (
-                      <>
-                        <Icon icon="ph:floppy-disk-fill" size={14} /> Save as draft
-                      </>
-                    )}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {!addr
-                  ? "Connect a wallet to save an encrypted draft"
-                  : "Encrypt and save this draft to Walrus"}
-              </TooltipContent>
-            </Tooltip>
-            {!addr ? (
-              <Badge variant="outline">Connect a wallet to publish</Badge>
-            ) : (
-              <Button
-                size="lg"
-                onClick={publish}
-                disabled={!!busy || txPending || !!formError}
-              >
-                <Icon icon="ph:lightning-fill" size={18} />
-                {busy || txPending ? "Publishing…" : "Publish event"}
-              </Button>
-            )}
-          </div>
+        <div className="flex items-center justify-end gap-2 pt-1">
+          {/* Save as draft (GH#46) — needs a wallet for the Seal policy + index. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={!addr ? 0 : -1}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={saveAsDraft}
+                  disabled={!addr || savingDraft || !!busy || txPending}
+                >
+                  {savingDraft ? (
+                    <>
+                      <Icon icon="svg-spinners:3-dots-fade" size={14} /> Saving…
+                    </>
+                  ) : (
+                    <>
+                      <Icon icon="ph:floppy-disk-fill" size={14} /> Save draft
+                    </>
+                  )}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {!addr
+                ? "Connect a wallet to save an encrypted draft"
+                : "Encrypt and save this draft to Walrus"}
+            </TooltipContent>
+          </Tooltip>
+          {!addr ? (
+            <Badge variant="outline">Connect a wallet to publish</Badge>
+          ) : (
+            <Button size="lg" onClick={publish} disabled={!!busy || txPending || !!formError}>
+              <Icon icon="ph:lightning-fill" size={18} />
+              {busy || txPending ? "Forging…" : "Publish event"}
+            </Button>
+          )}
         </div>
       </Card>
+
+        {/* ── live ticket stub: the product, mid-fabrication ── */}
+        <div className="order-1 lg:order-2 lg:sticky lg:top-6 space-y-2.5">
+          <TicketStub
+            name={name}
+            category={category}
+            startMs={startMs}
+            endMs={endMs}
+            isFree={isFree}
+            price={basePrice}
+            coinSymbol={ci.symbol}
+            capacity={maxTickets}
+            organizer={addr}
+            gasSponsored={ENOKI_ENABLED}
+          />
+          <p
+            className="mono"
+            style={{ textAlign: "center", color: "var(--fg3)", fontSize: 11, letterSpacing: ".04em" }}
+          >
+            <Icon icon="ph:eye-fill" size={12} /> Live preview · this is the ticket
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
