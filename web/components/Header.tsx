@@ -22,13 +22,16 @@ const NAV = [
 /**
  * App header (desktop only — mobile nav lives in MobileTabBar).
  *
- * Right-side cluster order: ⌘K command trigger (#56), Create event, Settings,
- * the notifications bell (#59), then the optional injection seams and AuthControl.
+ * Three zones, like a modern app shell: [logo + nav] · [centered search] ·
+ * [actions]. The search is a command-palette trigger styled as an input,
+ * absolutely centered at lg+ (so it stays centered regardless of the left/right
+ * cluster widths); below lg it collapses to a search icon button in the right
+ * cluster. Right cluster: Create event, Settings, the notifications bell (#59),
+ * the optional injection seams, then AuthControl.
  *
  * `notificationsSlot` / `userAvatarSlot` are optional ReactNode seams so callers
  * can inject extra notifications/avatar UI without the Header importing those
- * components. They render nothing when unset and sit in the right-side cluster;
- * `AuthControl` stays the source of truth for sign-in.
+ * components.
  */
 export function Header({
   notificationsSlot,
@@ -40,54 +43,75 @@ export function Header({
   const pathname = usePathname() || "/";
   return (
     <header className="sticky top-0 z-50 hidden border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:block">
-      <div className="mx-auto flex h-14 max-w-[1180px] items-center gap-2 px-5 sm:px-8">
-        <Link href="/" className="mr-1 flex flex-none items-center" aria-label="HostIt home">
-          <Logo size={24} />
-        </Link>
-        <nav className="hidden items-center gap-0.5 md:flex" aria-label="Primary">
-          {NAV.map((n) => {
-            const active = pathname === n.href || pathname.startsWith(n.href + "/");
-            return (
-              <Button
-                key={n.href}
-                asChild
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "relative text-muted-foreground",
-                  active && "bg-accent text-foreground",
-                )}
-              >
-                <Link href={n.href} aria-current={active ? "page" : undefined}>
-                  <Icon icon={n.icon} size={16} />
-                  {n.label}
-                  {active && (
-                    <motion.span
-                      layoutId="nav-active"
-                      className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
+      <div className="relative mx-auto flex h-14 max-w-[1340px] items-center gap-2 px-4 sm:px-6">
+        {/* Left: logo + primary nav */}
+        <div className="flex items-center gap-1">
+          <Link href="/" className="mr-1 flex flex-none items-center" aria-label="HostIt home">
+            <Logo size={24} />
+          </Link>
+          <nav className="hidden items-center gap-0.5 md:flex" aria-label="Primary">
+            {NAV.map((n) => {
+              const active = pathname === n.href || pathname.startsWith(n.href + "/");
+              return (
+                <Button
+                  key={n.href}
+                  asChild
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "relative text-muted-foreground",
+                    active && "bg-accent text-foreground",
                   )}
-                </Link>
-              </Button>
-            );
-          })}
-        </nav>
+                >
+                  <Link href={n.href} aria-current={active ? "page" : undefined}>
+                    <Icon icon={n.icon} size={16} />
+                    {n.label}
+                    {active && (
+                      <motion.span
+                        layoutId="nav-active"
+                        className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary"
+                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                      />
+                    )}
+                  </Link>
+                </Button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Center: search bar — absolutely centered (lg+). The wrapper ignores
+            pointer events so it never blocks the left/right clusters; only the
+            button itself is interactive. */}
+        <div className="pointer-events-none absolute left-1/2 hidden w-full max-w-md -translate-x-1/2 px-4 lg:block">
+          <button
+            type="button"
+            onClick={openCommandPalette}
+            aria-label="Search events and commands"
+            className="pointer-events-auto flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+          >
+            <Icon icon="ic:round-search" size={16} />
+            <span>Search events…</span>
+            <kbd className="ml-auto font-mono text-[11px] opacity-70">⌘K</kbd>
+          </button>
+        </div>
+
+        {/* Right: actions */}
         <div className="ml-auto flex items-center gap-2">
+          {/* search fallback below lg, where the centered bar is hidden */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="outline"
-                size="sm"
+                size="icon-sm"
                 onClick={openCommandPalette}
-                aria-label="Open command palette"
-                className="gap-1.5 text-muted-foreground"
+                aria-label="Search"
+                className="text-muted-foreground lg:hidden"
               >
                 <Icon icon="ic:round-search" size={15} />
-                <kbd className="hidden font-mono text-[11px] lg:inline">⌘K</kbd>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Search & commands (⌘K)</TooltipContent>
+            <TooltipContent>Search &amp; commands (⌘K)</TooltipContent>
           </Tooltip>
           <Button asChild size="sm">
             <Link href="/create" aria-label="Create event">
@@ -107,8 +131,6 @@ export function Header({
           </Tooltip>
           {/* notifications bell — on-chain-derived inbox (renders nothing signed out) */}
           <NotificationsBellContainer />
-          {/* optional injection seams (#55): default to nothing, kept so callers
-              can still inject extra notifications/avatar UI without Header imports */}
           {notificationsSlot}
           {userAvatarSlot}
           <AuthControl />
