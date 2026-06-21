@@ -38,6 +38,13 @@ export function useGoogleSignIn() {
         clientId: GOOGLE_CLIENT_ID,
         redirectUrl: authUrl.toString(),
         network: ENOKI_NETWORK,
+        // Ask for the `email` scope so Google puts `email` + `email_verified`
+        // in the id_token. Enoki defaults to "openid" only; without this the
+        // token has no email claim and /api/email/bind-google rejects it with
+        // "Google email not verified" (#96). Scope doesn't affect the zkLogin
+        // address (derived from iss/aud/sub), so existing Google users are
+        // unaffected; `email` is a non-sensitive scope (no Google re-review).
+        extraParams: { scope: ["email"] },
       });
       window.location.href = url;
     },
