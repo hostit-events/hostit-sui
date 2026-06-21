@@ -473,6 +473,29 @@ fun set_price_wrong_cap_fails() {
     sc.end();
 }
 
+#[test, expected_failure(abort_code = hostit_ticket::market::E_PRICE_OVERFLOW)]
+fun buy_price_overflow_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, 100, 5, false, false);
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_price<SUI>(&cap, &mut ev, 18446744073709551615); // u64::MAX; price + 3% fee overflows u64
+    ts::return_shared(ev);
+
+    clock.set_for_testing(BUY_NOW);
+    sc.next_tx(BUYER);
+    let mut hub = sc.take_shared<Hub>();
+    let mut ev = sc.take_shared<Event>();
+    let pay = mint(18446744073709551615, &mut sc); // enough that the overflow guard, not E_INSUFFICIENT_PAYMENT, fires first
+    market::buy<SUI>(&mut ev, &mut hub, pay, BUYER, &clock, sc.ctx());
+    ts::return_shared(hub);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
 // === refund ===
 
 #[test]
@@ -501,8 +524,12 @@ fun refund_ok() {
     let mut ev = sc.take_shared<Event>();
     let t = sc.take_from_sender<Ticket>();
     let refunded = market::refund<SUI>(&mut ev, &hub, t, &clock, sc.ctx());
+    // Option B: the fee is intentionally non-refundable. Buyer gets back PRICE
+    // (not PRICE + HOSTIT_FEE); escrow drains; the HOSTIT_FEE stays in the Hub —
+    // this is the on-chain meaning of TicketRefunded.fee_forfeited.
     assert!(coin::value(&refunded) == PRICE, 0);
     assert!(event::escrow_value<SUI>(&ev) == 0, 1);
+    assert!(hub::platform_balance<SUI>(&hub) == HOSTIT_FEE, 3);
     coin::burn_for_testing(refunded);
     ts::return_shared(hub);
     ts::return_shared(ev);
@@ -869,7 +896,7 @@ fun self_checkin_ok() {
     checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
     assert!(ticket::is_checked_in(&t), 0);
     assert!(event::is_checked_in(&ev, BUYER), 1);
-    assert!(event::is_checked_in_for_day(&ev, 0, BUYER), 2);
+    assert!(event::is_checked_in_for_day(&ev, 0, object::id(&t)), 2);
     sc.return_to_sender(t);
     ts::return_shared(ev);
 
@@ -929,8 +956,11 @@ fun self_checkin_before_window_fails() {
     sc.end();
 }
 
-#[test, expected_failure(abort_code = hostit_ticket::event::E_ALREADY_CHECKED_IN_DAY)]
-fun self_checkin_twice_same_day_fails() {
+// Two distinct tickets held by ONE wallet both check in the same day: the
+// per-(day, ticket) dedup keys on the ticket id, so the second check-in (a
+// different ticket, same wallet, same day) now succeeds. This is the bug fix.
+#[test]
+fun two_tickets_one_wallet_same_day_ok() {
     let (mut sc, mut clock) = begin();
     clock.set_for_testing(CREATE_NOW);
     let cap = create_event(&mut sc, &clock, 100, 5, true, false);
@@ -946,18 +976,50 @@ fun self_checkin_twice_same_day_fails() {
     market::claim_free(&mut ev, BUYER, &clock, sc.ctx());
     ts::return_shared(ev);
 
-    // BUYER holds two issued tickets for the same day. Check in #0 (records the
-    // day), then #1 (same day, same attendee) must hit the once-per-day guard.
     clock.set_for_testing(USE_NOW);
     sc.next_tx(BUYER);
     let ids = ts::ids_for_sender<Ticket>(&sc);
     let mut ev = sc.take_shared<Event>();
     let mut t1 = sc.take_from_sender_by_id<Ticket>(*ids.borrow(0));
     checkin::self_check_in(&mut ev, &mut t1, &clock, sc.ctx());
+    assert!(event::is_checked_in_for_day(&ev, 0, object::id(&t1)), 0);
     sc.return_to_sender(t1);
     let mut t2 = sc.take_from_sender_by_id<Ticket>(*ids.borrow(1));
-    checkin::self_check_in(&mut ev, &mut t2, &clock, sc.ctx()); // abort
+    // Different ticket, same wallet, same day → now succeeds.
+    checkin::self_check_in(&mut ev, &mut t2, &clock, sc.ctx());
+    assert!(event::is_checked_in_for_day(&ev, 0, object::id(&t2)), 1);
     sc.return_to_sender(t2);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// Regression guard: re-presenting the SAME ticket the same day still aborts the
+// once-per-day-per-ticket guard.
+#[test, expected_failure(abort_code = hostit_ticket::event::E_ALREADY_CHECKED_IN_DAY)]
+fun same_ticket_twice_same_day_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, 100, 5, true, false);
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_allow_self_checkin(&cap, &mut ev, true);
+    ts::return_shared(ev);
+
+    clock.set_for_testing(BUY_NOW);
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    market::claim_free(&mut ev, BUYER, &clock, sc.ctx());
+    ts::return_shared(ev);
+
+    clock.set_for_testing(USE_NOW);
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    let mut t = sc.take_from_sender<Ticket>();
+    checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
+    checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx()); // same ticket, same day → abort
+    sc.return_to_sender(t);
     ts::return_shared(ev);
     destroy(cap);
     clock.destroy_for_testing();
@@ -1107,11 +1169,11 @@ fun checkin_multiday_ok() {
     // day 0
     clock.set_for_testing(USE_NOW);
     checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
-    assert!(event::is_checked_in_for_day(&ev, 0, BUYER), 0);
+    assert!(event::is_checked_in_for_day(&ev, 0, object::id(&t)), 0);
     // day 1 (now == END → day = DAY_MS/DAY_MS = 1, still within [start, end])
     clock.set_for_testing(END);
     checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
-    assert!(event::is_checked_in_for_day(&ev, 1, BUYER), 1);
+    assert!(event::is_checked_in_for_day(&ev, 1, object::id(&t)), 1);
     assert!(ticket::is_checked_in(&t), 2);
     sc.return_to_sender(t);
     ts::return_shared(ev);
@@ -1187,7 +1249,7 @@ fun instant_free_claim_and_self_checkin_ok() {
     checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
     assert!(ticket::is_checked_in(&t), 1);
     assert!(event::is_checked_in(&ev, BUYER), 2);
-    assert!(event::is_checked_in_for_day(&ev, 0, BUYER), 3);
+    assert!(event::is_checked_in_for_day(&ev, 0, object::id(&t)), 3);
     sc.return_to_sender(t);
     ts::return_shared(ev);
 
@@ -1226,7 +1288,7 @@ fun instant_paid_buy_and_self_checkin_ok() {
     let mut t = sc.take_from_sender<Ticket>();
     checkin::self_check_in(&mut ev, &mut t, &clock, sc.ctx());
     assert!(ticket::is_checked_in(&t), 1);
-    assert!(event::is_checked_in_for_day(&ev, 0, BUYER), 2);
+    assert!(event::is_checked_in_for_day(&ev, 0, object::id(&t)), 2);
     sc.return_to_sender(t);
     ts::return_shared(ev);
 
@@ -1348,6 +1410,46 @@ fun access_prefix_works() {
     assert!(access::check_prefix(b"", b"anything"), 3);
 }
 
+// The tagged organizer namespace must NOT be a prefix-match for the bare
+// event-id namespace the ticket policy checks — i.e. a ticket holder cannot
+// satisfy an organizer-only identity. (Domain separation, plan 007.)
+#[test]
+fun organizer_ns_not_ticket_decryptable() {
+    let eid = object::id_from_address(@0x0a);
+
+    // Build an organizer-only id: ORG_NS_TAG ‖ event_id ‖ nonce.
+    let mut org_id = b"hostit-org:";                 // MUST equal ORG_NS_TAG in access.move
+    org_id.append(object::id_to_bytes(&eid));
+    org_id.append(b"\x01\x02\x03\x04\x05");          // 5-byte nonce, like makeSealId
+
+    // The TICKET policy checks is_prefix(event_id, id). It must FAIL on the
+    // organizer-only id (event_id is not a prefix of "hostit-org:"||...).
+    assert!(!access::check_prefix(object::id_to_bytes(&eid), org_id), 0);
+
+    // Sanity: the SHARED (bare event-id) id the ticket policy *does* accept.
+    let mut shared_id = object::id_to_bytes(&eid);
+    shared_id.append(b"\x01\x02\x03\x04\x05");
+    assert!(access::check_prefix(object::id_to_bytes(&eid), shared_id), 1);
+}
+
+// The organizer-only id IS accepted under the organizer namespace prefix
+// (tag ‖ event_id), confirming organizers can still decrypt their own data.
+#[test]
+fun organizer_ns_matches_organizer_prefix() {
+    let eid = object::id_from_address(@0x0a);
+    let mut org_ns = b"hostit-org:";
+    org_ns.append(object::id_to_bytes(&eid));
+
+    let mut org_id = org_ns;                          // tag ‖ event_id
+    org_id.append(b"\x01\x02\x03\x04\x05");           // ‖ nonce
+
+    // Rebuild the prefix (org_ns was moved into org_id) — check_prefix takes
+    // vector<u8> by value.
+    let mut org_ns2 = b"hostit-org:";
+    org_ns2.append(object::id_to_bytes(&eid));
+    assert!(access::check_prefix(org_ns2, org_id), 0);
+}
+
 #[test, expected_failure(abort_code = hostit_ticket::event::E_INVALID_SIGNER_KEY)]
 fun add_signer_bad_key_fails() {
     let (mut sc, mut clock) = begin();
@@ -1356,6 +1458,39 @@ fun add_signer_bad_key_fails() {
     sc.next_tx(ORG);
     let mut ev = sc.take_shared<Event>();
     event::add_checkin_signer(&cap, &mut ev, b"too_short"); // not 32 bytes
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test]
+fun add_then_remove_signer_ok() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, 100, 5, true, false);
+    let pubkey = x"0100000000000000000000000000000000000000000000000000000000000000";
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::add_checkin_signer(&cap, &mut ev, pubkey);
+    assert!(event::is_checkin_signer(&ev, &pubkey), 0);
+    event::remove_checkin_signer(&cap, &mut ev, pubkey);
+    assert!(!event::is_checkin_signer(&ev, &pubkey), 1);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test, expected_failure(abort_code = hostit_ticket::event::E_SIGNER_NOT_FOUND)]
+fun remove_unregistered_signer_fails() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, 100, 5, true, false);
+    let pubkey = x"0100000000000000000000000000000000000000000000000000000000000000";
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::remove_checkin_signer(&cap, &mut ev, pubkey); // never added -> abort
     ts::return_shared(ev);
     destroy(cap);
     clock.destroy_for_testing();

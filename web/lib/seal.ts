@@ -7,7 +7,7 @@
 import { SealClient, SessionKey } from "@mysten/seal";
 import { Transaction } from "@mysten/sui/transactions";
 import { fromHex, toHex } from "@mysten/sui/utils";
-import { PACKAGE_ID, SEAL_AGGREGATOR_URL, SEAL_KEY_SERVER_ID } from "./config";
+import { PACKAGE_ID, SEAL_AGGREGATOR_URL, SEAL_KEY_SERVER_ID, SEAL_VERIFY_KEY_SERVERS } from "./config";
 
 export function makeSealClient(suiClient: any): SealClient {
   return new SealClient({
@@ -18,7 +18,7 @@ export function makeSealClient(suiClient: any): SealClient {
     serverConfigs: [
       { objectId: SEAL_KEY_SERVER_ID, weight: 1, aggregatorUrl: SEAL_AGGREGATOR_URL },
     ],
-    verifyKeyServers: false, // true in production
+    verifyKeyServers: SEAL_VERIFY_KEY_SERVERS, // on for every network except localnet
   } as any);
 }
 
@@ -26,6 +26,22 @@ export function makeSealClient(suiClient: any): SealClient {
 export function makeSealId(policyObjectIdOrAddr: string): string {
   const nonce = crypto.getRandomValues(new Uint8Array(5));
   return toHex(new Uint8Array([...fromHex(policyObjectIdOrAddr), ...nonce]));
+}
+
+/** Domain-separation tag for ORGANIZER-ONLY Seal identities. MUST equal
+ *  `ORG_NS_TAG` in sources/access.move so the on-chain policy matches. A Seal
+ *  id built with this tag satisfies `seal_approve_organizer` but NOT
+ *  `seal_approve_ticket` (whose check is `is_prefix(event_id, id)`), so a
+ *  ticket holder cannot decrypt organizer-only ciphertext. */
+export const ORG_NS_TAG = new TextEncoder().encode("hostit-org:"); // == b"hostit-org:" in access.move
+
+/** Seal identity for ORGANIZER-ONLY data: ORG_NS_TAG ‖ event-id bytes ‖ nonce.
+ *  Use this (not the bare event id) whenever you encrypt data that ONLY the
+ *  organizer may read (e.g. an attendee/KYC list). Shared content readable by
+ *  ticket holders must keep using the bare event id (see makeSealId). */
+export function makeOrganizerSealId(eventId: string): string {
+  const nonce = crypto.getRandomValues(new Uint8Array(5));
+  return toHex(new Uint8Array([...ORG_NS_TAG, ...fromHex(eventId), ...nonce]));
 }
 
 export async function sealEncrypt(
@@ -79,9 +95,12 @@ export function approveSelf(tx: Transaction, id: string) {
   });
 }
 
-/** Organizer-gated decrypt: caller holds the event's OrganizerCap. Same original
- *  `access` module as the ticket policy (exists at PACKAGE_ID). The ciphertext is
- *  the SAME as the ticket path — both check `is_prefix(event_id, id)`. */
+/** Organizer-gated decrypt: caller holds the event's OrganizerCap. Lives in the
+ *  `access` module at PACKAGE_ID. `seal_approve_organizer` accepts the
+ *  organizer-only namespace (ORG_NS_TAG ‖ event_id; see makeOrganizerSealId)
+ *  AND the bare event-id namespace (shared forum content). It is NOT
+ *  interchangeable with the ticket policy for organizer-only ids: a tagged
+ *  organizer id does NOT satisfy seal_approve_ticket. */
 export function approveOrganizer(tx: Transaction, id: string, capId: string, eventId: string) {
   tx.moveCall({
     target: `${PACKAGE_ID}::access::seal_approve_organizer`,

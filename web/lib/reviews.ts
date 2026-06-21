@@ -1,38 +1,30 @@
-// Event reviews & ratings (GH#58) — POAP-gated, public (no Seal).
+// Shared, on-chain event reviews & ratings (GH#58) — POAP-gated, PUBLIC (no Seal).
 //
-// === STORAGE DECISION (read before extending) ===============================
-// The issue (#58) frames persistence as the blocking decision and proposes
-// mirroring the forum module: a Walrus blob body + an on-chain anchor event.
-// That recommended path (option "a") needs a NEW Move module
-// (`sources/reviews.move` with a `ReviewPosted` event gated by `&Poap`), which
-// is a package UPGRADE — explicitly GATED per CLAUDE.md and OUT OF SCOPE for
-// this PR (no Move changes, no deploy/publish).
+// === STORAGE MODEL ==========================================================
+// Reviews mirror the forum module MINUS the Seal step (reviews are public):
+//   • the body (rating + comment JSON) is a PUBLIC Walrus blob,
+//   • each review is anchored on-chain via `reviews::post_review`, which emits a
+//     `ReviewPosted { event_id, event_seq, author, rating, blob_id, ts_ms }`.
+// Readers `queryEvents({ MoveEventType: EV_REVIEW_POSTED })`, filter by event,
+// and fetch each body from Walrus. The AVERAGE is computable from the on-chain
+// `rating` alone (no Walrus fetch needed for the number).
 //
-// So v1 ships a DEVICE-LOCAL localStorage store behind this seam, with the
-// review SHAPE already modeled on the future on-chain anchor (event_id,
-// rating, comment, author, ts_ms). The gate (can-review = wallet holds the
-// event's POAP) is REAL on-chain (`getOwnedObjects` filtered on POAP_TYPE,
-// matched by event_id) — see ReviewsSection wiring in EventPageScreen.
+// The on-chain gate is ATTENDANCE: `post_review` takes `&Poap` for the event,
+// which proves the caller attended (a POAP is claimable only after check-in).
+// One-review-per-wallet is NOT enforced on-chain in v1 — we dedupe by author
+// here (keep the newest per author), matching the Move module's documented v1
+// ceiling.
 //
-// SWAP-TO-ON-CHAIN is a one-file change: once `reviews.move` ships, replace
-// `addReview`/`listReviews`/`hasReviewed` with a Walrus `storeJson`/`readJson`
-// body + a `queryEvents({ MoveEventType: EV_REVIEW_POSTED })` read (mirror
-// `lib/forum.ts` minus the Seal step — reviews are intentionally public).
-// `averageRating` / `Review` stay identical; callers do not change.
-//
-// === v1 CEILINGS (intentional, documented) ==================================
-//  • DEVICE-LOCAL. Reviews live in this browser's localStorage
-//    (`hostit:reviews:${eventId}`); they do NOT sync across devices and are
-//    NOT shared between users. This is the deliberate v1 deferral — the
-//    on-chain anchor (above) is the shared-state answer, gated to a later PR.
-//  • CLIENT-SIDE UNIQUENESS. One-review-per-wallet (`hasReviewed`) is enforced
-//    by matching `author === addr` over the local log. On-chain enforcement is
-//    a v2 nicety (the future Move module can assert it).
-//  • NO SEED/MOCK DATA. The prototype's `SEED_REVIEWS` + mock generators are
-//    deliberately NOT ported — empty until real attendees review.
+// `averageRating` / `sortReviews` / `authorHasReviewed` / `Review` /
+// `RatingSummary` / `MAX_COMMENT_LEN` are UNCHANGED — only the storage-backed
+// functions swapped from device-local localStorage to on-chain + Walrus.
+
+import { Transaction } from "@mysten/sui/transactions";
+import { PACKAGE_ID_LATEST, CLOCK_ID, EV_REVIEW_POSTED, targetLatest } from "./config";
+import { readJson } from "./walrus";
 
 export interface Review {
-  /** Stable id (random in v1; the anchor event id on-chain later). */
+  /** Stable id (the anchor event / tx id on-chain). */
   id: string;
   /** Sui object id of the event this review is for. */
   eventId: string;
@@ -57,10 +49,9 @@ export interface RatingSummary {
 // ── PURE logic (exported so tests cover it with no storage/network) ──────────
 
 /**
- * Average rating + count over a list of reviews. Pure fold (no I/O) so it works
- * unchanged whether `reviews` came from localStorage today or from anchor
- * events later. `avg` is rounded to one decimal to match the UI header; an
- * empty list yields `{ avg: 0, count: 0 }`.
+ * Average rating + count over a list of reviews. Pure fold (no I/O). `avg` is
+ * rounded to one decimal to match the UI header; an empty list yields
+ * `{ avg: 0, count: 0 }`.
  */
 export function averageRating(reviews: Review[]): RatingSummary {
   if (reviews.length === 0) return { avg: 0, count: 0 };
@@ -81,72 +72,143 @@ export function authorHasReviewed(reviews: Review[], author: string): boolean {
   return reviews.some((r) => r.author === author);
 }
 
-// ── localStorage backing store (v1) ──────────────────────────────────────────
-
-const storeKey = (eventId: string) => `hostit:reviews:${eventId}`;
-
-/** SSR-safe, never-throws read of one event's reviews. */
-function readStore(eventId: string): Review[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(storeKey(eventId));
-    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
-    return Array.isArray(parsed) ? (parsed as Review[]) : [];
-  } catch {
-    return [];
+/**
+ * Collapse multiple anchors per author down to the LATEST one (newest
+ * `createdAt` wins), then return newest-first. Pure. One-review-per-wallet is
+ * not enforced on-chain (a `&Poap` can authorize many anchors), so the client
+ * dedupes: a re-review supersedes the author's earlier one. Ties (equal
+ * timestamps) keep whichever the input lists first.
+ */
+export function dedupeByAuthor(reviews: Review[]): Review[] {
+  const latest = new Map<string, Review>();
+  for (const r of reviews) {
+    const prev = latest.get(r.author);
+    if (!prev || r.createdAt > prev.createdAt) latest.set(r.author, r);
   }
+  return sortReviews([...latest.values()]);
 }
 
-/** SSR-safe, never-throws write of one event's reviews. */
-function writeStore(eventId: string, reviews: Review[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storeKey(eventId), JSON.stringify(reviews));
-  } catch {
-    /* quota / private mode — fail silently */
-  }
+// ── Transaction constructor (mirror forumPostTx, no Seal) ────────────────────
+
+/**
+ * Build the `reviews::post_review` transaction. New module from the reviews
+ * upgrade → PACKAGE_ID_LATEST target (see config.ts versioning rules). Args:
+ * the Event object, the caller's Poap object (proves attendance), the rating
+ * (u8), the public Walrus blob id (String), and the Clock.
+ */
+export function reviewPostTx(input: {
+  eventId: string;
+  poapId: string;
+  rating: number;
+  blobId: string;
+}): Transaction {
+  const { eventId, poapId, rating, blobId } = input;
+  const tx = new Transaction();
+  tx.moveCall({
+    target: targetLatest("reviews", "post_review"),
+    arguments: [
+      tx.object(eventId),
+      tx.object(poapId),
+      tx.pure.u8(rating),
+      tx.pure.string(blobId),
+      tx.object(CLOCK_ID),
+    ],
+  });
+  return tx;
 }
 
-// ── Public API (the swap-to-on-chain seam) ───────────────────────────────────
+// ── On-chain reads (the swap-to-on-chain seam) ───────────────────────────────
 
-/** All reviews for an event, newest first. Sync (device-local index only). */
-export function listReviews(eventId: string): Review[] {
-  return sortReviews(readStore(eventId));
+/** Minimal SuiClient surface this module needs (queryEvents only). */
+interface QueryEventsClient {
+  queryEvents: (p: {
+    query: { MoveEventType: string };
+    order?: "ascending" | "descending";
+    limit?: number;
+    cursor?: unknown;
+  }) => Promise<{
+    data: Array<{ id: { txDigest: string; eventSeq: string }; parsedJson?: unknown }>;
+    nextCursor?: unknown;
+    hasNextPage?: boolean;
+  }>;
 }
 
-/** True if `author` has already reviewed `eventId`. */
-export function hasReviewed(eventId: string, author: string): boolean {
-  return authorHasReviewed(readStore(eventId), author);
+interface ReviewPostedJson {
+  event_id: string;
+  event_seq: string | number;
+  author: string;
+  rating: string | number;
+  blob_id: string;
+  ts_ms: string | number;
+}
+
+interface BlobBody {
+  comment?: string;
 }
 
 /**
- * Append a review and persist it. The caller is responsible for the gate
- * (wallet connected AND holds the event POAP) — see ReviewsSection. Re-reviews
- * by the same author are rejected (returns the existing list unchanged) so the
- * one-per-wallet rule holds even across races. Returns the updated list
- * (newest first) so the caller can render optimistically.
+ * All reviews for an event, deduped by author (latest per wallet) and newest
+ * first. PUBLIC — NO Seal/SessionKey. Enumerates `ReviewPosted` anchors
+ * (cursor-followed past the page cap), keeps the ones for `eventId`, then
+ * fetches each body's `comment` from its PUBLIC Walrus blob. The rating/author/
+ * timestamp come straight off the anchor (so the average needs no Walrus reads);
+ * only the comment text comes from Walrus, and a failed blob read degrades to an
+ * empty comment rather than dropping the review.
  */
-export function addReview(input: {
-  eventId: string;
-  rating: number;
-  comment: string;
-  author: string;
-}): Review[] {
-  const { eventId, rating, comment, author } = input;
-  const existing = readStore(eventId);
-  if (authorHasReviewed(existing, author)) return sortReviews(existing);
-  const review: Review = {
-    id:
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `r_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    eventId,
-    rating,
-    comment,
-    author,
-    createdAt: Date.now(),
-  };
-  const next = [review, ...existing];
-  writeStore(eventId, next);
-  return sortReviews(next);
+export async function listReviews(
+  client: QueryEventsClient,
+  eventId: string,
+): Promise<Review[]> {
+  // 1) Enumerate anchors for this event type, newest-first.
+  const anchors: Array<{ id: string; json: ReviewPostedJson }> = [];
+  let cursor: unknown = undefined;
+  // Bound the enumeration defensively (v1 testnet volume; the v2 indexer is the
+  // real fix). Each page is up to 50 logs.
+  for (let page = 0; page < 40; page++) {
+    const res = await client.queryEvents({
+      query: { MoveEventType: EV_REVIEW_POSTED },
+      order: "descending",
+      limit: 50,
+      cursor: cursor ?? undefined,
+    });
+    for (const ev of res.data) {
+      const json = ev.parsedJson as ReviewPostedJson | undefined;
+      if (!json || String(json.event_id) !== eventId) continue;
+      anchors.push({ id: `${ev.id.txDigest}:${ev.id.eventSeq}`, json });
+    }
+    if (!res.hasNextPage || !res.nextCursor) break;
+    cursor = res.nextCursor;
+  }
+
+  // 2) Resolve each body's comment from Walrus (public blob). Failures → "".
+  const reviews = await Promise.all(
+    anchors.map(async ({ id, json }): Promise<Review> => {
+      let comment = "";
+      try {
+        const body = await readJson<BlobBody>(json.blob_id);
+        comment = typeof body?.comment === "string" ? body.comment : "";
+      } catch {
+        comment = "";
+      }
+      return {
+        id,
+        eventId,
+        rating: Number(json.rating),
+        comment,
+        author: String(json.author),
+        createdAt: Number(json.ts_ms),
+      };
+    }),
+  );
+
+  // 3) One review per wallet (latest wins), newest first.
+  return dedupeByAuthor(reviews);
 }
+
+/** True if `author` has already reviewed (reuses the pure check over a list). */
+export function hasReviewed(reviews: Review[], author: string): boolean {
+  return authorHasReviewed(reviews, author);
+}
+
+/** Fully-qualified ReviewPosted log type (for callers wiring queryEvents hooks). */
+export const REVIEW_POSTED_TYPE = `${PACKAGE_ID_LATEST}::reviews::ReviewPosted`;

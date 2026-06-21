@@ -18,6 +18,12 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
             staleTime: 30_000,
             gcTime: 5 * 60_000,
             refetchOnWindowFocus: false,
+            // One quick retry heals a single transient RPC/Walrus blip without
+            // the default 3× exponential-backoff storm across the many
+            // per-card/per-market queries on Discover. Per-query `retry: false`
+            // (e.g. EventMarketsScreen) still wins over this default.
+            retry: 1,
+            retryDelay: 1000,
           },
         },
       }),

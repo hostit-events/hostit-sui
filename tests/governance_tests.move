@@ -65,8 +65,7 @@ fun grant_enables_auth_then_revoke_disables() {
     sc.end();
 }
 
-#[test]
-#[expected_failure] // access_control::EUnauthorized (code 0): USER holds no TreasuryRole
+#[test, expected_failure(abort_code = openzeppelin_access::access_control::EUnauthorized)]
 fun non_holder_cannot_mint_treasury_auth() {
     let mut sc = begin();
     sc.next_tx(USER);
@@ -78,8 +77,7 @@ fun non_holder_cannot_mint_treasury_auth() {
     sc.end();
 }
 
-#[test]
-#[expected_failure] // access_control::EUnauthorized (code 0): USER is not an admin of any role
+#[test, expected_failure(abort_code = openzeppelin_access::access_control::EUnauthorized)]
 fun non_admin_cannot_grant_treasury() {
     let mut sc = begin();
     sc.next_tx(USER);
@@ -149,8 +147,7 @@ fun timelocked_root_transfer_succeeds_after_delay() {
     sc.end();
 }
 
-#[test]
-#[expected_failure] // access_control::EDelayNotElapsed (code 4): accepted before the timelock
+#[test, expected_failure(abort_code = openzeppelin_access::access_control::EDelayNotElapsed)]
 fun accept_root_transfer_before_delay_aborts() {
     let mut sc = begin();
     let mut clk = clock::create_for_testing(sc.ctx());

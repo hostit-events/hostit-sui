@@ -23,6 +23,7 @@ use hostit_ticket::event::{Self, Event, OrganizerCap};
 use hostit_ticket::ticket::{Self, Ticket};
 
 const BPS_DENOM: u128 = 10_000;
+const U64_MAX: u128 = 18446744073709551615;
 
 // === Errors ===
 
@@ -41,6 +42,7 @@ const E_REFUND_WINDOW_NOT_STARTED: u64 = 12;
 const E_REFUND_WINDOW_EXPIRED: u64 = 13;
 const E_WITHDRAW_PERIOD_NOT_REACHED: u64 = 14;
 const E_NO_BALANCE: u64 = 15;
+const E_PRICE_OVERFLOW: u64 = 16;
 
 // === Events ===
 
@@ -60,7 +62,8 @@ public struct TicketRefunded has copy, drop {
     ticket_id: ID,
     holder: address,
     coin_type: ascii::String,
-    amount: u64,
+    amount: u64,         // refunded to the holder (= price)
+    fee_forfeited: u64,  // platform fee retained by the Hub; NOT returned
 }
 
 public struct EventBalanceWithdrawn has copy, drop {
@@ -95,7 +98,9 @@ public fun buy<T>(
 
     let price = event::get_price<T>(event);
     let hostit = (((price as u128) * (hub::fee_bps(hub) as u128)) / BPS_DENOM) as u64;
-    let total = price + hostit;
+    let total_u128 = (price as u128) + (hostit as u128);
+    assert!(total_u128 <= U64_MAX, E_PRICE_OVERFLOW);
+    let total = total_u128 as u64;
 
     let mut payment = payment;
     assert!(coin::value(&payment) >= total, E_INSUFFICIENT_PAYMENT);
@@ -171,6 +176,12 @@ public fun refund<T>(
     assert!(now <= end + hub::refund_period_ms(hub), E_REFUND_WINDOW_EXPIRED);
 
     let amount = ticket::paid(&ticket);
+    // The 3% platform fee paid at purchase is intentionally NON-REFUNDABLE: it
+    // stays in the Hub (parity with the EVM Diamond). Only `price` (= amount) is
+    // returned from escrow; we do NOT pull the fee back. We surface the retained
+    // amount in TicketRefunded.fee_forfeited so the forfeit is visible on-chain.
+    // Formula mirrors buy<T>'s fee split: price * fee_bps / 1e4.
+    let fee_forfeited = (((amount as u128) * (hub::fee_bps(hub) as u128)) / BPS_DENOM) as u64;
     let refund_coin = coin::from_balance(event::escrow_take<T>(event, amount), ctx);
 
     let mut t = ticket;
@@ -184,6 +195,7 @@ public fun refund<T>(
         holder: ctx.sender(),
         coin_type,
         amount,
+        fee_forfeited,
     });
     refund_coin
 }

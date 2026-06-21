@@ -29,6 +29,7 @@ import {
   parseMarketFields,
   parseRangeFields,
 } from "@/lib/predict";
+import { useAllEvents } from "@/lib/events";
 import { useEventMarkets } from "@/lib/markets";
 import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { humanizeError } from "@/lib/moveErrors";
@@ -57,9 +58,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type {
   GetObjectParams,
   GetOwnedObjectsParams,
-  PaginatedEvents,
   PaginatedObjectsResponse,
-  QueryEventsParams,
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
 import type { Transaction } from "@mysten/sui/transactions";
@@ -124,17 +123,14 @@ export function EventManageScreen({ id }: { id: string }) {
   }, [capsQ.data, id]);
 
   // --- Mint log (sales / gross / attendees) for this event ---
-  const mintedQ = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: `${PACKAGE_ID}::market::TicketMinted` }, order: "descending", limit: 50 },
-    { staleTime: 30_000 },
-  );
+  // FULLY enumerate the global TicketMinted/CheckedIn logs (cursor-followed via
+  // useAllEvents, ~1000-log bound) instead of one capped 50-log page: a single
+  // page is platform-wide newest-first, so once ~50 newer logs exist this event's
+  // own rows fall off and the gross/check-in tallies (which gate withdraw) silently
+  // undercount. `*.data?.truncated` flags when even ~1000 wasn't enough.
+  const mintedQ = useAllEvents(`${PACKAGE_ID}::market::TicketMinted`);
   // --- Check-in log for this event ---
-  const checkedQ = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: `${PACKAGE_ID}::checkin::CheckedIn` }, order: "descending", limit: 50 },
-    { staleTime: 30_000 },
-  );
+  const checkedQ = useAllEvents(`${PACKAGE_ID}::checkin::CheckedIn`);
 
   // --- Walrus metadata (category, venue, city, cover, description) ---
   const uri = f ? String(f.uri ?? "") : "";
@@ -151,6 +147,8 @@ export function EventManageScreen({ id }: { id: string }) {
   const eventSeq = f ? String(f.event_seq) : "";
   const mints = useMemo(() => {
     if (!mintedQ.data) return [] as TicketMintedJson[];
+    // mintedQ.data is useAllEvents' { data, truncated } envelope (≅ the old
+    // PaginatedEvents): .data is the SuiEvent[], same hop count as before.
     return mintedQ.data.data
       .map((e) => e.parsedJson as TicketMintedJson)
       .filter((p) => p.event_id === id || String(p.event_seq) === eventSeq);
@@ -161,6 +159,10 @@ export function EventManageScreen({ id }: { id: string }) {
       .map((e) => e.parsedJson as CheckedInJson)
       .filter((p) => p.event_id === id || String(p.event_seq) === eventSeq);
   }, [checkedQ.data, id, eventSeq]);
+
+  // Either log hit the ~1000-log page bound (older sales/check-ins exist but
+  // aren't loaded) — surfaced in the disclaimer below the stat tiles.
+  const tallyTruncated = Boolean(mintedQ.data?.truncated || checkedQ.data?.truncated);
 
   // Gross per coin (sum of total_paid grouped by coin type).
   const grossByCoin = useMemo(() => {
@@ -452,8 +454,11 @@ export function EventManageScreen({ id }: { id: string }) {
         </div>
       </div>
       <p className="text-[11px]" style={{ color: "var(--fg3)", marginTop: -16 }}>
-        Gross sales and check-ins are tallied from the 50 most recent on-chain logs, not the full
-        history. On-chain escrow isn&apos;t exposed as a readable field — withdraw to settle.
+        Gross sales and check-ins are tallied from on-chain logs (up to the ~1000 most recent).
+        {tallyTruncated
+          ? " This event has more activity than that — older sales and check-ins aren't all loaded yet, so these figures may undercount."
+          : ""}{" "}
+        On-chain escrow isn&apos;t exposed as a readable field — withdraw to settle.
       </p>
 
       {/* === Capacity bar === */}

@@ -3,25 +3,32 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
+import { useQuery } from "@tanstack/react-query";
+import { ENOKI_ENABLED, REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
 import { getFields, totalWithFee } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
-import { useCurrentAccount, useSuiQuery } from "@/lib/hooks";
+import {
+  useCurrentAccount,
+  useCurrentClient,
+  useSignAndExecute,
+  useSponsorAndExecute,
+  useSuiQuery,
+} from "@/lib/hooks";
 import { useEventPrices } from "@/lib/events";
 import { recordRecentlyViewed } from "@/lib/discovery";
 import { useEventMarkets } from "@/lib/markets";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
-import { blobUrl, isBlobId } from "@/lib/walrus";
+import { blobUrl, isBlobId, storeJson } from "@/lib/walrus";
 import { useIsVerified } from "@/lib/verification";
 import { eventShareUrl } from "@/lib/share";
 import { POAP_TYPE } from "@/lib/poap";
 import {
-  addReview,
   averageRating,
   hasReviewed as reviewedByAuthor,
   listReviews,
-  type Review,
+  reviewPostTx,
 } from "@/lib/reviews";
+import { TxLink } from "@/components/TxLink";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { EventPoster } from "@/components/EventPoster";
@@ -35,6 +42,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
+  CoinBalance,
+  GetAllBalancesParams,
   GetObjectParams,
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
@@ -51,6 +60,41 @@ function fmtDate(ms: number): string {
 }
 function fmtTime(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// True when `balance` (smallest units) can cover `required` (smallest units,
+// already fee-inclusive). `balance === undefined` means "not loaded yet" → we do
+// NOT block the button on an unknown balance (avoid a flash-disabled CTA on a slow
+// RPC); we only disable once we've confirmed the wallet is short.
+// Exported for unit testing (see __tests__/EventPageScreen.balance.test.ts).
+export function canAfford(balance: bigint | undefined, required: bigint): boolean {
+  if (balance === undefined) return true;
+  return balance >= required;
+}
+
+// Inline "you can't afford this" hint under a Buy button when the connected
+// wallet's balance of the selected coin can't cover the fee-inclusive total
+// (USDC → Circle faucet; anything else → Sui testnet coins guide).
+function InsufficientCoinHint({ symbol }: { symbol: string }) {
+  const isUsdc = symbol === "USDC";
+  return (
+    <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
+      Not enough {symbol} to buy this ticket.{" "}
+      <a
+        href={
+          isUsdc
+            ? "https://faucet.circle.com/"
+            : "https://docs.sui.io/guides/developer/getting-started/get-coins"
+        }
+        target="_blank"
+        rel="noreferrer"
+        style={{ color: "var(--hi-blue)", textDecoration: "underline" }}
+      >
+        Get testnet {symbol}
+      </a>
+      .
+    </div>
+  );
 }
 
 function GoodToKnow({ icon, title, value }: { icon: string; title: string; value: string }) {
@@ -125,44 +169,70 @@ export function EventPageScreen({ id }: { id: string }) {
     },
     { enabled: Boolean(addr) },
   );
-  const holdsEventPoap = useMemo(() => {
-    if (!addr || !poapsQ.data) return false;
-    return poapsQ.data.data.some((entry) => {
+  // The objectId of a POAP the wallet holds for THIS event (null if none) — both
+  // the review gate and the on-chain post need it (post_review takes &Poap).
+  const eventPoapId = useMemo(() => {
+    if (!addr || !poapsQ.data) return null;
+    for (const entry of poapsQ.data.data) {
       const fields = getFields(entry);
-      return fields != null && String(fields.event_id) === id;
-    });
+      if (fields != null && String(fields.event_id) === id) {
+        const oid = entry.data?.objectId;
+        if (oid) return oid;
+      }
+    }
+    return null;
   }, [addr, poapsQ.data, id]);
+  const holdsEventPoap = Boolean(eventPoapId);
 
-  // Persistence is device-local (localStorage) in v1 behind lib/reviews.ts; see
-  // the storage-decision note there. `reviews` is the rendered list, refreshed
-  // from the store on mount/account-change and optimistically after a submit.
-  const [reviews, setReviews] = useState<Review[]>([]);
+  // Reviews are SHARED on-chain (GH#58): a Walrus body + a `ReviewPosted` anchor
+  // queried back here (no Seal — reviews are public). Deduped by author (latest
+  // per wallet), newest first. lib/reviews.ts owns the read.
+  const reviewClient = useCurrentClient();
+  const regular = useSignAndExecute();
+  const sponsored = useSponsorAndExecute();
+  const reviewsQ = useQuery({
+    queryKey: ["reviews", id],
+    queryFn: () =>
+      listReviews(reviewClient as unknown as Parameters<typeof listReviews>[0], id),
+    staleTime: 30_000,
+  });
+  const reviews = useMemo(() => reviewsQ.data ?? [], [reviewsQ.data]);
   const [submittingReview, setSubmittingReview] = useState(false);
-  useEffect(() => {
-    setReviews(listReviews(id));
-  }, [id]);
+
   const reviewSummary = useMemo(() => averageRating(reviews), [reviews]);
   const alreadyReviewed = useMemo(
-    () => (addr ? reviewedByAuthor(id, addr) : false),
-    [addr, id, reviews],
+    () => (addr ? reviewedByAuthor(reviews, addr) : false),
+    [addr, reviews],
   );
   const canReview = Boolean(addr) && holdsEventPoap && !poapsQ.isLoading;
 
   const submitReview = useCallback(
-    (rating: number, comment: string) => {
-      if (!addr) return;
+    async (rating: number, comment: string) => {
+      if (!addr || !eventPoapId) return;
       setSubmittingReview(true);
       try {
-        const next = addReview({ eventId: id, rating, comment, author: addr });
-        setReviews(next);
-        toast.success("Review posted", { description: "Thanks for sharing!" });
+        const blobId = await storeJson({
+          event_id: id,
+          rating,
+          comment,
+          author: addr,
+          ts_ms: Date.now(),
+        });
+        const tx = reviewPostTx({ eventId: id, poapId: eventPoapId, rating, blobId });
+        const out = ENOKI_ENABLED
+          ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
+          : await regular.mutateAsync({ transaction: tx });
+        toast.success("Review posted", {
+          description: <TxLink digest={out.digest} chars={10} />,
+        });
+        await reviewsQ.refetch();
       } catch (e: unknown) {
         toast.error(humanizeError(e));
       } finally {
         setSubmittingReview(false);
       }
     },
-    [addr, id],
+    [addr, eventPoapId, id, regular, sponsored, reviewsQ],
   );
 
   useEffect(() => {
@@ -186,6 +256,15 @@ export function EventPageScreen({ id }: { id: string }) {
   useEffect(() => {
     recordRecentlyViewed(id);
   }, [id]);
+
+  // 016 pre-flight: the connected wallet's balances across all coins, so a priced
+  // Buy button can be disabled (with a faucet hint) when the wallet can't cover the
+  // fee-inclusive total. A hook → must run before the early returns below.
+  const balancesQ = useSuiQuery<"getAllBalances", GetAllBalancesParams, CoinBalance[]>(
+    "getAllBalances",
+    { owner: addr ?? "" },
+    { enabled: Boolean(addr), staleTime: 15_000 },
+  );
 
   // ---- loading / error / not-found ----
   if (q.isLoading) {
@@ -239,6 +318,9 @@ export function EventPageScreen({ id }: { id: string }) {
   const isOrganizer = Boolean(addr) && addr === organizer;
 
   const prices = pricesBySeq.get(eventSeq) ?? [];
+  const balanceByCoin = new Map<string, bigint>(
+    (balancesQ.data ?? []).map((b) => [b.coinType, BigInt(b.totalBalance)]),
+  );
 
   const cat = meta?.category;
   const coverUrl =
@@ -405,7 +487,7 @@ export function EventPageScreen({ id }: { id: string }) {
                 title="Refunds"
                 value={
                   isRefundable
-                    ? `Refundable up to ${Math.round(REFUND_PERIOD_MS / 86_400_000)} days before`
+                    ? `Refundable for ${Math.round(REFUND_PERIOD_MS / 86_400_000)} days after the event ends (3% fee non-refundable)`
                     : "Non-refundable"
                 }
               />
@@ -448,9 +530,10 @@ export function EventPageScreen({ id }: { id: string }) {
             </Button>
           )}
 
-          {/* Reviews — POAP-gated (only attendees who hold this event's POAP
-              can post). Persistence is device-local in v1 (see lib/reviews.ts);
-              the gate itself is a real on-chain getOwnedObjects read. */}
+          {/* Reviews — POAP-gated (only attendees who hold this event's POAP can
+              post). Shared on-chain: a public Walrus body + a `ReviewPosted`
+              anchor (see lib/reviews.ts), queried back here; the gate is a real
+              on-chain getOwnedObjects read. */}
           <ReviewsSection
             reviews={reviews}
             averageRating={reviewSummary.avg}
@@ -510,26 +593,34 @@ export function EventPageScreen({ id }: { id: string }) {
                 {prices.map((p) => {
                   const ci = coinInfo(p.coinType);
                   const total = totalWithFee(BigInt(p.price));
+                  // 016: undefined balance (loading / disconnected) is treated as
+                  // affordable so we don't flash-disable; only a confirmed-short
+                  // connected wallet is blocked, with a faucet hint.
+                  const bal = balancesQ.data ? (balanceByCoin.get(p.coinType) ?? 0n) : undefined;
+                  const affordable = canAfford(bal, total);
                   return (
-                    <Tooltip key={p.coinType}>
-                      <TooltipTrigger asChild>
-                        <Button
-                          className="w-full"
-                          disabled={!canPurchase}
-                          onClick={() => openBuy(p.coinType, BigInt(p.price))}
-                        >
-                          <Icon icon="ion:ticket" size={16} />
-                          {!canPurchase
-                            ? statusLabel()
-                            : addr
-                              ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
-                              : "Connect to buy"}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        Total incl. 3% fee: {fmtAmount(total, ci.decimals)} {ci.symbol}
-                      </TooltipContent>
-                    </Tooltip>
+                    <div key={p.coinType} className="space-y-1.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            className="w-full"
+                            disabled={!canPurchase || !affordable}
+                            onClick={() => openBuy(p.coinType, BigInt(p.price))}
+                          >
+                            <Icon icon="ion:ticket" size={16} />
+                            {!canPurchase
+                              ? statusLabel()
+                              : addr
+                                ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
+                                : "Connect to buy"}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Total incl. 3% fee: {fmtAmount(total, ci.decimals)} {ci.symbol}
+                        </TooltipContent>
+                      </Tooltip>
+                      {Boolean(addr) && !affordable && <InsufficientCoinHint symbol={ci.symbol} />}
+                    </div>
                   );
                 })}
                 <div className="text-[11px]" style={{ color: "var(--fg3)" }}>

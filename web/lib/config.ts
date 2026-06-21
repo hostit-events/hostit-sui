@@ -121,6 +121,18 @@ export const WALRUS_DRAFT_EPOCHS = 30;
 export const SEAL_KEY_SERVER_ID =
   "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98";
 export const SEAL_AGGREGATOR_URL = "https://seal-aggregator-testnet.mystenlabs.com";
+/**
+ * Whether the Seal client verifies key-server authenticity. ON for every real
+ * network (testnet/mainnet/devnet); OFF only on `localnet`, where there is no
+ * reachable key server to verify against (dev escape hatch). Previously this
+ * was a hardcoded `false` in lib/seal.ts shipped to prod.
+ *
+ * Note: the installed @mysten/seal SDK skips the /service check for
+ * committee-type key servers even when this is true (it goes through the
+ * aggregator), so enabling it does not add a network round-trip for the current
+ * testnet committee server — it just stops trusting non-committee servers blindly.
+ */
+export const SEAL_VERIFY_KEY_SERVERS = NETWORK !== "localnet";
 // Seal policies live in OUR package (the seal_approve_* fns in `access`).
 export const SEAL_POLICY_PACKAGE_ID = PACKAGE_ID;
 
@@ -157,6 +169,10 @@ export const SPONSORED_TARGETS: readonly string[] = [
   // Organizer admin — introduced in the organizer-admin upgrade (PACKAGE_ID_LATEST).
   `${PACKAGE_ID_LATEST}::forum::post_as_organizer`,
   `${PACKAGE_ID_LATEST}::forum::moderate`,
+  // Event reviews (GH#58) — `reviews` is introduced in the reviews UPGRADE, so
+  // its call target is PACKAGE_ID_LATEST. After that upgrade deploys, roll
+  // PACKAGE_ID_LATEST to the new version so this (and EV_REVIEW_POSTED) resolve.
+  `${PACKAGE_ID_LATEST}::reviews::post_review`,
   `${PACKAGE_ID_LATEST}::predict::create_sellout_market`,
   `${PACKAGE_ID_LATEST}::predict::bet_yes`,
   `${PACKAGE_ID_LATEST}::predict::bet_no`,
@@ -338,6 +354,12 @@ export const EV_TICKET_MINTED = `${PACKAGE_ID}::market::TicketMinted`;
 // `poap`, per the package-versioning rule). Emitted from poap::claim_poap with
 // fields { event_seq, event_id, ticket_id, poap_id, recipient }.
 export const EV_POAP_CLAIMED = `${PACKAGE_ID}::poap::PoapClaimed`;
+// reviews::ReviewPosted (GH#58) — the `reviews` module is introduced in the
+// reviews UPGRADE, so this struct's type origin is PACKAGE_ID_LATEST (like the
+// predict structs / forum::PostModerated). AFTER the reviews upgrade deploys,
+// roll PACKAGE_ID_LATEST in config.ts to the new version so this resolves.
+// Fields: { event_id, event_seq, author, rating, blob_id, ts_ms }.
+export const EV_REVIEW_POSTED = `${PACKAGE_ID_LATEST}::reviews::ReviewPosted`;
 // predict (parimutuel sellout market) log type strings for queryEvents
 export const EV_MARKET_CREATED = `${PREDICT_SELLOUT_PKG}::predict::MarketCreated`;
 export const EV_BET = `${PREDICT_SELLOUT_PKG}::predict::Bet`;

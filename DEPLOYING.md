@@ -91,8 +91,9 @@ flowchart TD
 
 ## Fresh-publish procedure (only when forced)
 
-When an upgrade can't carry the change (see [the two cases above](#upgrade-vs-fresh-publish--choosing)). A fresh publish gives the package a **new id**, re-runs the module initializers, and **orphans all prior on-chain state** (old `Event`/`Ticket`/market/forum objects and their event logs stop resolving under the new package type) — acceptable on testnet, **never on mainnet**.
+When an upgrade can't carry the change (see [the three cases above](#upgrade-vs-fresh-publish--choosing)). A fresh publish gives the package a **new id**, re-runs the module initializers, and **orphans all prior on-chain state** (old `Event`/`Ticket`/market/forum objects and their event logs stop resolving under the new package type) — acceptable on testnet, **never on mainnet**.
 
+0. **Prep (required by automated address management).** A publish over an existing `[published.testnet]` entry will *not* mint a new id. Remove the `[published.testnet]` block from `Published.toml` and set `[addresses] hostit_ticket = "0x0"` in `Move.toml` (or run `bun scripts/roll-fresh-publish.mjs`'s prep step), so the publish below assigns a fresh id.
 1. **Authorized publish** (gated), from the repo root on the 1.73.1 binary + a gRPC env:
    ```bash
    sui client publish --gas-budget 2000000000 --json > /tmp/publish.json
@@ -113,7 +114,7 @@ When an upgrade can't carry the change (see [the two cases above](#upgrade-vs-fr
 
 ## Verifying the type-origin wiring
 
-The most common upgrade bug is a frontend constant pointing at the wrong package version, which silently makes queries return nothing. After deploying, confirm a freshly created object's on-chain `objectType` exactly matches the `*_TYPE` constant the UI filters on. For example, a `predict::RangeMarket` created after v3 reports `0xb5c952…::predict::RangeMarket<…>` — so `RANGE_MARKET_TYPE` must use `PACKAGE_ID_LATEST`, **not** the original `PACKAGE_ID`.
+The most common upgrade bug is a frontend constant pointing at the wrong package version, which silently makes queries return nothing. After deploying, confirm a freshly created object's on-chain `objectType` exactly matches the `*_TYPE` constant the UI filters on. Today (fresh v1) every type origin equals `0x6a41303d…671fcd`, so a `predict::RangeMarket` reports `0x6a41303d…::predict::RangeMarket<…>`. After the first in-place upgrade, newly created objects of an upgrade-introduced struct report the **new** package id — so that struct's `*_TYPE` must use `PACKAGE_ID_LATEST` (or its own pinned origin), **not** the original `PACKAGE_ID`.
 
 ## Authorization
 

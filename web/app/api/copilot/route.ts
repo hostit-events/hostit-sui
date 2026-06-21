@@ -83,9 +83,37 @@ const MAX_BODY_BYTES = 32 * 1024;
 // blast radius (an attacker can't smuggle a long instruction via a context field).
 const MAX_EV_STR_LEN = 200;
 
+// Each chat message's content is clamped to bound the prompt-injection blast
+// radius and token cost per turn (the event-context strings are clamped the
+// same way via MAX_EV_STR_LEN). The 32 KB whole-body cap is a coarse outer
+// bound; this is the per-message bound.
+export const MAX_MSG_CONTENT_LEN = 2000;
+
+// Stable, generic client-facing error code. Distinguishes a fallback caused by
+// an upstream/runtime error from a fallback caused by no GROQ_API_KEY, WITHOUT
+// leaking upstream detail. Detail is logged server-side only.
+const ERR_UPSTREAM = "copilot_upstream_error";
+
 function clampStr(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
   return v.slice(0, MAX_EV_STR_LEN);
+}
+
+// Whitelist each incoming chat turn into a fresh { role, content } object,
+// dropping malformed entries and clamping content length. Mirrors the
+// coerce-into-a-fresh-object posture of sanitizeEvent().
+export function sanitizeMessages(raw: unknown): Msg[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Msg[] = [];
+  for (const m of raw) {
+    if (!m || typeof m !== "object") continue;
+    const role = (m as { role?: unknown }).role;
+    const content = (m as { content?: unknown }).content;
+    if (role !== "user" && role !== "assistant") continue;
+    if (typeof content !== "string") continue;
+    out.push({ role, content: content.slice(0, MAX_MSG_CONTENT_LEN) });
+  }
+  return out;
 }
 function clampNum(v: unknown): number | undefined {
   if (v === undefined || v === null) return undefined;
@@ -171,7 +199,7 @@ export async function POST(req: Request) {
   // object of ONLY the known EventCtx fields (numerics via Number(), strings
   // truncated) before it reaches systemPrompt().
   const ev = sanitizeEvent(body.event);
-  const messages = (body.messages ?? []).slice(-12);
+  const messages = sanitizeMessages(body.messages).slice(-12);
   // Recalled organizer memory passed by the client (already namespace-scoped &
   // signature-verified server-side at /api/memory/recall). Sanitize defensively.
   const memory = Array.isArray(body.memory)
@@ -201,12 +229,15 @@ export async function POST(req: Request) {
       }),
     });
     if (!r.ok) {
-      return Response.json({ reply: fallback(ev, messages), sourced: "fallback", error: await r.text() });
+      const detail = await r.text().catch(() => "");
+      console.error(`[copilot] groq upstream ${r.status}: ${detail.slice(0, 500)}`);
+      return Response.json({ reply: fallback(ev, messages), sourced: "fallback", error: ERR_UPSTREAM });
     }
     const j = (await r.json()) as { choices?: { message?: { content?: string } }[] };
     const reply = (j.choices?.[0]?.message?.content ?? "").trim();
     return Response.json({ reply: reply || fallback(ev, messages), sourced: "groq" });
   } catch (e: unknown) {
-    return Response.json({ reply: fallback(ev, messages), sourced: "fallback", error: String(e) });
+    console.error("[copilot] groq request failed:", e);
+    return Response.json({ reply: fallback(ev, messages), sourced: "fallback", error: ERR_UPSTREAM });
   }
 }
