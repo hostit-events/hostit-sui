@@ -7,6 +7,7 @@ import { fromHex, toHex, fromBase64 } from "@mysten/sui/utils";
 import { useQuery } from "@tanstack/react-query";
 import {
   COINS,
+  EMAIL_ENABLED,
   ENOKI_ENABLED,
   NETWORK,
   ORGANIZER_CAP_TYPE,
@@ -47,6 +48,10 @@ import {
 } from "@/lib/predict";
 import { encryptForumMessage, forumPostAsOrganizerTx } from "@/lib/forum";
 import { averageRating, listReviews } from "@/lib/reviews";
+import { EV_EMAIL_GRANT_CREATED } from "@/lib/identity";
+import { createSessionKey } from "@/lib/seal";
+import { useSignPersonalMessage, decryptAttendeeEmail } from "@/lib/emailBinding";
+import type { ProfileEnvelope } from "@/lib/profile";
 import { useAllEvents } from "@/lib/events";
 import { useEventMarkets } from "@/lib/markets";
 import {
@@ -58,7 +63,7 @@ import {
 } from "@/lib/hooks";
 import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, putEventMetadata, type EventMetadata } from "@/lib/metadata";
-import { storeFile } from "@/lib/walrus";
+import { storeFile, readJson } from "@/lib/walrus";
 import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
 import {
   STAGE_LABEL,
@@ -655,6 +660,9 @@ export function EventManageScreen({ id }: { id: string }) {
             truncated={tallyTruncated}
             publicUrl={publicUrl}
           />
+
+          {/* Opted-in attendee emails (GH#96) */}
+          <AttendeeEmailsCard ctx={ctx} />
 
           {/* Danger zone */}
           <CancelZone ctx={ctx} isCancelled={isCancelled} />
@@ -1326,6 +1334,103 @@ function CancelZone({ ctx, isCancelled }: { ctx: DeckCtx; isCancelled: boolean }
 }
 
 // === Telemetry stream (recent on-chain activity) ===
+
+// === Opted-in attendee emails (organizer decrypt via Seal) ===
+
+function AttendeeEmailsCard({ ctx }: { ctx: DeckCtx }) {
+  const grantsQ = useAllEvents(EV_EMAIL_GRANT_CREATED);
+  const client = useCurrentClient();
+  const sign = useSignPersonalMessage();
+  const [emails, setEmails] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  const grants = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { user: string; grantId: string }[] = [];
+    for (const ev of grantsQ.data?.data ?? []) {
+      const p = ev.parsedJson as { grant_id: string; user: string; event_id: string };
+      if (p.event_id !== ctx.eventId || seen.has(p.user)) continue;
+      seen.add(p.user);
+      out.push({ user: p.user, grantId: p.grant_id });
+    }
+    return out;
+  }, [grantsQ.data, ctx.eventId]);
+
+  async function reveal() {
+    setBusy(true);
+    try {
+      // One signature mints the SessionKey; reused across every attendee row.
+      const sk = await createSessionKey(client, ctx.addr, sign);
+      const next: Record<string, string> = {};
+      for (const g of grants) {
+        try {
+          const ptr = (await (await fetch(`/api/identity/profile-pointer?address=${g.user}`)).json()) as {
+            blobId?: string | null;
+          };
+          if (!ptr.blobId) {
+            next[g.user] = "(no profile)";
+            continue;
+          }
+          const env = await readJson<ProfileEnvelope>(ptr.blobId);
+          if (!env?.emailBlobId) {
+            next[g.user] = "(no email)";
+            continue;
+          }
+          next[g.user] = await decryptAttendeeEmail(
+            client,
+            sk,
+            env.emailBlobId,
+            ctx.capId,
+            ctx.eventId,
+            g.grantId,
+          );
+        } catch {
+          next[g.user] = "(revoked / unavailable)";
+        }
+      }
+      setEmails(next);
+    } catch (e) {
+      toast.error(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!EMAIL_ENABLED || grants.length === 0) return null;
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="font-medium">Attendee emails</div>
+          <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            {grants.length} attendee{grants.length === 1 ? "" : "s"} opted to share their email.
+            Decrypts in your browser via Seal — one signature.
+          </div>
+        </div>
+        <Button size="sm" disabled={busy} onClick={reveal}>
+          {busy ? "Decrypting…" : Object.keys(emails).length ? "Re-decrypt" : "Reveal emails"}
+        </Button>
+      </div>
+      {Object.keys(emails).length > 0 && (
+        <div style={{ display: "grid", gap: 6 }}>
+          {grants.map((g) => (
+            <div
+              key={g.user}
+              className="flex items-center justify-between gap-3"
+              style={{ padding: "8px 10px", border: "1px solid var(--hair)", borderRadius: 10 }}
+            >
+              <AddressDisplay address={g.user} suffix={4} />
+              <span className="mono text-[13px]" style={{ color: "var(--fg2)" }}>
+                {emails[g.user] ?? "…"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function TelemetryStream({
   mints,

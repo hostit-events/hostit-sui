@@ -2,11 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useCurrentAccount, useCurrentClient } from "@/lib/hooks";
+import { useCurrentAccount, useCurrentClient, useSignAndExecute, useSponsorAndExecute } from "@/lib/hooks";
 import { useSuiNSNames } from "@/lib/verification";
 import { sealEncrypt, sealDecrypt, createSessionKey, approveSelf } from "@/lib/seal";
-import { storeBlob, readBlob } from "@/lib/walrus";
+import { storeBlob, readBlob, storeFile, storeJson } from "@/lib/walrus";
 import { CATEGORIES } from "@/lib/data";
+import { EMAIL_ENABLED, ENOKI_ENABLED } from "@/lib/config";
+import { useProfile } from "@/lib/profile";
+import { useIsGoogleSession } from "@/lib/auth";
+import {
+  useSignPersonalMessage,
+  decryptOwnEmail,
+  eraseEmail,
+  writeProfilePointer,
+  type SubmitTx,
+} from "@/lib/emailBinding";
+import { EmailCaptureDialog } from "@/components/EmailCaptureDialog";
 import { Icon } from "@/components/Icon";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { AuthControl } from "@/components/AuthControl";
@@ -19,7 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { toBase64, fromBase64 } from "@mysten/sui/utils";
+import { toBase64, fromBase64, fromHex } from "@mysten/sui/utils";
 import { useDAppKit } from "@mysten/dapp-kit-react";
 import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
 
@@ -72,6 +83,7 @@ const NOTIF_ROWS: { id: keyof Notifs; label: string; sub: string; icon: string }
 
 const NAV = [
   { id: "account", label: "Account", icon: "ic:round-person" },
+  { id: "email", label: "Email", icon: "ic:round-mail" },
   { id: "kyc", label: "Verification", icon: "ph:identification-card-fill" },
   { id: "interests", label: "Interests", icon: "ic:round-favorite" },
   { id: "notifications", label: "Notifications", icon: "ic:round-notifications" },
@@ -105,6 +117,100 @@ export function SettingsScreen() {
   const [kycBlobId, setKycBlobId] = useState<string | null>(null);
   const [kycBusy, setKycBusy] = useState(false);
   const [kycDecrypted, setKycDecrypted] = useState<{ legalName?: string; idNumber?: string } | null>(null);
+
+  // ── Account email + public profile (GH#96) ──
+  const isGoogle = useIsGoogleSession();
+  const sign = useSignPersonalMessage();
+  const sponsored = useSponsorAndExecute();
+  const regular = useSignAndExecute();
+  const prof = useProfile(addr);
+  const submitTx: SubmitTx = (tx) =>
+    ENOKI_ENABLED
+      ? sponsored.mutateAsync({ transaction: tx, sender: addr ?? "" })
+      : regular.mutateAsync({ transaction: tx });
+  const [emailPlain, setEmailPlain] = useState<string | null>(null);
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [bindOpen, setBindOpen] = useState(false);
+  const [username, setUsername] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const emailBound = Boolean(prof.data?.emailBlobId);
+
+  useEffect(() => {
+    if (prof.data?.username) setUsername(prof.data.username);
+  }, [prof.data?.username]);
+
+  // Save the on-chain (Walrus) public profile: username + optional avatar upload.
+  async function savePublicProfile() {
+    if (!addr) {
+      toast.error("Connect a wallet first.");
+      return;
+    }
+    setProfileBusy(true);
+    const tid = toast.loading("Saving profile…");
+    try {
+      let avatarBlobId = prof.data?.avatarBlobId;
+      if (avatarFile) {
+        toast.loading("Uploading avatar to Walrus…", { id: tid });
+        avatarBlobId = await storeFile(avatarFile);
+      }
+      const next = { ...(prof.data ?? {}), v: 1 as const, username: username.trim() || undefined, avatarBlobId };
+      const blobId = await storeJson(next);
+      await writeProfilePointer(addr, blobId, sign);
+      setAvatarFile(null);
+      prof.refetch();
+      toast.success("Public profile saved", { id: tid });
+    } catch (e) {
+      toast.error(`Couldn't save: ${e instanceof Error ? e.message : "error"}`, { id: tid });
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function revealEmail() {
+    if (!addr || !prof.data?.emailBlobId) return;
+    setEmailBusy(true);
+    const tid = toast.loading("Approve the signature to decrypt…");
+    try {
+      const email = await decryptOwnEmail(suiClient, addr, prof.data.emailBlobId, sign);
+      setEmailPlain(email);
+      toast.success("Decrypted — visible only in this session.", { id: tid });
+    } catch (e) {
+      toast.error(`Couldn't decrypt: ${e instanceof Error ? e.message : "error"}`, { id: tid });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function doEraseEmail() {
+    if (!addr || !prof.data?.emailHash) {
+      toast.error("Nothing to remove.");
+      return;
+    }
+    setEmailBusy(true);
+    const tid = toast.loading("Removing your email…");
+    try {
+      await eraseEmail({
+        address: addr,
+        hashBytes: Array.from(fromHex(prof.data.emailHash)),
+        sign,
+        submitTx,
+        baseProfile: prof.data,
+      });
+      // For Google: stop the gate from silently re-binding the same email next login.
+      if (typeof localStorage !== "undefined") localStorage.setItem(`hostit:emailErased:${addr}`, "1");
+      setEmailPlain(null);
+      prof.refetch();
+      toast.success("Email removed", {
+        id: tid,
+        description: "On-chain record cleared. The encrypted blob expires with its Walrus TTL.",
+      });
+    } catch (e) {
+      toast.error(`Couldn't remove: ${e instanceof Error ? e.message : "error"}`, { id: tid });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
 
   // hydrate from localStorage on mount
   useEffect(() => {
@@ -287,6 +393,131 @@ export function SettingsScreen() {
                   <Icon icon="ic:round-save" size={16} /> Save
                 </Button>
               </div>
+            </Card>
+
+            {/* Public profile (on-chain): username + avatar used across HostIt. */}
+            <Card className="space-y-5 px-4" style={{ marginTop: 24 }}>
+              <div>
+                <div className="section-label">Public profile</div>
+                <p className="page-sub" style={{ fontSize: 13 }}>
+                  Username + avatar shown across HostIt (stored on Walrus, keyed to your address). A
+                  suiNS name, if set, takes precedence as your verified handle.
+                </p>
+              </div>
+              {!addr ? (
+                <div className="mono">Connect a wallet to set a public profile.</div>
+              ) : (
+                <>
+                  <div className="field">
+                    <Label htmlFor="settings-username">Username</Label>
+                    <Input
+                      id="settings-username"
+                      placeholder="alice"
+                      maxLength={40}
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      disabled={profileBusy}
+                    />
+                  </div>
+                  <div className="field">
+                    <Label htmlFor="settings-avatar">Avatar</Label>
+                    <Input
+                      id="settings-avatar"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
+                      disabled={profileBusy}
+                    />
+                    <p className="text-[12px]" style={{ color: "var(--fg3)" }}>
+                      {avatarFile
+                        ? avatarFile.name
+                        : prof.data?.avatarBlobId
+                          ? "An avatar is set — choose a file to replace."
+                          : "Optional."}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button onClick={savePublicProfile} disabled={profileBusy}>
+                      <Icon icon="ic:round-save" size={16} /> {profileBusy ? "Saving…" : "Save public profile"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="email">
+            <Card className="space-y-5 px-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="section-label">Email</div>
+                  <p className="page-sub" style={{ fontSize: 13 }}>
+                    Encrypted with Seal — an organizer sees it only if you opt in when buying a ticket.
+                  </p>
+                </div>
+                {emailBound && (
+                  <Badge variant="secondary">
+                    <Icon icon="ph:lock-key-fill" size={13} />{" "}
+                    {prof.data?.emailSource === "google" ? "Google" : "Wallet"}
+                  </Badge>
+                )}
+              </div>
+
+              {!EMAIL_ENABLED ? (
+                <div className="mono">Email isn&apos;t enabled on this deployment.</div>
+              ) : !addr ? (
+                <div className="mono">Connect a wallet to manage your email.</div>
+              ) : !emailBound ? (
+                <div className="space-y-3">
+                  <p className="text-sm" style={{ color: "var(--fg2)" }}>No email linked yet.</p>
+                  <Button onClick={() => setBindOpen(true)}>
+                    <Icon icon="ic:round-mail" size={16} /> Add email
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm" style={{ color: "var(--fg2)" }}>
+                      {emailPlain ?? "•••••••• (encrypted)"}
+                    </span>
+                    {!emailPlain && (
+                      <Button variant="outline" size="sm" disabled={emailBusy} onClick={revealEmail}>
+                        <Icon icon="ph:eye" size={14} /> Reveal
+                      </Button>
+                    )}
+                  </div>
+                  <div
+                    className="flex items-center gap-2 flex-wrap"
+                    style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }}
+                  >
+                    {prof.data?.emailSource === "google" ? (
+                      <>
+                        <span className="text-[12px]" style={{ color: "var(--fg3)" }}>
+                          <Icon icon="ph:lock-fill" size={13} /> Verified via Google — managed by your
+                          Google account.
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={emailBusy}
+                          onClick={doEraseEmail}
+                          style={{ borderColor: "var(--color-danger)", color: "var(--color-danger)" }}
+                        >
+                          Delete my email data
+                        </Button>
+                      </>
+                    ) : (
+                      <Button variant="outline" size="sm" disabled={emailBusy} onClick={doEraseEmail}>
+                        Disconnect email
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-[11px]" style={{ color: "var(--fg3)" }}>
+                    Removing clears the on-chain record + revokes shares. The encrypted blob expires
+                    with its Walrus TTL; an organizer you already shared with keeps what they decrypted.
+                  </p>
+                </div>
+              )}
             </Card>
           </TabsContent>
 
@@ -498,6 +729,19 @@ export function SettingsScreen() {
           </TabsContent>
         </div>
       </Tabs>
+
+      {bindOpen && addr && (
+        <EmailCaptureDialog
+          address={addr}
+          mode={isGoogle ? "google" : "wallet"}
+          baseProfile={prof.data ?? null}
+          onClose={() => setBindOpen(false)}
+          onBound={() => {
+            setBindOpen(false);
+            prof.refetch();
+          }}
+        />
+      )}
     </div>
   );
 }
