@@ -1,0 +1,65 @@
+name: Web CI
+
+# Typecheck + lint + unit-test the Next.js app on every push/PR that touches
+# the frontend tree. The app lives under web/ (its own package.json, tsconfig,
+# and bun.lock), so every step runs with `working-directory: web`. Move-only
+# changes don't trigger this (path filter); the Move package is gated by
+# move.yml instead.
+
+on:
+  push:
+    branches: [main]
+    paths: [web/**, .github/workflows/web.yml]
+  pull_request:
+    paths: [web/**, .github/workflows/web.yml]
+
+concurrency:
+  group: web-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pin bun + Node so CI is reproducible (mirrors move.yml's pinned
+      # SUI_VERSION). Bump these deliberately, in lockstep with the toolchain.
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.18
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Cache bun's global module store, keyed on the frozen lockfile.
+      - name: Cache bun install (~/.bun/install/cache)
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Primary gate (per CLAUDE.md): typecheck with the project tsconfig.
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Unit tests (vitest)
+        run: bun run test

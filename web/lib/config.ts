@@ -93,6 +93,18 @@ export const WALRUS_DRAFT_EPOCHS = 30;
 export const SEAL_KEY_SERVER_ID =
   "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98";
 export const SEAL_AGGREGATOR_URL = "https://seal-aggregator-testnet.mystenlabs.com";
+/**
+ * Whether the Seal client verifies key-server authenticity. ON for every real
+ * network (testnet/mainnet/devnet); OFF only on `localnet`, where there is no
+ * reachable key server to verify against (dev escape hatch). Previously this
+ * was a hardcoded `false` in lib/seal.ts shipped to prod.
+ *
+ * Note: the installed @mysten/seal SDK skips the /service check for
+ * committee-type key servers even when this is true (it goes through the
+ * aggregator), so enabling it does not add a network round-trip for the current
+ * testnet committee server — it just stops trusting non-committee servers blindly.
+ */
+export const SEAL_VERIFY_KEY_SERVERS = NETWORK !== "localnet";
 // Seal policies live in OUR package (the seal_approve_* fns in `access`).
 export const SEAL_POLICY_PACKAGE_ID = PACKAGE_ID;
 

@@ -29,10 +29,12 @@
 // plain Ed25519/Secp256k1 wallet signatures.
 
 import "server-only";
+import { createHash } from "node:crypto";
 import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
 import { NETWORK } from "@/lib/config";
 import { canonicalizeSuiAddress } from "@/lib/memwal";
+import { kvEnabled, kvClaimOnce } from "@/lib/kvStore";
 // Challenge format lives in a client-safe module (no `server-only`) so the
 // browser (lib/memoryClient.ts) and this server module share one builder.
 import {
@@ -108,6 +110,68 @@ function parseChallenge(message: string, expectedOwner: string): void {
   }
 }
 
+// ── One-time replay nonce ────────────────────────────────────────────────────
+// The replay vector is an IDENTICAL resend of a signed envelope within the 5-min
+// window: the same `message` bytes produce the same signature and verify again. We
+// reject the SECOND use by recording a hash of the canonical challenge message in a
+// shared store with a TTL equal to the replay window. When a KV is configured the
+// claim is atomic + cross-instance (kvStore.ts); otherwise we fall back to a
+// per-process Map so local dev / single-instance still get replay protection.
+
+/** key → expiry-ms, the per-process fallback when no shared KV is configured. */
+const localNonces = new Map<string, number>();
+
+function sweepLocalNonces(now: number): void {
+  if (localNonces.size < 1024) return;
+  for (const [k, expiry] of localNonces) {
+    if (expiry <= now) localNonces.delete(k);
+  }
+}
+
+/** Stable nonce key: SHA-256 of the canonical challenge message (NOT the signature
+ *  — so an identical replay maps to the same key while the signature may differ for
+ *  malleable schemes). */
+function nonceKey(message: string): string {
+  return `nonce:mem:${createHash("sha256").update(message, "utf8").digest("hex")}`;
+}
+
+/**
+ * Claim the challenge as single-use, or throw MemoryAuthError on a replay. Called
+ * only AFTER the signature is proven and the challenge structure/window validated.
+ * Fail-open on a KV outage (kvClaimOnce returns true) so a Redis blip cannot 401 a
+ * legitimate caller.
+ */
+async function consumeNonce(message: string): Promise<void> {
+  const key = nonceKey(message);
+  const ttlMs = MEMORY_CHALLENGE_MAX_AGE_MS;
+
+  if (kvEnabled()) {
+    const claimed = await kvClaimOnce(key, ttlMs);
+    if (!claimed) {
+      throw new MemoryAuthError("Auth challenge already used (replay)");
+    }
+    return;
+  }
+
+  // Per-process fallback.
+  const now = Date.now();
+  sweepLocalNonces(now);
+  const existing = localNonces.get(key);
+  if (existing !== undefined && existing > now) {
+    throw new MemoryAuthError("Auth challenge already used (replay)");
+  }
+  localNonces.set(key, now + ttlMs);
+}
+
+/** TEST-ONLY: clear the per-process nonce fallback between tests. Guarded so it is
+ *  a no-op outside the test runner. */
+export function __resetNonceStoreForTest(): void {
+  if (process.env.NODE_ENV !== "test" && process.env.VITEST === undefined) {
+    return;
+  }
+  localNonces.clear();
+}
+
 /** The signed-request envelope every /api/memory/* route now requires. */
 export interface MemoryAuthBody {
   owner?: unknown;
@@ -176,6 +240,10 @@ export async function verifyMemoryCaller(body: MemoryAuthBody): Promise<string> 
 
   // Only now (signature proven) enforce the challenge structure + replay window.
   parseChallenge(message, owner);
+
+  // Single-use: reject an identical resend of this exact signed challenge within
+  // the replay window (the structural window above only bounds AGE, not reuse).
+  await consumeNonce(message);
 
   return owner;
 }

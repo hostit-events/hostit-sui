@@ -8,15 +8,14 @@
 // expiry) and claim. Submits via a local run(tx) (sponsored-or-regular, mirrors
 // the EventPageScreen buy flow) and surfaces a TxLink + humanizeError.
 //
-// The SelloutMarketCard here was MOVED verbatim out of EventPageScreen.tsx; its
-// behavior is identical (it self-discovers its own market id from MarketCreated
-// logs, so it does not depend on useEventMarkets). The RangeMarketCard is new
-// and takes its marketId from useEventMarkets.
+// Both cards take their marketId from useEventMarkets (one fully-enumerated
+// MarketCreated query per kind in the parent, first-match UI-level dedup) — the
+// sellout card no longer self-discovers its id with its own capped query.
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { Transaction } from "@mysten/sui/transactions";
-import { ENOKI_ENABLED, USDC_COIN_TYPE, EV_MARKET_CREATED, fmtAmount, toUnits } from "@/lib/config";
+import { ENOKI_ENABLED, USDC_COIN_TYPE, fmtAmount, toUnits } from "@/lib/config";
 import {
   betBucketTx,
   betNoTx,
@@ -62,8 +61,6 @@ import type {
   GetBalanceParams,
   GetDynamicFieldObjectParams,
   GetObjectParams,
-  PaginatedEvents,
-  QueryEventsParams,
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
 
@@ -156,19 +153,23 @@ function NoUsdcHint() {
 /**
  * "Sellout Clock" parimutuel prediction market for an event. Permissionless:
  * any connected wallet can open the market, bet YES/NO before doors, settle
- * after the deadline, and claim winnings once settled. Reads the (first) market
- * for this event from `MarketCreated` logs filtered by `event_seq`, then
- * getObject -> parseMarketFields. UI-level dedup surfaces only the first market.
+ * after the deadline, and claim winnings once settled. The market id arrives as a
+ * prop from the parent's useEventMarkets (first-match dedup over fully-enumerated
+ * MarketCreated logs); this card just getObject -> parseMarketFields it.
  */
 function SelloutMarketCard({
   eventId,
-  eventSeq,
+  marketId,
+  marketsLoading,
   maxTickets,
+  refetchMarkets,
   onMarketChange,
 }: {
   eventId: string;
-  eventSeq: string;
+  marketId: string | null;
+  marketsLoading: boolean;
   maxTickets: bigint;
+  refetchMarkets: () => void;
   // Called after a successful tx so a parent (the event page) can re-run its own
   // market-existence query and reveal/refresh the section without a reload.
   onMarketChange?: () => void;
@@ -182,22 +183,9 @@ function SelloutMarketCard({
 
   const [amount, setAmount] = useState("1");
 
-  // MarketCreated logs (newest first), filtered client-side to this event_seq.
-  const created = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_MARKET_CREATED }, order: "descending", limit: 50 },
-    { staleTime: 30_000 },
-  );
-
-  // First/only market id for this event (UI-level dedup).
-  const marketId = useMemo(() => {
-    if (!created.data) return null;
-    for (const ev of created.data.data) {
-      const p = ev.parsedJson as { event_seq?: string | number; market_id?: string };
-      if (String(p.event_seq) === eventSeq && p.market_id) return String(p.market_id);
-    }
-    return null;
-  }, [created.data, eventSeq]);
+  // `marketId` is the sellout market for this event_seq, discovered once by the
+  // parent's useEventMarkets (first-match UI-level dedup over fully-enumerated
+  // MarketCreated logs) and passed down — no longer re-fetched per card.
 
   // Fetch + parse the market object once we know its id.
   const marketQ = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>(
@@ -250,7 +238,7 @@ function SelloutMarketCard({
       toast.success("Transaction confirmed", {
         description: <TxLink digest={out.digest} chars={10} />,
       });
-      created.refetch();
+      refetchMarkets();
       marketQ.refetch();
       balanceQ.refetch();
       winStakeQ.refetch();
@@ -261,7 +249,7 @@ function SelloutMarketCard({
   }
 
   const now = Date.now();
-  const loading = created.isLoading || (Boolean(marketId) && marketQ.isLoading);
+  const loading = marketsLoading || (Boolean(marketId) && marketQ.isLoading);
   // The market id resolved but its getObject failed/returned no parseable
   // content — surface an error + Retry instead of a permanent "Loading…".
   const marketLoadFailed =
@@ -973,9 +961,9 @@ function RangeMarketCard({
 
 /**
  * "Markets" section for an event page: the Sellout Clock (binary) + the
- * Final-tickets-sold range market, side by side on wide viewports. Range
- * discovery flows through useEventMarkets; the Sellout card self-discovers its
- * own market id (kept as-is from the original inline component).
+ * Final-tickets-sold range market, side by side on wide viewports. Both market
+ * ids come from a single useEventMarkets call (one fully-enumerated MarketCreated
+ * query per kind) and are passed down to the cards.
  */
 export function EventMarketsScreen({
   eventId,
@@ -991,14 +979,16 @@ export function EventMarketsScreen({
   // the section live, without a reload.
   onMarketChange?: () => void;
 }) {
-  const { rangeMarketId, loading, refetch } = useEventMarkets(eventSeq);
+  const { selloutMarketId, rangeMarketId, loading, refetch } = useEventMarkets(eventSeq);
 
   return (
     <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))" }}>
       <SelloutMarketCard
         eventId={eventId}
-        eventSeq={eventSeq}
+        marketId={selloutMarketId}
+        marketsLoading={loading}
         maxTickets={maxTickets}
+        refetchMarkets={refetch}
         onMarketChange={onMarketChange}
       />
       <RangeMarketCard

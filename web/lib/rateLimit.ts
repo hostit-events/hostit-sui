@@ -1,19 +1,32 @@
-// HostIt MemWal — minimal in-memory rate limiter for the /api/memory/* routes.
+// HostIt MemWal — rate limiter for the cost-sensitive API edge (the /api/memory/*
+// routes, /api/copilot, /api/create-assist, and the sponsor routes).
 //
 // SERVER-ONLY. Used to bound LLM/relayer cost amplification on the unauthenticated
-// edge of the memory routes (especially /api/memory/analyze, which invokes the
+// edge of those routes (especially /api/memory/analyze, which invokes the
 // relayer's LLM).
 //
-// SCOPE / KNOWN LIMITATION: this is a per-process fixed-window counter. It is good
-// enough for a single instance but is NOT robust across a multi-instance / serverless
-// deployment (each lambda/worker has its own memory), and it cannot enforce a
-// replay-nonce store for the auth challenge. Robust limiting AND replay protection
-// both need a shared KV store (Vercel KV / Upstash Redis) — the SAME store ISSUES.md
-// #17 calls for — so they should be implemented together. The `rateLimit(key)`
-// function below is the clean seam: swap its body for a KV-backed sliding window
-// (and add a nonce check in memwalAuth) when #17 lands; callers do not change.
+// DESIGN: a per-process fixed-window counter (the local `Map` below) that is now
+// ALSO shared-aware via a write-through to a KV store (lib/kvStore.ts, Vercel KV /
+// Upstash Redis). The local Map stays the synchronous fast path AND the always-
+// available fallback, so `rateLimit()` keeps its synchronous signature and NO
+// caller changes. When a KV is configured, every call fires a best-effort async
+// increment of a shared windowed counter; once the GLOBAL count crosses the limit,
+// the local bucket is "primed" to its limit so the NEXT call on this instance is
+// rejected even though the count originated on another instance. This converges a
+// burst that fans out across instances to the GLOBAL limit within one window,
+// instead of today's effective `limit × instance-count`.
+//
+// TRADE-OFF (intentional, bounded): each cold instance can let the FIRST request
+// of a window through before the KV-primed rejection lands (the increment is async
+// and is not awaited on the return path). That is a deliberate relaxation, far
+// tighter than the old unbounded per-instance multiplication. FAIL-OPEN: a KV
+// outage degrades to the pure per-process behavior (errors are swallowed in
+// kvStore.ts) rather than failing requests. A strictly synchronous global decision
+// would require making this seam `async` and editing every caller — deliberately
+// out of scope. The replay-nonce store that shares this KV lives in lib/memwalAuth.ts.
 
 import "server-only";
+import { kvEnabled, kvIncrWindow } from "@/lib/kvStore";
 
 export interface RateLimitResult {
   ok: boolean;
@@ -41,8 +54,36 @@ function sweep(now: number): void {
 }
 
 /**
+ * Best-effort: increment the SHARED (cross-instance) counter for `key` and, if the
+ * global count has crossed `limit`, prime the local bucket to its limit so the next
+ * call on THIS instance is rejected too. Fire-and-forget — never awaited on the
+ * synchronous return path; kvStore swallows its own errors (fail-open).
+ */
+function primeFromKv(key: string, limit: number, windowMs: number): void {
+  void kvIncrWindow(`rl:${key}`, windowMs).then((count) => {
+    if (count === null) return; // KV disabled or errored — keep per-process result.
+    if (count < limit) return; // still under the global cap.
+    const now = Date.now();
+    const existing = buckets.get(key);
+    // Raise the local count to the limit (do not lower it, and do not extend a
+    // still-valid window's resetAt) so subsequent local calls are rejected until
+    // the window rolls over.
+    if (!existing || existing.resetAt <= now) {
+      buckets.set(key, { count: limit, resetAt: now + windowMs });
+    } else if (existing.count < limit) {
+      existing.count = limit;
+    }
+  });
+}
+
+/**
  * Fixed-window counter. Returns whether `key` is still within `limit` requests
- * per `windowMs`. KV-swap seam — see the module header.
+ * per `windowMs`.
+ *
+ * The local `Map` is the synchronous decision and the always-available fallback;
+ * when a KV is configured this ALSO fires a best-effort shared increment that
+ * primes the local bucket from the global count (see `primeFromKv` and the module
+ * header). The signature is intentionally synchronous so callers stay untouched.
  */
 export function rateLimit(
   key: string,
@@ -51,6 +92,10 @@ export function rateLimit(
 ): RateLimitResult {
   const now = Date.now();
   sweep(now);
+
+  // Share/learn the global count across instances (best-effort, non-blocking).
+  if (kvEnabled()) primeFromKv(key, limit, windowMs);
+
   const existing = buckets.get(key);
   if (!existing || existing.resetAt <= now) {
     buckets.set(key, { count: 1, resetAt: now + windowMs });
@@ -74,19 +119,28 @@ export function rateLimit(
 }
 
 /**
- * Best-effort client IP from standard forwarded headers (Vercel / proxies set
- * `x-forwarded-for`; `x-real-ip` as a fallback). Returns "unknown" when absent so
+ * Best-effort client IP from forwarded headers. Returns "unknown" when absent so
  * the limiter still applies a shared bucket rather than failing open per-request.
+ *
+ * Precedence (verified → real-ip → first XFF → "unknown"): prefer a
+ * platform-verified header because the raw `x-forwarded-for` first entry is
+ * CLIENT-CONTROLLED and can be spoofed to rotate the per-IP bucket. On Vercel the
+ * edge sets `x-vercel-forwarded-for` / `x-real-ip` to the true client IP and a
+ * client cannot forge them.
  */
 export function clientIpFromHeaders(headers: Headers): string {
-  const xff = headers.get("x-forwarded-for");
-  if (xff) {
-    // First entry is the originating client; the rest are proxies.
-    const first = xff.split(",")[0]?.trim();
+  // Platform-verified client IP (Vercel sets these; a client cannot forge them
+  // because the edge overwrites them). Prefer them over x-forwarded-for.
+  const verified =
+    headers.get("x-vercel-forwarded-for") ?? headers.get("x-real-ip");
+  if (verified) {
+    const first = verified.split(",")[0]?.trim();
     if (first) return first;
   }
-  const realIp = headers.get("x-real-ip");
-  if (realIp) return realIp.trim();
+  // Fallback: x-forwarded-for is CLIENT-CONTROLLED and spoofable — last resort.
+  const xff = headers.get("x-forwarded-for");
+  const first = xff?.split(",")[0]?.trim();
+  if (first) return first;
   return "unknown";
 }
 

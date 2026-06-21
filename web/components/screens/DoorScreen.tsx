@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import type { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { ENOKI_ENABLED, PACKAGE_ID } from "@/lib/config";
+import { useAllEvents } from "@/lib/events";
 import { checkInTx, getFields } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
 import {
@@ -33,8 +34,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   GetObjectParams,
-  QueryEventsParams,
-  PaginatedEvents,
   SuiEvent,
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
@@ -105,15 +104,25 @@ export function DoorScreen({ id }: { id: string }) {
   const venue = [meta?.venue, meta?.city].filter(Boolean).join(", ");
 
   // --- Live attendance (CheckedIn logs, scoped to this event) ---
-  // Newest-first; refetched on an interval so the door view stays live.
-  const checkinQ = useSuiQuery<"queryEvents", QueryEventsParams, PaginatedEvents>(
-    "queryEvents",
-    { query: { MoveEventType: EV_CHECKED_IN }, order: "descending", limit: 50 },
-    { refetchInterval: 8000, staleTime: 4000 },
-  );
+  // FULLY enumerate the global CheckedIn log (cursor-followed via useAllEvents,
+  // ~1000-log bound) instead of a single capped 50-log page — newest-first the
+  // door would otherwise drop this event's older admits once ~50 newer check-ins
+  // exist platform-wide. useAllEvents has no refetchInterval, so liveness is
+  // restored via the 8s interval effect below.
+  const checkinQ = useAllEvents(EV_CHECKED_IN);
+
+  // Keep the door view live: useAllEvents has no built-in polling, so re-run the
+  // enumeration every 8s (matching the old refetchInterval). Cleanup clears the
+  // timer so no stray refetch fires after unmount.
+  useEffect(() => {
+    const t = setInterval(() => void checkinQ.refetch(), 8000);
+    return () => clearInterval(t);
+  }, [checkinQ.refetch]);
 
   const admits: Admit[] = useMemo(() => {
     if (!checkinQ.data) return [];
+    // checkinQ.data is useAllEvents' { data, truncated } envelope (≅ the old
+    // PaginatedEvents): .data is the SuiEvent[], same hop count as before.
     return checkinQ.data.data
       .filter((ev: SuiEvent) => (ev.parsedJson as CheckedInJson)?.event_id === id)
       .map((ev: SuiEvent) => {
@@ -365,6 +374,14 @@ export function DoorScreen({ id }: { id: string }) {
                 </div>
               ))}
             </Card>
+          )}
+          {checkinQ.data?.truncated && (
+            <p
+              className="mono text-sm"
+              style={{ color: "var(--fg3)", textAlign: "center", marginTop: 12 }}
+            >
+              Showing the most recent check-ins — older admits aren&apos;t all loaded yet.
+            </p>
           )}
         </div>
       </main>
