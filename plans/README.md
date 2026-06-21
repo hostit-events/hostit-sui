@@ -34,7 +34,7 @@ rest. Numeric order below ≈ priority order.
 | 008 | Move quick correctness (overflow, zero-bet, signer-emit, doc) | P1 | S | LOW | upgrade-gated | DONE (source+tests; deploy gated) |
 | 009 | Refund fee policy → Option B (disclose forfeit) | P1 | M | MED | default chosen | DONE (source+tests; deploy gated) |
 | 010 | Per-day check-in unit → PER-TICKET | P2 | M | MED | default chosen | DONE (source+tests; deploy gated) |
-| 011 | Parimutuel dust sweep | P2 | M | LOW | upgrade-gated | BLOCKED — plan predicate unsafe; needs `had_winners` struct flag; reverted, re-plan |
+| 011 | Parimutuel dust → fold into final winner's claim | P2 | M | MED | upgrade-gated | TODO — RE-PLANNED (verified-safe, no struct change, no new fn); ready to implement |
 | 012 | Capped-page reads → cursor enumeration + truncation banner | P1 | M | LOW | — | DONE |
 | 013 | Real scannable ticket QR (add generator) | P1 | S | LOW | — | DONE |
 | 014 | `humanizeError` predict codes 7/8 | P2 | S | LOW | partial until FE-1 (deferred) | DONE |
@@ -47,7 +47,7 @@ rest. Numeric order below ≈ priority order.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
-**Implemented on branch `advisor/implement-plans`** (5 commits, gates green: `sui move test` 100/100, web `tsc` clean + `lint` 0 errors + 109 vitest). **19/20 DONE; 011 deferred.** Decision plans resolved by the controller's default (reversible): 009 = Option B (disclose the non-refundable fee, no fund-flow change); 010 = PER-TICKET dedup. The Move plans (007–010) have code+tests landed and passing, but on-chain **deployment (`sui client upgrade`) is gated** and awaits explicit authorization. KV-backed rate limiting (003) is inert until `RATE_LIMIT_KV_REST_*` env vars are provisioned in the deploy environment.
+**Implemented on branch `advisor/implement-plans`** (5 commits, gates green: `sui move test` 100/100, web `tsc` clean + `lint` 0 errors + 109 vitest). **19/20 DONE; 011 re-planned** (corrected fold-into-final-winner design — adversarially verified safe, no struct change, no new function; ready to implement). Decision plans resolved by the controller's default (reversible): 009 = Option B (disclose the non-refundable fee, no fund-flow change); 010 = PER-TICKET dedup. The Move plans (007–010) have code+tests landed and passing, but on-chain **deployment (`sui client upgrade`) is gated** and awaits explicit authorization. KV-backed rate limiting (003) is inert until `RATE_LIMIT_KV_REST_*` env vars are provisioned in the deploy environment.
 
 ## Dependency & sequencing notes
 
