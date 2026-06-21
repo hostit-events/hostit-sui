@@ -40,7 +40,7 @@ export function Header({
   const pathname = usePathname() || "/";
   return (
     <header className="sticky top-0 z-50 hidden border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:block">
-      <div className="mx-auto flex h-14 max-w-[1340px] items-center gap-2 px-4 sm:px-6">
+      <div className="mx-auto flex h-14 max-w-[1180px] items-center gap-2 px-5 sm:px-8">
         <Link href="/" className="mr-1 flex flex-none items-center" aria-label="HostIt home">
           <Logo size={24} />
         </Link>
@@ -92,7 +92,7 @@ export function Header({
           <Button asChild size="sm">
             <Link href="/create" aria-label="Create event">
               <Icon icon="ic:round-add" size={16} />
-              <span className="hidden sm:inline">Create event</span>
+              <span className="hidden lg:inline">Create event</span>
             </Link>
           </Button>
           <Tooltip>

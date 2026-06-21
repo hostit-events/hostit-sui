@@ -6,7 +6,7 @@ import { Logo } from "./Logo";
 export function Footer() {
   return (
     <footer className="mt-auto hidden border-t bg-background/60 backdrop-blur md:block">
-      <div className="mx-auto max-w-[1340px] px-4 py-8 sm:px-6">
+      <div className="mx-auto max-w-[1180px] px-5 py-8 sm:px-8">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand + blurb */}
           <div className="space-y-3">
