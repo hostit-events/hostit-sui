@@ -26,17 +26,17 @@ export function explorerTxUrl(digest: string): string {
 
 export const PACKAGE_ID =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_ID ??
-  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
+  "0x4529d4479b506910b40bdb5c47074b2fd7bd5f2e6cd4f52a5380d3a7b2e2c054";
 
 /** Shared protocol Hub (config + 3% fee treasury). Every paid sale needs it. */
 export const HUB_ID =
   process.env.NEXT_PUBLIC_HOSTIT_HUB_ID ??
-  "0x9468930839c11fdad73e739a4052d1fe9367bd8ea98dd3f7198bade074138514";
+  "0xf30ce9e7c2d30c767a086ce6dc50bc9a24585e134ea1e658d7d376eeaebf47d8";
 
 // (POAP dedup is now a flag on the Ticket — no shared PoapRegistry object.)
 
 export const TRANSFER_POLICY_ID =
-  "0xb6e6f12c669175ded687cbccb559ec32ac555229f832abd6cb13331d858a7c85";
+  "0xf026a4112518fec5f2aff912e5f04c6f36297e1249babce6e67992ab2a88454a";
 
 // === Protocol governance (OpenZeppelin access_control RBAC — GH#51) ===
 // Replaces the single PlatformCap with revocable, role-scoped authority
@@ -56,11 +56,12 @@ export const OZ_ACCESS_PKG =
 
 /**
  * Shared `AccessControl<governance::GOVERNANCE>` registry — created by
- * `governance::init` at the GH#51 fresh publish (2026-06-21). Deployer
- * 0xc8567c14… is the default admin holding TreasuryRole + ConfigAdminRole.
+ * `governance::init` at publish (re-minted on every fresh publish; last rolled at
+ * the GH#87 publish, 2026-06-21). Deployer 0xc8567c14… is the default admin
+ * holding TreasuryRole + ConfigAdminRole.
  */
 export const GOVERNANCE_REGISTRY_ID =
-  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "0xdda50d958747715c464a9d098d7b84fabb6037bcfd477b3909767659b25dfd27";
+  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "0x43933dca58136b34866f9e80af36fa712b7ff533fff3c47d20e875f5134fe01c";
 
 /** Target a function in the OZ `access_control` module (root-admin flow). */
 export const ozAccessTarget = (fn: string) =>
