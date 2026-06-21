@@ -53,11 +53,12 @@ graph TB
 
 ### On-chain modules
 
-A single Move package, `hostit_ticket`, with capability-based access control (capabilities replace EVM roles) and millisecond timestamps throughout.
+A single Move package, `hostit_ticket`, with hybrid access control: **per-event** admin is a capability (`OrganizerCap{event_id}`), while **protocol-level** governance uses OpenZeppelin's `access_control` RBAC (`governance` module). Millisecond timestamps throughout.
 
 ```mermaid
 graph LR
   hub["hub<br/>shared Hub · config · 3% fee treasury"]
+  governance["governance<br/>OZ access_control RBAC<br/>Treasury + Config roles"]
   event["event<br/>Event + OrganizerCap · prices · escrow"]
   ticket["ticket<br/>Ticket NFT (event_id field)"]
   market["market<br/>buy · claim_free · refund · withdraw"]
@@ -67,6 +68,7 @@ graph LR
   access["access<br/>Seal seal_approve_* policies"]
   predict["predict<br/>parimutuel Sellout + Range markets"]
 
+  hub --> governance
   market --> hub
   market --> event
   market --> ticket
@@ -83,7 +85,8 @@ graph LR
 
 | Module | Responsibility |
 |---|---|
-| `hub` | Shared `Hub`: protocol config + 3% platform-fee treasury. Touched by every paid sale. |
+| `hub` | Shared `Hub`: protocol config + 3% platform-fee treasury. Touched by every paid sale. Treasury/config entry fns are gated on `governance` roles. |
+| `governance` | Protocol RBAC via OpenZeppelin `access_control`: shared `AccessControl<GOVERNANCE>` with `TreasuryRole` (fee withdrawal) + `ConfigAdminRole` (param tuning), plus a timelocked root-admin handoff. Replaces the single `PlatformCap`. |
 | `event` | `create_event` shares one `Event` per event and mints an `OrganizerCap{event_id}`; holds per-coin price + escrow via dynamic fields. |
 | `ticket` | One global `Ticket` type with an `event_id` field (not a per-event type). |
 | `market` | `buy` / `buy_with_sui` / `claim_free` / `refund` / `withdraw_event_balance`; splits the fee into Hub + event escrow. |
@@ -150,9 +153,13 @@ Live on **Sui testnet**. `web/lib/config.ts` is the source of truth (all values 
 | Shared `Hub` | `0x78d084b5fb25875d9d87cb04540e1f9633f2ad2851d2b1667db4f8d30131ef24` |
 | Shared `PoapRegistry` | `0x8488a2e7b7079d71fad61e358dcde291635d94a69c43a7c4bc5b72b4470ae888` |
 | Shared `TransferPolicy<Ticket>` | `0x8817b9cbefdb613cf3c63e2eb3b0a7993575e8e992abc11df40fb8c32b1b78f3` |
+| Shared `AccessControl<GOVERNANCE>` (protocol RBAC) | _pending GH#51 fresh publish_ |
+| OZ `access_control` dependency (testnet, published-at) | `0xb357701a…390465d7` |
 | Collateral coin (testnet USDC) | `0xa1ec7fc0…::usdc::USDC` |
 
 > **Package versioning (Sui upgrades):** this is a **fresh publish (version 1)** — the predict `settle_after_ms` struct change was upgrade-incompatible, so the package was re-published rather than upgraded. With no upgrades yet, `PACKAGE_ID`, `PACKAGE_ID_LATEST`, `PREDICT_SELLOUT_PKG`, and `PREDICT_RANGE_PKG` are all the same id; a future in-place upgrade re-splits them (latest rolls forward, type origins stay pinned). See [`CLAUDE.md`](./CLAUDE.md) for the full model.
+>
+> **GH#51 (protocol RBAC) requires another fresh publish.** OpenZeppelin `access_control` mints its registry from a One-Time Witness in `init`, and `init` runs only at *first publish* — so RBAC cannot be added via `sui client upgrade`. On that gated deploy, the package id rolls forward, a shared `AccessControl<GOVERNANCE>` registry is created (deployer = default admin holding `TreasuryRole` + `ConfigAdminRole`), the old `PlatformCap` is gone, and `config.ts` + this table update. See [`DEPLOYING.md`](./DEPLOYING.md).
 
 ---
 
@@ -161,9 +168,9 @@ Live on **Sui testnet**. `web/lib/config.ts` is the source of truth (all values 
 ```
 hostit-sui/
 ├── Move.toml · Move.lock · Published.toml   # Sui Move package manifest + publish state
-├── sources/                                 # Move modules: hub · event · ticket · market · checkin
-│                                            #               access · poap · forum · predict
-├── tests/                                   # Move test_scenario suites (57 tests)
+├── sources/                                 # Move modules: hub · governance · event · ticket · market
+│                                            #               checkin · access · poap · forum · predict
+├── tests/                                   # Move test_scenario suites
 └── web/                                     # Next.js dApp
     ├── app/                                 # App Router routes (+ /api/sponsor, /api/copilot)
     ├── components/ (+ screens/)             # UI

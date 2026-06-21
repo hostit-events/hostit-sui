@@ -14,6 +14,8 @@ use sui::package;
 use sui::transfer_policy;
 use std::ascii;
 use std::type_name;
+use openzeppelin_access::access_control::Auth;
+use hostit_ticket::governance::{TreasuryRole, ConfigAdminRole};
 use hostit_ticket::ticket::{Self, Ticket};
 
 // === Constants (parity with EVM, seconds→ms) ===
@@ -46,10 +48,6 @@ public struct Hub has key {
     /// Sequential event id source, for parity with the EVM `ticketId` counter.
     event_count: u64,
 }
-
-/// Protocol owner authority (EVM `onlyOwner`). Holding it lets you withdraw
-/// platform fees and tune protocol parameters.
-public struct PlatformCap has key, store { id: UID }
 
 /// Dynamic-field key for the per-coin-type platform fee balance.
 public struct FeeBalanceKey<phantom T> has copy, drop, store {}
@@ -91,7 +89,9 @@ fun init(otw: HUB, ctx: &mut TxContext) {
     };
     transfer::share_object(hub);
 
-    transfer::transfer(PlatformCap { id: object::new(ctx) }, ctx.sender());
+    // Protocol authority (formerly the single `PlatformCap`) is RBAC now: the
+    // `governance` module stands up an OZ `AccessControl<GOVERNANCE>` in its own
+    // `init` and makes the deployer the default admin (see `governance.move`).
     transfer::public_transfer(publisher, ctx.sender());
 }
 
@@ -128,10 +128,11 @@ public fun platform_balance<T>(hub: &Hub): u64 {
     } else { 0 }
 }
 
-/// EVM `withdrawHostItBalance` — protocol owner withdraws accrued platform fees.
+/// EVM `withdrawHostItBalance` — withdraws accrued platform fees. Gated on
+/// `TreasuryRole` (mint the auth via `governance::treasury_auth`).
 public fun withdraw_platform_balance<T>(
     hub: &mut Hub,
-    _cap: &PlatformCap,
+    _auth: &Auth<TreasuryRole>,
     amount: u64,
     to: address,
     ctx: &mut TxContext,
@@ -149,19 +150,20 @@ public fun withdraw_platform_balance<T>(
     coin::from_balance(out, ctx)
 }
 
-// === Param tuning (PlatformCap) ===
+// === Param tuning (ConfigAdminRole) ===
+// Mint the auth via `governance::config_auth`.
 
-public fun set_fee_bps(hub: &mut Hub, _cap: &PlatformCap, bps: u64) {
+public fun set_fee_bps(hub: &mut Hub, _auth: &Auth<ConfigAdminRole>, bps: u64) {
     assert!(bps <= MAX_BPS, E_BPS_TOO_HIGH);
     hub.fee_bps = bps;
 }
 
-public fun set_royalty_bps(hub: &mut Hub, _cap: &PlatformCap, bps: u64) {
+public fun set_royalty_bps(hub: &mut Hub, _auth: &Auth<ConfigAdminRole>, bps: u64) {
     assert!(bps <= MAX_BPS, E_BPS_TOO_HIGH);
     hub.royalty_bps = bps;
 }
 
-public fun set_refund_period_ms(hub: &mut Hub, _cap: &PlatformCap, ms: u64) {
+public fun set_refund_period_ms(hub: &mut Hub, _auth: &Auth<ConfigAdminRole>, ms: u64) {
     hub.refund_period_ms = ms;
 }
 

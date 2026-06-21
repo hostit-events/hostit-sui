@@ -7,7 +7,7 @@
 /// `price` → the event's escrow `Balance<T>` and `hostit = price * fee_bps/1e4`
 /// → the Hub's platform `Balance<T>`. Organizer withdrawal of the escrow is
 /// gated on the refund window (if refundable); the platform fee is withdrawable
-/// immediately by `PlatformCap`.
+/// immediately by the `TreasuryRole` (see `governance` + `hub`).
 #[allow(lint(self_transfer))]
 module hostit_ticket::market;
 
