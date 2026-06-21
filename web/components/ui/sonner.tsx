@@ -38,6 +38,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast: "cn-toast",
+          // Break long unbroken strings (e.g. humanizeError can surface a raw
+          // 220-char error / object id with no spaces) so they wrap inside the
+          // toast instead of running past its right edge.
+          title: "break-words",
+          description: "break-words",
         },
       }}
       {...props}
