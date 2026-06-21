@@ -5,7 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import type { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
-import { ENOKI_ENABLED, PACKAGE_ID } from "@/lib/config";
+import { EMAIL_ENABLED, ENOKI_ENABLED, PACKAGE_ID, TICKET_TYPE } from "@/lib/config";
 import { useAllEvents } from "@/lib/events";
 import { checkInTx, getFields } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
@@ -19,7 +19,13 @@ import {
   staffPubkeyHex,
 } from "@/lib/staffKey";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
-import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
+import {
+  useCurrentAccount,
+  useCurrentClient,
+  useSignAndExecute,
+  useSponsorAndExecute,
+  useSuiQuery,
+} from "@/lib/hooks";
 import { Icon } from "@/components/Icon";
 import { Copy } from "@/components/animate-ui/icons/copy";
 import { RefreshCw } from "@/components/animate-ui/icons/refresh-cw";
@@ -34,6 +40,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   GetObjectParams,
+  GetOwnedObjectsParams,
+  PaginatedObjectsResponse,
   SuiEvent,
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
@@ -409,10 +417,18 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
 
+  const client = useCurrentClient() as unknown as {
+    getOwnedObjects: (p: GetOwnedObjectsParams) => Promise<PaginatedObjectsResponse>;
+  };
+
   const [keypair, setKeypair] = useState<Ed25519Keypair | null>(null);
   useEffect(() => {
     setKeypair(loadStaffKeypair());
   }, []);
+
+  // Will-call lookup: find an attendee's ticket for THIS event by email (GH#96).
+  const [emailInput, setEmailInput] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
 
   const [useCamera, setUseCamera] = useState(false);
   const [ticketInput, setTicketInput] = useState("");
@@ -473,8 +489,87 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
     }
   }
 
+  // Resolve an email → its registered wallet → that wallet's ticket for this
+  // event, and fill the ticket id. The holder still submits the check-in (they
+  // own the ticket), so this is will-call verification + auto-fill, not a
+  // staff-side override.
+  async function findByEmail() {
+    const em = emailInput.trim();
+    if (!em) return;
+    setLookupBusy(true);
+    try {
+      const r = await fetch("/api/identity/lookup-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em }),
+      });
+      const j = (await r.json()) as { address?: string | null; error?: string };
+      if (!r.ok) throw new Error(j.error || "Lookup failed");
+      if (!j.address) {
+        toast.error("No account is registered to that email.");
+        return;
+      }
+      const owner = j.address;
+      const res = await client.getOwnedObjects({
+        owner,
+        filter: { StructType: TICKET_TYPE },
+        options: { showContent: true },
+      });
+      const tickets = (res.data ?? [])
+        .map((e) => ({ id: e.data?.objectId, f: getFields(e) }))
+        .filter((t) => t.id && t.f && String(t.f.event_id) === eventId);
+      if (tickets.length === 0) {
+        toast.error("That attendee holds no ticket for this event.");
+        return;
+      }
+      const issued = tickets.find((t) => Number(t.f!.status) === 0) ?? tickets[0];
+      setTicketInput(issued.id!);
+      const checkedIn = Number(issued.f!.status) === 1;
+      const sameWallet = account?.address === owner;
+      toast.success(
+        `Found ${tickets.length} ticket${tickets.length === 1 ? "" : "s"}${checkedIn ? " · already checked in" : ""}`,
+        {
+          description: sameWallet
+            ? "This wallet holds it — sign the voucher to admit."
+            : "Ticket id filled. The holder must connect THIS wallet to submit the check-in.",
+        },
+      );
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setLookupBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-3" style={{ marginTop: 12 }}>
+      {EMAIL_ENABLED && (
+        <Card className="space-y-2 p-4">
+          <span className="section-label">Will-call — find by email</span>
+          <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
+            <div className="grow" style={{ minWidth: 200 }}>
+              <Input
+                type="email"
+                placeholder="attendee@example.com"
+                value={emailInput}
+                disabled={lookupBusy}
+                onChange={(e) => setEmailInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void findByEmail();
+                }}
+              />
+            </div>
+            <Button variant="outline" disabled={lookupBusy} onClick={findByEmail}>
+              {lookupBusy ? "Finding…" : "Find ticket"}
+            </Button>
+          </div>
+          <p className="text-[11px]" style={{ color: "var(--fg3)" }}>
+            Looks up the attendee&apos;s ticket and fills it below. They still tap in with their own
+            wallet (the ticket is theirs).
+          </p>
+        </Card>
+      )}
+
       {/* Reader: camera QR or typed/pasted ticket id */}
       <Card className="space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">

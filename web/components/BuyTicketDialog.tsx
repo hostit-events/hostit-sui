@@ -5,8 +5,11 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
-import { ENOKI_ENABLED, EV_TICKET_MINTED, coinInfo, fmtAmount } from "@/lib/config";
+import { EMAIL_ENABLED, ENOKI_ENABLED, EV_TICKET_MINTED, coinInfo, fmtAmount } from "@/lib/config";
 import { buyManyTx, claimFreeManyTx, totalWithFee } from "@/lib/ticketing";
+import { grantEmailAccessTx } from "@/lib/identity";
+import { useProfile } from "@/lib/profile";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   useCurrentAccount,
   useSignAndExecute,
@@ -148,6 +151,10 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
 
   const [step, setStep] = React.useState<Step>("connect");
   const [qty, setQty] = React.useState(1);
+  const [shareEmail, setShareEmail] = React.useState(false);
+  // Whether this buyer has an email to share (gates the opt-in checkbox).
+  const profile = useProfile(addr);
+  const hasEmail = Boolean(profile.data?.emailBlobId);
   const [digest, setDigest] = React.useState<string>("");
   const [result, setResult] = React.useState<{ count: number; serials: number[] }>({
     count: 0,
@@ -161,6 +168,7 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
     if (open) {
       setStep(addr ? "review" : "connect");
       setQty(1);
+      setShareEmail(false);
       setDigest("");
       setResult({ count: 0, serials: [] });
       setError(null);
@@ -248,6 +256,19 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
         description: <TxLink digest={out.digest} chars={10} />,
       });
       onSuccess?.();
+      // Opt-in: share email with this event's organizer (best-effort — never
+      // fails the purchase). Only when the buyer enabled it and has an email.
+      if (shareEmail && EMAIL_ENABLED && hasEmail) {
+        try {
+          const gtx = grantEmailAccessTx(payload.eventId);
+          await (ENOKI_ENABLED
+            ? sponsored.mutateAsync({ transaction: gtx, sender: addr })
+            : regular.mutateAsync({ transaction: gtx }));
+          toast.success("Email shared with the organizer");
+        } catch {
+          toast.message("Ticket minted — couldn't share your email (try from Settings).");
+        }
+      }
     } catch (e: unknown) {
       setError(humanizeError(e));
       setStep("review");
@@ -418,6 +439,20 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
                   <Icon icon="ph:sparkle-fill" size={12} />
                   You’ll receive {safeQty} {ticketWord(safeQty)}, minted on-chain to your address.
                 </p>
+
+                {EMAIL_ENABLED && hasEmail && (
+                  <label className="flex items-start gap-2 rounded-lg border bg-muted/20 p-3 text-xs cursor-pointer">
+                    <Checkbox
+                      checked={shareEmail}
+                      onCheckedChange={(v) => setShareEmail(Boolean(v))}
+                      className="mt-0.5"
+                    />
+                    <span className="text-muted-foreground">
+                      Share my email with this event&apos;s organizer (for tickets, reminders &amp;
+                      POAP). You can revoke it anytime in Settings.
+                    </span>
+                  </label>
+                )}
 
                 {error && (
                   <p role="alert" className="text-xs" style={{ color: "var(--color-danger)" }}>

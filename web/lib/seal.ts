@@ -108,6 +108,48 @@ export function approveOrganizer(tx: Transaction, id: string, capId: string, eve
   });
 }
 
+/** Domain-separation tag for a user's EMAIL Seal identity. MUST equal
+ *  `EMAIL_NS_TAG` in sources/access.move. Tag-FIRST so the email namespace is
+ *  disjoint from the bare-self (KYC/drafts) namespace — an attendee's email
+ *  grant can never reach their other self-encrypted PII. */
+export const EMAIL_NS_TAG = new TextEncoder().encode("hostit-email:"); // == b"hostit-email:" in access.move
+
+/** Seal identity for a user's EMAIL: EMAIL_NS_TAG ‖ address bytes ‖ nonce.
+ *  Satisfies `seal_approve_own_email` (owner) and `seal_approve_attendee_email`
+ *  (organizer with the user's opt-in grant) — never `seal_approve_self`. */
+export function makeEmailSealId(address: string): string {
+  const nonce = crypto.getRandomValues(new Uint8Array(5));
+  return toHex(new Uint8Array([...EMAIL_NS_TAG, ...fromHex(address), ...nonce]));
+}
+
+/** Owner decrypts their own email (id under EMAIL_NS_TAG ‖ their address). */
+export function approveOwnEmail(tx: Transaction, id: string) {
+  tx.moveCall({
+    target: `${PACKAGE_ID}::access::seal_approve_own_email`,
+    arguments: [tx.pure.vector("u8", Array.from(fromHex(id)))],
+  });
+}
+
+/** Organizer decrypts an opted-in attendee's email: needs the event's
+ *  OrganizerCap + the attendee's shared `EmailGrant` for this event. */
+export function approveAttendeeEmail(
+  tx: Transaction,
+  id: string,
+  capId: string,
+  eventId: string,
+  grantId: string,
+) {
+  tx.moveCall({
+    target: `${PACKAGE_ID}::access::seal_approve_attendee_email`,
+    arguments: [
+      tx.pure.vector("u8", Array.from(fromHex(id))),
+      tx.object(capId),
+      tx.object(eventId),
+      tx.object(grantId),
+    ],
+  });
+}
+
 export async function sealDecrypt(
   suiClient: any,
   sessionKey: SessionKey,

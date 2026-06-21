@@ -7,11 +7,13 @@ import { fromHex, toHex, fromBase64 } from "@mysten/sui/utils";
 import { useQuery } from "@tanstack/react-query";
 import {
   COINS,
+  EMAIL_ENABLED,
   ENOKI_ENABLED,
   NETWORK,
   ORGANIZER_CAP_TYPE,
   PACKAGE_ID,
   REFUND_PERIOD_MS,
+  TICKET_TYPE,
   USDC_COIN_TYPE,
   coinInfo,
   fmtAmount,
@@ -25,6 +27,8 @@ import {
   removeCheckinSignerTx,
   removePriceTx,
   setAllowSelfCheckinTx,
+  setAllowOrganizerCheckinTx,
+  organizerCheckInTx,
   setCancelledTx,
   setIsFreeTx,
   setIsRefundableTx,
@@ -47,6 +51,10 @@ import {
 } from "@/lib/predict";
 import { encryptForumMessage, forumPostAsOrganizerTx } from "@/lib/forum";
 import { averageRating, listReviews } from "@/lib/reviews";
+import { EV_EMAIL_GRANT_CREATED } from "@/lib/identity";
+import { createSessionKey } from "@/lib/seal";
+import { useSignPersonalMessage, decryptAttendeeEmail } from "@/lib/emailBinding";
+import type { ProfileEnvelope } from "@/lib/profile";
 import { useAllEvents } from "@/lib/events";
 import { useEventMarkets } from "@/lib/markets";
 import {
@@ -58,7 +66,7 @@ import {
 } from "@/lib/hooks";
 import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, putEventMetadata, type EventMetadata } from "@/lib/metadata";
-import { storeFile } from "@/lib/walrus";
+import { storeFile, readJson } from "@/lib/walrus";
 import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
 import {
   STAGE_LABEL,
@@ -361,6 +369,7 @@ export function EventManageScreen({ id }: { id: string }) {
   const isFree = Boolean(f.is_free);
   const isRefundable = Boolean(f.is_refundable);
   const allowSelf = Boolean(f.allow_self_checkin);
+  const allowOrganizerCheckin = Boolean(f.allow_organizer_checkin);
   const isCancelled = Boolean(f.is_cancelled);
   const poapEnabled = Boolean(f.poap_enabled);
   const checkedInCount = Number(f.checked_in_count ?? 0);
@@ -550,7 +559,12 @@ export function EventManageScreen({ id }: { id: string }) {
                 isRefundable={isRefundable}
                 minted={minted}
               />
-              <DoorPrepPanel ctx={ctx} signersField={f.checkin_signers} allowSelf={allowSelf} />
+              <DoorPrepPanel
+                ctx={ctx}
+                signersField={f.checkin_signers}
+                allowSelf={allowSelf}
+                allowOrganizerCheckin={allowOrganizerCheckin}
+              />
               <PoapPanel
                 ctx={ctx}
                 meta={meta}
@@ -574,7 +588,13 @@ export function EventManageScreen({ id }: { id: string }) {
           {stage === "doorsOpen" && (
             <>
               <DoorModeCard eventId={id} />
-              <DoorPrepPanel ctx={ctx} signersField={f.checkin_signers} allowSelf={allowSelf} />
+              {allowOrganizerCheckin && <OrganizerEmailCheckinCard ctx={ctx} />}
+              <DoorPrepPanel
+                ctx={ctx}
+                signersField={f.checkin_signers}
+                allowSelf={allowSelf}
+                allowOrganizerCheckin={allowOrganizerCheckin}
+              />
               <EndTimePanel ctx={ctx} startMs={startMs} endMs={endMs} />
               <PoapPanel
                 ctx={ctx}
@@ -652,6 +672,9 @@ export function EventManageScreen({ id }: { id: string }) {
             truncated={tallyTruncated}
             publicUrl={publicUrl}
           />
+
+          {/* Opted-in attendee emails (GH#96) */}
+          <AttendeeEmailsCard ctx={ctx} />
 
           {/* Danger zone */}
           <CancelZone ctx={ctx} isCancelled={isCancelled} />
@@ -785,16 +808,98 @@ function DoorModeCard({ eventId }: { eventId: string }) {
   );
 }
 
+// === Organizer email check-in (will-call, GH#96) ===
+
+function OrganizerEmailCheckinCard({ ctx }: { ctx: DeckCtx }) {
+  const client = useCurrentClient() as unknown as {
+    getOwnedObjects: (p: GetOwnedObjectsParams) => Promise<PaginatedObjectsResponse>;
+  };
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function checkIn() {
+    const em = email.trim();
+    if (!em) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/identity/lookup-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em }),
+      });
+      const j = (await r.json()) as { address?: string | null; error?: string };
+      if (!r.ok) throw new Error(j.error || "Lookup failed");
+      if (!j.address) {
+        toast.error("No account is registered to that email.");
+        return;
+      }
+      const owner = j.address;
+      const res = await client.getOwnedObjects({
+        owner,
+        filter: { StructType: TICKET_TYPE },
+        options: { showContent: true },
+      });
+      const tickets = (res.data ?? [])
+        .map((e) => ({ id: e.data?.objectId, f: getFields(e) }))
+        .filter((t) => t.id && t.f && String(t.f.event_id) === ctx.eventId);
+      if (tickets.length === 0) {
+        toast.error("That attendee holds no ticket for this event.");
+        return;
+      }
+      const tid = (tickets.find((t) => Number(t.f!.status) === 0) ?? tickets[0]).id!;
+      await ctx.send(
+        organizerCheckInTx({ capId: ctx.capId, eventId: ctx.eventId, ticketId: tid, attendee: owner }),
+        () => setEmail(""),
+      );
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div>
+        <div className="font-medium">Check in by email</div>
+        <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+          Mark an attendee present by email — no device needed on their end. Records attendance and
+          lets them claim a POAP.
+        </div>
+      </div>
+      <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
+        <div className="grow" style={{ minWidth: 200 }}>
+          <Input
+            type="email"
+            placeholder="attendee@example.com"
+            value={email}
+            disabled={busy || ctx.isPending}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void checkIn();
+            }}
+          />
+        </div>
+        <Button disabled={busy || ctx.isPending} onClick={checkIn}>
+          {busy ? "Checking in…" : "Check in"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 // === Door prep: self check-in + signer roster (add + revoke) ===
 
 function DoorPrepPanel({
   ctx,
   signersField,
   allowSelf,
+  allowOrganizerCheckin,
 }: {
   ctx: DeckCtx;
   signersField: unknown;
   allowSelf: boolean;
+  allowOrganizerCheckin: boolean;
 }) {
   const signers = useMemo(() => parseSignerPubkeys(signersField), [signersField]);
   const [hex, setHex] = useState("");
@@ -838,6 +943,34 @@ function DoorPrepPanel({
           onCheckedChange={() => {
             if (!ctx.isPending)
               ctx.send(setAllowSelfCheckinTx({ capId: ctx.capId, eventId: ctx.eventId, allow: !allowSelf }));
+          }}
+        />
+      </div>
+
+      <div
+        className="flex items-center justify-between gap-2"
+        style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }}
+      >
+        <div>
+          <div className="font-medium">Organizer email check-in</div>
+          <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            Mark attendees present by email from your console — no attendee device. One-sided, so off
+            by default.
+          </div>
+        </div>
+        <Switch
+          aria-label="Organizer email check-in"
+          checked={allowOrganizerCheckin}
+          disabled={ctx.isPending}
+          onCheckedChange={() => {
+            if (!ctx.isPending)
+              ctx.send(
+                setAllowOrganizerCheckinTx({
+                  capId: ctx.capId,
+                  eventId: ctx.eventId,
+                  value: !allowOrganizerCheckin,
+                }),
+              );
           }}
         />
       </div>
@@ -1323,6 +1456,133 @@ function CancelZone({ ctx, isCancelled }: { ctx: DeckCtx; isCancelled: boolean }
 }
 
 // === Telemetry stream (recent on-chain activity) ===
+
+// === Opted-in attendee emails (organizer decrypt via Seal) ===
+
+/** Trigger a client-side CSV download (no server round-trip). */
+function downloadCsv(rows: { address: string; email: string }[], filename: string) {
+  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const csv = ["address,email", ...rows.map((r) => `${esc(r.address)},${esc(r.email)}`)].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function AttendeeEmailsCard({ ctx }: { ctx: DeckCtx }) {
+  const grantsQ = useAllEvents(EV_EMAIL_GRANT_CREATED);
+  const client = useCurrentClient();
+  const sign = useSignPersonalMessage();
+  const [emails, setEmails] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  const grants = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { user: string; grantId: string }[] = [];
+    for (const ev of grantsQ.data?.data ?? []) {
+      const p = ev.parsedJson as { grant_id: string; user: string; event_id: string };
+      if (p.event_id !== ctx.eventId || seen.has(p.user)) continue;
+      seen.add(p.user);
+      out.push({ user: p.user, grantId: p.grant_id });
+    }
+    return out;
+  }, [grantsQ.data, ctx.eventId]);
+
+  async function reveal() {
+    setBusy(true);
+    try {
+      // One signature mints the SessionKey; reused across every attendee row.
+      const sk = await createSessionKey(client, ctx.addr, sign);
+      const next: Record<string, string> = {};
+      for (const g of grants) {
+        try {
+          const ptr = (await (await fetch(`/api/identity/profile-pointer?address=${g.user}`)).json()) as {
+            blobId?: string | null;
+          };
+          if (!ptr.blobId) {
+            next[g.user] = "(no profile)";
+            continue;
+          }
+          const env = await readJson<ProfileEnvelope>(ptr.blobId);
+          if (!env?.emailBlobId) {
+            next[g.user] = "(no email)";
+            continue;
+          }
+          next[g.user] = await decryptAttendeeEmail(
+            client,
+            sk,
+            env.emailBlobId,
+            ctx.capId,
+            ctx.eventId,
+            g.grantId,
+          );
+        } catch {
+          next[g.user] = "(revoked / unavailable)";
+        }
+      }
+      setEmails(next);
+    } catch (e) {
+      toast.error(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportCsv() {
+    const rows = grants
+      .map((g) => ({ address: g.user, email: emails[g.user] ?? "" }))
+      .filter((r) => r.email.includes("@"));
+    if (rows.length === 0) {
+      toast.message("Reveal the emails first, then export.");
+      return;
+    }
+    downloadCsv(rows, `attendees-${ctx.eventId.slice(0, 8)}.csv`);
+  }
+
+  if (!EMAIL_ENABLED || grants.length === 0) return null;
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="font-medium">Attendee emails</div>
+          <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            {grants.length} attendee{grants.length === 1 ? "" : "s"} opted to share their email.
+            Decrypts in your browser via Seal — one signature.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {Object.keys(emails).length > 0 && (
+            <Button size="sm" variant="outline" onClick={exportCsv}>
+              <Icon icon="ph:download-simple" size={14} /> Export CSV
+            </Button>
+          )}
+          <Button size="sm" disabled={busy} onClick={reveal}>
+            {busy ? "Decrypting…" : Object.keys(emails).length ? "Re-decrypt" : "Reveal emails"}
+          </Button>
+        </div>
+      </div>
+      {Object.keys(emails).length > 0 && (
+        <div style={{ display: "grid", gap: 6 }}>
+          {grants.map((g) => (
+            <div
+              key={g.user}
+              className="flex items-center justify-between gap-3"
+              style={{ padding: "8px 10px", border: "1px solid var(--hair)", borderRadius: 10 }}
+            >
+              <AddressDisplay address={g.user} suffix={4} />
+              <span className="mono text-[13px]" style={{ color: "var(--fg2)" }}>
+                {emails[g.user] ?? "…"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function TelemetryStream({
   mints,

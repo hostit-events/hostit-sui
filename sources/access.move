@@ -21,6 +21,7 @@ module hostit_ticket::access;
 use sui::address;
 use hostit_ticket::event::{Self, Event, OrganizerCap};
 use hostit_ticket::ticket::{Self, Ticket};
+use hostit_ticket::identity::{Self, EmailGrant};
 
 const E_NO_ACCESS: u64 = 1;
 
@@ -31,6 +32,17 @@ const E_NO_ACCESS: u64 = 1;
 /// NOT decryptable by ticket holders. MUST match `ORG_NS_TAG` in
 /// web/lib/seal.ts.
 const ORG_NS_TAG: vector<u8> = b"hostit-org:";
+
+/// Domain-separation tag for a user's EMAIL ciphertext identity:
+/// `EMAIL_NS_TAG ‖ user_address ‖ nonce`. Crucially the tag comes FIRST, so the
+/// email namespace is DISJOINT from the bare-self namespace (`address ‖ nonce`)
+/// used by `seal_approve_self` for KYC/drafts. That makes an attendee's
+/// "share my email" grant strictly confined to the email — it can never grant an
+/// organizer access to the user's KYC/drafts. The owner decrypts their own email
+/// via `seal_approve_own_email` (NOT `seal_approve_self`, which checks the bare
+/// address prefix and so never matches a tag-first email id). MUST match
+/// `EMAIL_NS_TAG` in web/lib/seal.ts.
+const EMAIL_NS_TAG: vector<u8> = b"hostit-email:";
 
 /// True iff `prefix` is a prefix of `id`.
 fun is_prefix(prefix: &vector<u8>, id: &vector<u8>): bool {
@@ -71,7 +83,52 @@ entry fun seal_approve_self(id: vector<u8>, ctx: &TxContext) {
     assert!(is_prefix(&address::to_bytes(ctx.sender()), &id), E_NO_ACCESS);
 }
 
+// === Email selective disclosure (GH#96) ===
+
+/// A user's email identity prefix: EMAIL_NS_TAG ‖ user address bytes.
+fun email_ns(user: address): vector<u8> {
+    let mut ns = EMAIL_NS_TAG;
+    ns.append(address::to_bytes(user));
+    ns
+}
+
+/// Owner decrypts their OWN email. (seal_approve_self can't: the email id is
+/// tag-first, so it doesn't start with the bare address.)
+entry fun seal_approve_own_email(id: vector<u8>, ctx: &TxContext) {
+    assert!(is_prefix(&email_ns(ctx.sender()), &id), E_NO_ACCESS);
+}
+
+/// Shared check for `seal_approve_attendee_email` (extracted so tests can cover
+/// it — a private `entry fun` isn't callable from a test module).
+fun assert_attendee_email(id: &vector<u8>, cap: &OrganizerCap, event: &Event, grant: &EmailGrant) {
+    event::assert_organizer(cap, event);                                   // caller IS this organizer
+    assert!(identity::grant_event_id(grant) == object::id(event), E_NO_ACCESS); // grant for THIS event
+    assert!(is_prefix(&email_ns(identity::grant_user(grant)), id), E_NO_ACCESS); // email ns of grant.user ONLY
+}
+
+/// Organizer of `event` decrypts attendee `grant.user`'s email IFF the attendee
+/// minted an `EmailGrant` for this event. Confined to the email namespace, so it
+/// never reaches the user's bare-self KYC/drafts.
+entry fun seal_approve_attendee_email(
+    id: vector<u8>,
+    cap: &OrganizerCap,
+    event: &Event,
+    grant: &EmailGrant,
+) {
+    assert_attendee_email(&id, cap, event, grant);
+}
+
 // === Test-only ===
 
 #[test_only]
 public fun check_prefix(prefix: vector<u8>, id: vector<u8>): bool { is_prefix(&prefix, &id) }
+#[test_only]
+public fun email_ns_for_test(user: address): vector<u8> { email_ns(user) }
+#[test_only]
+public fun check_own_email(id: vector<u8>, ctx: &TxContext): bool {
+    is_prefix(&email_ns(ctx.sender()), &id)
+}
+#[test_only]
+public fun check_attendee_email(id: vector<u8>, cap: &OrganizerCap, event: &Event, grant: &EmailGrant) {
+    assert_attendee_email(&id, cap, event, grant);
+}

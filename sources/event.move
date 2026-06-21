@@ -81,8 +81,13 @@ public struct Event has key {
     day_attendees: Table<DayKey, bool>,
     /// `address -> true`; "ever checked in" for this event.
     attendees: Table<address, bool>,
-    /// Count of DISTINCT tickets checked in at least once (bumped on a ticket's
-    /// FIRST check-in). O(1) "X / Y in" dashboard read — no log replay.
+    /// `ID -> true`; distinct tickets ever checked in — drives `checked_in_count`
+    /// uniformly across voucher / self / organizer check-in (no ticket-status dep).
+    checked_in_tickets: Table<ID, bool>,
+    /// Organizer may mark attendance by ticket id WITHOUT the attendee's device
+    /// (one-sided; opt-in, default off). See `checkin::organizer_check_in`.
+    allow_organizer_checkin: bool,
+    /// Count of DISTINCT tickets checked in at least once. O(1) dashboard read.
     checked_in_count: u64,
     /// Count of POAPs claimed for this event (one per ticket).
     poap_claimed_count: u64,
@@ -321,6 +326,8 @@ fun build_event(
         checkin_signers: vec_set::empty(),
         day_attendees: table::new(ctx),
         attendees: table::new(ctx),
+        checked_in_tickets: table::new(ctx),
+        allow_organizer_checkin: false,
         checked_in_count: 0,
         poap_claimed_count: 0,
         is_cancelled: false,
@@ -587,6 +594,14 @@ public fun set_allow_self_checkin(cap: &OrganizerCap, event: &mut Event, allow: 
     event.allow_self_checkin = allow;
 }
 
+/// Opt in to organizer-side check-in: lets the OrganizerCap holder mark
+/// attendance by ticket id without the attendee's device (one-sided). Default
+/// off — keep the mutual-auth voucher flow as the norm.
+public fun set_allow_organizer_checkin(cap: &OrganizerCap, event: &mut Event, allow: bool) {
+    assert_organizer(cap, event);
+    event.allow_organizer_checkin = allow;
+}
+
 public(package) fun is_checkin_signer(event: &Event, pubkey: &vector<u8>): bool {
     vec_set::contains(&event.checkin_signers, pubkey)
 }
@@ -601,13 +616,13 @@ public(package) fun record_checkin(event: &mut Event, day: u64, ticket_id: ID, w
     table::add(&mut event.day_attendees, k, true);
     if (!table::contains(&event.attendees, who)) {
         table::add(&mut event.attendees, who, true);
-    }
-}
-
-/// Bump the distinct-tickets-checked-in counter. `checkin` calls this only on a
-/// ticket's FIRST check-in, so the count tracks unique tickets, not day-entries.
-public(package) fun inc_checked_in_count(event: &mut Event) {
-    event.checked_in_count = event.checked_in_count + 1;
+    };
+    // Distinct-ticket count, unified here so voucher / self / organizer check-in
+    // all count consistently — independent of the ticket's own status flag.
+    if (!table::contains(&event.checked_in_tickets, ticket_id)) {
+        table::add(&mut event.checked_in_tickets, ticket_id, true);
+        event.checked_in_count = event.checked_in_count + 1;
+    };
 }
 
 /// Bump the POAP-claimed counter (one per ticket). Driven by `poap::claim_poap`.
@@ -648,6 +663,7 @@ public fun max_per_user(event: &Event): u64 { event.max_per_user }
 public fun is_free(event: &Event): bool { event.is_free }
 public fun is_refundable(event: &Event): bool { event.is_refundable }
 public fun allow_self_checkin(event: &Event): bool { event.allow_self_checkin }
+public fun allow_organizer_checkin(event: &Event): bool { event.allow_organizer_checkin }
 public fun checked_in_count(event: &Event): u64 { event.checked_in_count }
 public fun poap_claimed_count(event: &Event): u64 { event.poap_claimed_count }
 public fun is_cancelled(event: &Event): bool { event.is_cancelled }

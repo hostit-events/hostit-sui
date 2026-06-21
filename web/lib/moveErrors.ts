@@ -12,6 +12,7 @@ const MAP: Record<string, Record<number, string>> = {
     6: "That staff key isn't an authorized check-in signer.",
     7: "Invalid check-in voucher signature.",
     8: "Self check-in isn't enabled for this event — the organizer turns it on under Manage → Self check-in.",
+    9: "Organizer check-in isn't enabled for this event.",
   },
   market: {
     1: "This is a free event — use Claim, not Buy.",
@@ -65,6 +66,10 @@ const MAP: Record<string, Record<number, string>> = {
     1: "This POAP isn't for this event — you can only review events you attended.",
     2: "Rating must be between 1 and 5 stars.",
     3: "You've already reviewed this event.",
+  },
+  identity: {
+    1: "That email is already linked to another account.",
+    2: "You don't own this email or share grant.",
   },
   hub: { 1: "Insufficient balance.", 2: "No balance to withdraw.", 3: "Value too high." },
   predict: {

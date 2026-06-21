@@ -3,6 +3,7 @@ import { Footer } from "@/components/Footer";
 import { MobileTabBar } from "@/components/MobileTabBar";
 import { TestnetBanner } from "@/components/TestnetBanner";
 import { DiscoveryCommand } from "@/components/discovery/DiscoveryCommand";
+import { ProfileGate } from "@/components/EmailCaptureDialog";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,6 +16,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <MobileTabBar />
       {/* App-level Cmd+K palette + calendar + shortcuts (self-contained island). */}
       <DiscoveryCommand />
+      {/* One-time email-binding prompt (GH#96) — no-ops unless EMAIL_ENABLED + connected + unbound. */}
+      <ProfileGate />
     </div>
   );
 }

@@ -421,3 +421,122 @@ fun checked_in_count_tracks_unique_tickets() {
     clock.destroy_for_testing();
     sc.end();
 }
+
+// === Organizer-side check-in (GH#96 will-call) ===
+
+#[test]
+fun organizer_check_in_marks_attendance() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, true, false);
+
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_allow_organizer_checkin(&cap, &mut ev, true);
+    ts::return_shared(ev);
+
+    clock.set_for_testing(BUY_NOW);
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    market::claim_free(&mut ev, BUYER, &clock, sc.ctx());
+    ts::return_shared(ev);
+
+    // grab the ticket id (BUYER tx), then organizer checks in by id (ORG tx).
+    sc.next_tx(BUYER);
+    let t = sc.take_from_sender<Ticket>();
+    let tid = object::id(&t);
+    sc.return_to_sender(t);
+
+    clock.set_for_testing(USE_NOW);
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    checkin::organizer_check_in(&cap, &mut ev, tid, BUYER, &clock);
+    assert!(event::is_checked_in(&ev, BUYER), 0);
+    assert!(event::checked_in_count(&ev) == 1, 1);
+    ts::return_shared(ev);
+
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test, expected_failure(abort_code = hostit_ticket::checkin::E_ORGANIZER_CHECKIN_DISABLED)]
+fun organizer_check_in_disabled_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, true, false); // flag off by default
+
+    clock.set_for_testing(USE_NOW);
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    checkin::organizer_check_in(&cap, &mut ev, object::id_from_address(@0xCAFE), BUYER, &clock);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test, expected_failure(abort_code = hostit_ticket::event::E_WRONG_CAP)]
+fun organizer_check_in_wrong_cap_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let capA = create_event(&mut sc, &clock, true, false);
+    let capB = create_event(&mut sc, &clock, true, false);
+    let eidA = event::cap_event_id(&capA);
+
+    clock.set_for_testing(USE_NOW);
+    sc.next_tx(ORG);
+    let mut evA = ts::take_shared_by_id<Event>(&sc, eidA);
+    checkin::organizer_check_in(&capB, &mut evA, object::id_from_address(@0xCAFE), BUYER, &clock);
+    ts::return_shared(evA);
+    destroy(capA);
+    destroy(capB);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// POAP reconciliation: an organizer check-in (Event-side only) lets the holder
+// claim a POAP even though the ticket's own status was never flipped.
+#[test]
+fun poap_claim_after_organizer_checkin() {
+    let (mut sc, mut clock) = begin();
+    poap::init_for_testing(sc.ctx());
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, true, false);
+
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    event::set_allow_organizer_checkin(&cap, &mut ev, true);
+    ts::return_shared(ev);
+
+    clock.set_for_testing(BUY_NOW);
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    market::claim_free(&mut ev, BUYER, &clock, sc.ctx());
+    ts::return_shared(ev);
+
+    sc.next_tx(BUYER);
+    let t = sc.take_from_sender<Ticket>();
+    let tid = object::id(&t);
+    sc.return_to_sender(t);
+
+    clock.set_for_testing(USE_NOW);
+    sc.next_tx(ORG);
+    let mut ev = sc.take_shared<Event>();
+    checkin::organizer_check_in(&cap, &mut ev, tid, BUYER, &clock);
+    ts::return_shared(ev);
+
+    sc.next_tx(BUYER);
+    let mut ev = sc.take_shared<Event>();
+    let mut t = sc.take_from_sender<Ticket>();
+    assert!(!ticket::is_checked_in(&t), 0); // organizer check-in did NOT flip the ticket
+    poap::claim_poap(&mut ev, &mut t, sc.ctx());
+    assert!(ticket::poap_claimed(&t), 1);
+    assert!(event::poap_claimed_count(&ev) == 1, 2);
+    sc.return_to_sender(t);
+    ts::return_shared(ev);
+
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}

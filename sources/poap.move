@@ -69,7 +69,13 @@ public fun claim_poap(
 ) {
     assert!(ticket::event_id(ticket) == object::id(event), E_WRONG_EVENT);
     assert!(event::poap_enabled(event), E_POAP_DISABLED);
-    assert!(ticket::is_checked_in(ticket), E_NOT_CHECKED_IN);
+    // Accept EITHER the ticket's own checked-in status (voucher/self check-in) OR
+    // Event-side attendance for the claimer (organizer check-in can't flip the
+    // owned ticket's status). GH#96.
+    assert!(
+        ticket::is_checked_in(ticket) || event::is_checked_in(event, ctx.sender()),
+        E_NOT_CHECKED_IN,
+    );
     assert!(!ticket::poap_claimed(ticket), E_ALREADY_CLAIMED);
     ticket::set_poap_claimed(ticket);
     event::inc_poap_claimed_count(event);

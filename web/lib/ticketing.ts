@@ -510,6 +510,42 @@ export function removePriceTx(args: RemovePriceArgs): Transaction {
   return tx;
 }
 
+// === Organizer-side check-in (GH#96 will-call) ===
+
+/** Enable/disable organizer-side check-in (opt-in; default off). */
+export function setAllowOrganizerCheckinTx(args: CapEventBoolArgs): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: target("event", "set_allow_organizer_checkin"),
+    arguments: [tx.object(args.capId), tx.object(args.eventId), tx.pure.bool(args.value)],
+  });
+  return tx;
+}
+
+export interface OrganizerCheckInArgs {
+  capId: string;
+  eventId: string;
+  ticketId: string;
+  attendee: string;
+}
+
+/** Organizer marks an attendee present by ticket id (no attendee device). Move
+ *  asserts the event has `allow_organizer_checkin` enabled + the caller's cap. */
+export function organizerCheckInTx(args: OrganizerCheckInArgs): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: target("checkin", "organizer_check_in"),
+    arguments: [
+      tx.object(args.capId),
+      tx.object(args.eventId),
+      tx.pure.id(args.ticketId),
+      tx.pure.address(args.attendee),
+      tx.object(CLOCK_ID),
+    ],
+  });
+  return tx;
+}
+
 // === Per-coin on-chain reads (escrow + lifetime accounting) ===
 // `escrow_value`/`gross_value`/`fee_value`/`refunded_value<T>` live in dynamic
 // fields (generic over the coin type), so `getObject`/`getFields` can't surface
