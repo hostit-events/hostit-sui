@@ -473,6 +473,84 @@ button[class*="connect" i] {
   box-shadow: 0 8px 22px rgba(0, 0, 0, .4);
 }
 
+/* ---- create "ticket forge" — live ticket stub (#78) ---- */
+.tstub {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--brand-card, #141A38);
+  border: 1px solid var(--hair);
+  box-shadow:
+    0 26px 64px -36px color-mix(in srgb, var(--p1, #007CFA) 55%, transparent),
+    0 14px 34px -22px rgba(0, 0, 0, .8);
+}
+.tstub-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: linear-gradient(140deg, var(--p1, #6C7BFF) 0%, var(--p2, #2A3270) 100%);
+}
+.tstub-foil {
+  position: absolute; top: 12px; right: 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  color: #fff; padding: 5px 10px; border-radius: 999px;
+  background: rgba(8, 11, 28, .34); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, .28);
+}
+.tstub-foil-dot { width: 6px; height: 6px; border-radius: 50%; background: #58F5B0; box-shadow: 0 0 8px #58F5B0; }
+.tstub-cat {
+  position: absolute; left: 14px; bottom: 11px;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .9); text-shadow: 0 1px 10px rgba(8, 11, 28, .6);
+}
+.tstub-perf { position: relative; height: 22px; }
+.tstub-perf::before {
+  content: ""; position: absolute; top: 50%; left: 20px; right: 20px;
+  border-top: 2px dashed var(--hair-2);
+}
+.tstub-notch {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--app-bg); border: 1px solid var(--hair);
+}
+.tstub-notch.l { left: -11px; }
+.tstub-notch.r { right: -11px; }
+.tstub-body { padding: 4px 20px 20px; }
+.tstub-head {
+  font-family: var(--font-display); font-weight: 700; font-size: 25px; line-height: 1.1;
+  letter-spacing: -.02em; color: var(--fg1);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  word-break: break-word;
+}
+.tstub-head.placeholder { color: var(--fg3); font-weight: 600; }
+.tstub-meta { margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 13px 16px; }
+.tstub-meta-label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--fg3); }
+.tstub-meta-val { margin-top: 3px; font-size: 13.5px; line-height: 1.25; color: var(--fg1); font-weight: 500; }
+.tstub-foot {
+  margin-top: 17px; padding-top: 15px; border-top: 1px solid var(--hair);
+  display: flex; align-items: center; gap: 14px;
+}
+.tstub-qr { flex: none; color: var(--fg1); }
+.tstub-foot-label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--fg3); }
+.tstub-host { margin-top: 4px; font-family: var(--font-mono); font-size: 13px; color: var(--fg2); }
+.tstub-stamp {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%) rotate(-13deg);
+  font-family: var(--font-mono); font-weight: 800; font-size: 32px; letter-spacing: .14em;
+  color: rgba(255, 255, 255, .94); padding: 5px 16px;
+  border: 3px solid rgba(255, 255, 255, .94); border-radius: 7px;
+  text-shadow: 0 2px 14px rgba(8, 11, 28, .5);
+  animation: tstub-stamp-in .45s cubic-bezier(.2, 1.25, .4, 1) both;
+}
+@keyframes tstub-stamp-in {
+  from { opacity: 0; transform: translate(-50%, -50%) rotate(-13deg) scale(2.3); }
+  to { opacity: 1; transform: translate(-50%, -50%) rotate(-13deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tstub-stamp { animation: none; }
+}
+
 /* Geist is now the app-wide default (set on --font-* in @theme above); the
    landing re-scopes the brand fonts on `.lv`. `.app-shell` no longer needs a
    font override. */
