@@ -26,17 +26,17 @@ export function explorerTxUrl(digest: string): string {
 
 export const PACKAGE_ID =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_ID ??
-  "0x4529d4479b506910b40bdb5c47074b2fd7bd5f2e6cd4f52a5380d3a7b2e2c054";
+  "0xa32a5fa219199d01c34f9f4dfa98d429b9f8fb20eebd0528fc99904994912d74";
 
 /** Shared protocol Hub (config + 3% fee treasury). Every paid sale needs it. */
 export const HUB_ID =
   process.env.NEXT_PUBLIC_HOSTIT_HUB_ID ??
-  "0xf30ce9e7c2d30c767a086ce6dc50bc9a24585e134ea1e658d7d376eeaebf47d8";
+  "0x97a47754560651003657a06895175850f362b8f390b459f3cf033e680576fd56";
 
 // (POAP dedup is now a flag on the Ticket — no shared PoapRegistry object.)
 
 export const TRANSFER_POLICY_ID =
-  "0xf026a4112518fec5f2aff912e5f04c6f36297e1249babce6e67992ab2a88454a";
+  "0x954db2d6db7f2eb5cfe2131890eedfad8ebf669956a8fd998d75908c74da85ce";
 
 // === Protocol governance (OpenZeppelin access_control RBAC — GH#51) ===
 // Replaces the single PlatformCap with revocable, role-scoped authority
@@ -61,7 +61,7 @@ export const OZ_ACCESS_PKG =
  * holding TreasuryRole + ConfigAdminRole.
  */
 export const GOVERNANCE_REGISTRY_ID =
-  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "0x43933dca58136b34866f9e80af36fa712b7ff533fff3c47d20e875f5134fe01c";
+  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "0xfd72543e5bfb9e62b173d18f5c726a5aa2b61340437a630269ddc0c79df38414";
 
 /**
  * Shared `identity::EmailRegistry` (one-account-one-email, GH#96) — created by
@@ -71,7 +71,7 @@ export const GOVERNANCE_REGISTRY_ID =
  * did pre-deploy).
  */
 export const EMAIL_REGISTRY_ID =
-  process.env.NEXT_PUBLIC_HOSTIT_EMAIL_REGISTRY_ID ?? "";
+  process.env.NEXT_PUBLIC_HOSTIT_EMAIL_REGISTRY_ID ?? "0x279607e407f415e19af073881b9edc579df76349a3fddd18bf776af63ef7459b";
 
 /** Target a function in the OZ `access_control` module (root-admin flow). */
 export const ozAccessTarget = (fn: string) =>
