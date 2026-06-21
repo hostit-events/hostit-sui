@@ -131,6 +131,7 @@ export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::event::create_event_with_price`, // atomic create+price (#68)
   `${PACKAGE_ID}::event::set_price`,
   `${PACKAGE_ID}::event::set_allow_self_checkin`,
+  `${PACKAGE_ID}::event::set_allow_organizer_checkin`,
   `${PACKAGE_ID}::event::add_checkin_signer`,
   `${PACKAGE_ID}::event::remove_checkin_signer`,
   // Organizer edits (#69) — wire the existing update_* fns into Manage, gasless.
@@ -152,6 +153,7 @@ export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::market::refund`,
   `${PACKAGE_ID}::checkin::self_check_in`,
   `${PACKAGE_ID}::checkin::check_in`,
+  `${PACKAGE_ID}::checkin::organizer_check_in`,
   `${PACKAGE_ID}::poap::claim_poap`,
   `${PACKAGE_ID}::forum::post`,
   `${PACKAGE_ID}::forum::post_as_organizer`,

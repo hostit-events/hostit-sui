@@ -13,6 +13,7 @@ import {
   ORGANIZER_CAP_TYPE,
   PACKAGE_ID,
   REFUND_PERIOD_MS,
+  TICKET_TYPE,
   USDC_COIN_TYPE,
   coinInfo,
   fmtAmount,
@@ -26,6 +27,8 @@ import {
   removeCheckinSignerTx,
   removePriceTx,
   setAllowSelfCheckinTx,
+  setAllowOrganizerCheckinTx,
+  organizerCheckInTx,
   setCancelledTx,
   setIsFreeTx,
   setIsRefundableTx,
@@ -369,6 +372,7 @@ export function EventManageScreen({ id }: { id: string }) {
   const isFree = Boolean(f.is_free);
   const isRefundable = Boolean(f.is_refundable);
   const allowSelf = Boolean(f.allow_self_checkin);
+  const allowOrganizerCheckin = Boolean(f.allow_organizer_checkin);
   const isCancelled = Boolean(f.is_cancelled);
   const poapEnabled = Boolean(f.poap_enabled);
   const checkedInCount = Number(f.checked_in_count ?? 0);
@@ -558,7 +562,12 @@ export function EventManageScreen({ id }: { id: string }) {
                 isRefundable={isRefundable}
                 minted={minted}
               />
-              <DoorPrepPanel ctx={ctx} signersField={f.checkin_signers} allowSelf={allowSelf} />
+              <DoorPrepPanel
+                ctx={ctx}
+                signersField={f.checkin_signers}
+                allowSelf={allowSelf}
+                allowOrganizerCheckin={allowOrganizerCheckin}
+              />
               <PoapPanel
                 ctx={ctx}
                 meta={meta}
@@ -582,7 +591,13 @@ export function EventManageScreen({ id }: { id: string }) {
           {stage === "doorsOpen" && (
             <>
               <DoorModeCard eventId={id} />
-              <DoorPrepPanel ctx={ctx} signersField={f.checkin_signers} allowSelf={allowSelf} />
+              {allowOrganizerCheckin && <OrganizerEmailCheckinCard ctx={ctx} />}
+              <DoorPrepPanel
+                ctx={ctx}
+                signersField={f.checkin_signers}
+                allowSelf={allowSelf}
+                allowOrganizerCheckin={allowOrganizerCheckin}
+              />
               <EndTimePanel ctx={ctx} startMs={startMs} endMs={endMs} />
               <PoapPanel
                 ctx={ctx}
@@ -796,16 +811,98 @@ function DoorModeCard({ eventId }: { eventId: string }) {
   );
 }
 
+// === Organizer email check-in (will-call, GH#96) ===
+
+function OrganizerEmailCheckinCard({ ctx }: { ctx: DeckCtx }) {
+  const client = useCurrentClient() as unknown as {
+    getOwnedObjects: (p: GetOwnedObjectsParams) => Promise<PaginatedObjectsResponse>;
+  };
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function checkIn() {
+    const em = email.trim();
+    if (!em) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/identity/lookup-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em }),
+      });
+      const j = (await r.json()) as { address?: string | null; error?: string };
+      if (!r.ok) throw new Error(j.error || "Lookup failed");
+      if (!j.address) {
+        toast.error("No account is registered to that email.");
+        return;
+      }
+      const owner = j.address;
+      const res = await client.getOwnedObjects({
+        owner,
+        filter: { StructType: TICKET_TYPE },
+        options: { showContent: true },
+      });
+      const tickets = (res.data ?? [])
+        .map((e) => ({ id: e.data?.objectId, f: getFields(e) }))
+        .filter((t) => t.id && t.f && String(t.f.event_id) === ctx.eventId);
+      if (tickets.length === 0) {
+        toast.error("That attendee holds no ticket for this event.");
+        return;
+      }
+      const tid = (tickets.find((t) => Number(t.f!.status) === 0) ?? tickets[0]).id!;
+      await ctx.send(
+        organizerCheckInTx({ capId: ctx.capId, eventId: ctx.eventId, ticketId: tid, attendee: owner }),
+        () => setEmail(""),
+      );
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div>
+        <div className="font-medium">Check in by email</div>
+        <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+          Mark an attendee present by email — no device needed on their end. Records attendance and
+          lets them claim a POAP.
+        </div>
+      </div>
+      <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
+        <div className="grow" style={{ minWidth: 200 }}>
+          <Input
+            type="email"
+            placeholder="attendee@example.com"
+            value={email}
+            disabled={busy || ctx.isPending}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void checkIn();
+            }}
+          />
+        </div>
+        <Button disabled={busy || ctx.isPending} onClick={checkIn}>
+          {busy ? "Checking in…" : "Check in"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 // === Door prep: self check-in + signer roster (add + revoke) ===
 
 function DoorPrepPanel({
   ctx,
   signersField,
   allowSelf,
+  allowOrganizerCheckin,
 }: {
   ctx: DeckCtx;
   signersField: unknown;
   allowSelf: boolean;
+  allowOrganizerCheckin: boolean;
 }) {
   const signers = useMemo(() => parseSignerPubkeys(signersField), [signersField]);
   const [hex, setHex] = useState("");
@@ -849,6 +946,34 @@ function DoorPrepPanel({
           onCheckedChange={() => {
             if (!ctx.isPending)
               ctx.send(setAllowSelfCheckinTx({ capId: ctx.capId, eventId: ctx.eventId, allow: !allowSelf }));
+          }}
+        />
+      </div>
+
+      <div
+        className="flex items-center justify-between gap-2"
+        style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }}
+      >
+        <div>
+          <div className="font-medium">Organizer email check-in</div>
+          <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            Mark attendees present by email from your console — no attendee device. One-sided, so off
+            by default.
+          </div>
+        </div>
+        <Switch
+          aria-label="Organizer email check-in"
+          checked={allowOrganizerCheckin}
+          disabled={ctx.isPending}
+          onCheckedChange={() => {
+            if (!ctx.isPending)
+              ctx.send(
+                setAllowOrganizerCheckinTx({
+                  capId: ctx.capId,
+                  eventId: ctx.eventId,
+                  value: !allowOrganizerCheckin,
+                }),
+              );
           }}
         />
       </div>

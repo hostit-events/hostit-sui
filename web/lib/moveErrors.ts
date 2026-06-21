@@ -12,6 +12,7 @@ const MAP: Record<string, Record<number, string>> = {
     6: "That staff key isn't an authorized check-in signer.",
     7: "Invalid check-in voucher signature.",
     8: "Self check-in isn't enabled for this event — the organizer turns it on under Manage → Self check-in.",
+    9: "Organizer check-in isn't enabled for this event.",
   },
   market: {
     1: "This is a free event — use Claim, not Buy.",
