@@ -550,6 +550,28 @@ button[class*="connect" i] {
 @media (prefers-reduced-motion: reduce) {
   .tstub-stamp { animation: none; }
 }
+.tstub-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* ---- cover upload picker (create) ---- */
+.cover-pick.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; min-height: 132px; padding: 18px;
+  border: 1.5px dashed var(--hair-2); border-radius: var(--r-md, 12px);
+  background: rgba(255, 255, 255, .02); color: var(--fg3); cursor: pointer; text-align: center;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.cover-pick.empty:hover,
+.cover-pick.empty.drag { border-color: var(--hi-blue); background: rgba(0, 124, 250, .06); color: var(--fg2); }
+.cover-pick-title { font-size: 14px; font-weight: 600; color: var(--fg1); }
+.cover-pick-hint { font-size: 11px; }
+.cover-pick.has { position: relative; border-radius: var(--r-md, 12px); overflow: hidden; border: 1px solid var(--hair); }
+.cover-pick-img { display: block; width: 100%; height: 168px; object-fit: cover; }
+.cover-pick-actions {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px;
+  opacity: 0; background: rgba(8, 11, 28, .55); transition: opacity .15s;
+}
+.cover-pick.has:hover .cover-pick-actions,
+.cover-pick.has:focus-within .cover-pick-actions { opacity: 1; }
 
 /* Geist is now the app-wide default (set on --font-* in @theme above); the
    landing re-scopes the brand fonts on `.lv`. `.app-shell` no longer needs a

@@ -1,13 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ENOKI_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, createEventWithPriceTx } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
-import { minimalEventMetadata, putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
+import { putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
 import { storeFile } from "@/lib/walrus";
 import {
   useCurrentAccount,
@@ -25,7 +25,7 @@ import {
   type EventDraft,
   type EventDraftForm,
 } from "@/lib/drafts";
-import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
+import { CATEGORIES, catPalette } from "@/lib/data";
 import { Icon } from "@/components/Icon";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import { ArrowRight } from "@/components/animate-ui/icons/arrow-right";
@@ -50,7 +50,6 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -197,15 +196,10 @@ const STEPS = [
   { id: 3, label: "Publish", icon: "ph:paper-plane-tilt-fill" },
 ] as const;
 
-type CreateMode = "quick" | "advanced";
-
 /**
- * Top-level create screen. Offers a Quick (default) and an Advanced mode.
- * - Quick   = a single compact form (instant create): name, category, times,
- *             capacity, Free-or-price. `max_per_user = 1`, no tiers, no cover.
- * - Advanced = the full 4-step wizard, preserved exactly (`AdvancedCreate`).
- * Switching modes while the active form is dirty asks for confirmation first so
- * input is never silently dropped.
+ * Top-level create screen — a single full-featured flow (`AdvancedCreate`): a
+ * 4-step wizard (Details → Tickets → Promote → Publish) with a live ticket-stub
+ * preview. (The old Quick/Advanced split was removed.)
  */
 export function CreateEventScreen() {
   // useSearchParams (resume-from-draft) must sit inside a Suspense boundary.
@@ -224,21 +218,14 @@ function CreateEventInner() {
   const searchParams = useSearchParams();
   const resumeId = searchParams.get("draft");
 
-  const [mode, setMode] = useState<CreateMode>("quick");
-  // Per-mode dirtiness, reported up from each child form.
-  const [quickDirty, setQuickDirty] = useState(false);
-  const [advancedDirty, setAdvancedDirty] = useState(false);
-  // When non-null, a confirm dialog is open offering to switch to this mode.
-  const [pendingMode, setPendingMode] = useState<CreateMode | null>(null);
-  // Bumping a form's key remounts it (a true reset) when the user confirms a
-  // discard — so "Switch & discard" actually drops the in-progress input.
-  const [quickKey, setQuickKey] = useState(0);
-  const [advancedKey, setAdvancedKey] = useState(0);
+  // Bumping the key remounts the form so its useState initializers read a resumed
+  // draft's `initial`. (Quick/Advanced modes were removed — this is the only flow.)
+  const [createKey, setCreateKey] = useState(0);
 
   // ── Resume from a saved draft (?draft=<id>, GH#46) ──────────────────────────
-  // One-time: decrypt the Seal+Walrus draft, switch to its mode, and rehydrate
-  // the matching sub-component via `initial` + a fresh mount key. On error we
-  // toast and fall through to an empty form (the URL param is otherwise ignored).
+  // One-time: decrypt the Seal+Walrus draft and rehydrate the form via `initial`
+  // + a fresh mount key. Quick-era drafts resume here too (their fields are a
+  // subset of the full form). On error we toast and fall through to an empty form.
   const [loadingDraft, setLoadingDraft] = useState<boolean>(Boolean(resumeId));
   const [draftInitial, setDraftInitial] = useState<Partial<EventDraftForm> | null>(null);
   const [resumedId, setResumedId] = useState<string | null>(null);
@@ -266,12 +253,9 @@ function CreateEventInner() {
         });
         const draft = await loadDraft(client, addr, resumeId, sessionKey);
         if (!alive) return;
-        setMode(draft.mode);
         setDraftInitial(draft.form);
         setResumedId(resumeId);
-        // Remount the target form so its useState initializers read `initial`.
-        if (draft.mode === "quick") setQuickKey((k) => k + 1);
-        else setAdvancedKey((k) => k + 1);
+        setCreateKey((k) => k + 1);
         toast.success("Draft loaded");
       } catch (e: unknown) {
         if (!alive) return;
@@ -285,93 +269,18 @@ function CreateEventInner() {
     };
   }, [resumeId, addr, client, dAppKit]);
 
-  // Hand `initial` to a sub-component ONLY when its mode matches the loaded draft,
-  // so switching modes after a resume starts the other form empty.
-  const quickInitial = mode === "quick" && draftInitial ? draftInitial : undefined;
-  const advancedInitial = mode === "advanced" && draftInitial ? draftInitial : undefined;
-  const quickDraftId = mode === "quick" ? resumedId ?? undefined : undefined;
-  const advancedDraftId = mode === "advanced" ? resumedId ?? undefined : undefined;
-
-  const currentDirty = mode === "quick" ? quickDirty : advancedDirty;
-
-  function requestMode(next: CreateMode) {
-    if (next === mode) return;
-    if (currentDirty) {
-      setPendingMode(next);
-      return;
-    }
-    setMode(next);
-  }
-  function confirmSwitch() {
-    if (!pendingMode) return;
-    // Reset the form we're leaving so the discard is real, then switch.
-    if (mode === "quick") setQuickKey((k) => k + 1);
-    else setAdvancedKey((k) => k + 1);
-    setMode(pendingMode);
-    setPendingMode(null);
-  }
-
   return (
     <div className="space-y-6">
-      <div className="flex justify-center">
-        <Tabs value={mode} onValueChange={(v) => requestMode(v as CreateMode)}>
-          <TabsList>
-            <TabsTrigger value="quick">
-              <Icon icon="ph:lightning-fill" size={14} /> Quick
-            </TabsTrigger>
-            <TabsTrigger value="advanced">
-              <Icon icon="ph:sliders-horizontal-fill" size={14} /> Advanced
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
       {loadingDraft && (
         <div className="mono flex justify-center" style={{ color: "var(--hi-blue)" }}>
           <Icon icon="svg-spinners:3-dots-fade" size={16} /> Loading draft…
         </div>
       )}
-
-      {/* Both forms are kept mounted (hidden, not unmounted) so a half-filled
-          form survives a glance at the other mode once the user confirms. */}
-      <div hidden={mode !== "quick"}>
-        <QuickCreate
-          key={quickKey}
-          onDirtyChange={setQuickDirty}
-          initial={quickInitial}
-          draftId={quickDraftId}
-        />
-      </div>
-      <div hidden={mode !== "advanced"}>
-        <AdvancedCreate
-          key={advancedKey}
-          onDirtyChange={setAdvancedDirty}
-          initial={advancedInitial}
-          draftId={advancedDraftId}
-        />
-      </div>
-
-      <Dialog open={pendingMode !== null} onOpenChange={(o) => !o && setPendingMode(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Discard your changes?</DialogTitle>
-            <DialogDescription>
-              You&apos;ve started filling out the{" "}
-              <strong>{mode === "quick" ? "Quick" : "Advanced"}</strong> form. Switching to{" "}
-              <strong>{pendingMode === "quick" ? "Quick" : "Advanced"}</strong> won&apos;t carry
-              those details over.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingMode(null)}>
-              Keep editing
-            </Button>
-            <Button variant="destructive" onClick={confirmSwitch}>
-              Switch &amp; discard
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AdvancedCreate
+        key={createKey}
+        initial={draftInitial ?? undefined}
+        draftId={resumedId ?? undefined}
+      />
     </div>
   );
 }
@@ -407,14 +316,40 @@ function AdvancedCreate({
   const [tag, setTag] = useState(initial?.tag ?? "");
   const [start, setStart] = useState(() => initial?.start ?? isoLocal(60)); // now + 1h
   const [end, setEnd] = useState(() => initial?.end ?? isoLocal(60 + 3 * 60)); // start + 3h
+  // End auto-tracks start + 3h until the user edits End themselves (#78).
+  const endTouched = useRef(initial?.end != null);
   const [venue, setVenue] = useState(initial?.venue ?? "");
   const [city, setCity] = useState(initial?.city ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [coverFile, setCoverFile] = useState<File | null>(null);
-  const coverPreview = useMemo(
-    () => (coverFile ? URL.createObjectURL(coverFile) : null),
-    [coverFile],
-  );
+  // Object-URL preview, revoked on change/unmount (no leak — the old useMemo never
+  // revoked). Drives both the upload thumbnail and the live ticket stub.
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!coverFile) {
+      setCoverPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(coverFile);
+    setCoverPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [coverFile]);
+  // Validate + accept a picked/dropped cover (image, <= 8 MB).
+  function pickCover(file: File | null) {
+    if (!file) {
+      setCoverFile(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast.error("Pick an image file (PNG, JPG, GIF or WebP).");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("That cover is too large — keep it under 8 MB.");
+      return;
+    }
+    setCoverFile(file);
+  }
 
   // ── Step 2: Tickets ──
   const [basePrice, setBasePrice] = useState(initial?.basePrice ?? "");
@@ -562,6 +497,19 @@ function AdvancedCreate({
   // Live Step-2 validation (capacity + base price), surfaced inline as the user
   // types — same rule set the Next/Publish guard enforces.
   const ticketError = stepError(1);
+
+  // Smart time UX (#78): End follows Start by +3h until the user edits End.
+  function onStartChange(v: string) {
+    setStart(v);
+    if (!endTouched.current) {
+      const ms = Date.parse(v);
+      if (Number.isFinite(ms)) setEnd(isoFromMs(ms + 3 * 3_600_000));
+    }
+  }
+  function onEndChange(v: string) {
+    endTouched.current = true;
+    setEnd(v);
+  }
 
   function next() {
     const e = stepError(step);
@@ -938,8 +886,9 @@ function AdvancedCreate({
           )}
           <div className="flex gap-2 justify-center" style={{ marginTop: 22, flexWrap: "wrap" }}>
             <Button asChild size="lg">
-              <Link href="/dashboard">
-                <Icon icon="material-symbols-light:analytics-rounded" size={18} /> Go to dashboard
+              <Link href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}>
+                <Icon icon="ph:pencil-simple-fill" size={18} />{" "}
+                {createdEventId ? "Manage event" : "Go to dashboard"}
               </Link>
             </Button>
             <Button
@@ -966,17 +915,17 @@ function AdvancedCreate({
       <header className="relative">
         <div
           className="glow"
-          style={{ width: 360, height: 360, background: "rgba(0,124,250,.4)", top: -150, right: -40, opacity: 0.2 }}
+          style={{ width: 360, height: 360, background: p1, top: -150, right: -40, opacity: 0.16 }}
         />
         <span className="eyebrow">
           <Icon icon="mdi:rocket-launch" size={14} /> Host
         </span>
         <h1 className="page-title" style={{ marginTop: 12, fontSize: 32 }}>
-          Create an event
+          Forge an event
         </h1>
         <p className="page-sub">
-          Permissionless — the wallet that signs becomes the organizer. Images and metadata are
-          stored on Walrus.
+          Fill the stub on the right — it becomes the ticket attendees hold and scan. Permissionless:
+          the wallet that signs is the organizer; media &amp; metadata live on Walrus.
           {ENOKI_ENABLED && <span style={{ color: "var(--color-success)" }}> Gas is sponsored.</span>}
         </p>
       </header>
@@ -1064,11 +1013,11 @@ function AdvancedCreate({
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="ce-start">Event starts</Label>
-                  <DateTimePicker id="ce-start" value={start} min={isoLocal()} onChange={setStart} />
+                  <DateTimePicker id="ce-start" value={start} min={isoLocal()} onChange={onStartChange} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="ce-end">Event ends</Label>
-                  <DateTimePicker id="ce-end" value={end} min={start} onChange={setEnd} />
+                  <DateTimePicker id="ce-end" value={end} min={start} onChange={onEndChange} />
                 </div>
               </div>
               {dateError && (
@@ -1157,18 +1106,16 @@ function AdvancedCreate({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="ce-cover">Cover image (stored on Walrus on publish)</Label>
-                <Input
-                  id="ce-cover"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
+                <Label htmlFor="ce-cover">Cover image</Label>
+                <CoverPicker
+                  previewUrl={coverPreview}
+                  onPick={pickCover}
+                  onClear={() => setCoverFile(null)}
                 />
-                {coverFile && (
-                  <div className="mono" style={{ marginTop: 6 }}>
-                    <Icon icon="ph:image-fill" size={13} /> {coverFile.name}
-                  </div>
-                )}
+                <p className="text-xs" style={{ color: "var(--fg3)" }}>
+                  Optional — skip it and we&apos;ll seed unique art from your title &amp; category.
+                  Stored on Walrus on publish.
+                </p>
               </div>
             </div>
           )}
@@ -1511,70 +1458,28 @@ function AdvancedCreate({
           </div>
         </Card>
 
-        {/* ── live preview column ── */}
-        <aside className="space-y-3" style={{ position: "sticky", top: 20 }}>
-          <span className="section-label">Live preview</span>
-          <div className="ev-card">
-            <div
-              className="poster"
-              style={
-                { height: 150, ["--p1" as string]: p1, ["--p2" as string]: p2 } as React.CSSProperties
-              }
-            >
-              {coverPreview && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={coverPreview}
-                  alt={name || "cover"}
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-              )}
-              <div className="poster-noise" />
-              <span className="poster-glyph">
-                <Icon icon={catGlyph(category)} size={64} />
-              </span>
-              <div className="absolute flex gap-1.5" style={{ top: 12, left: 12, flexWrap: "wrap" }}>
-                {isFree && <Badge variant="secondary">Free</Badge>}
-                {web3 && <Badge variant="secondary">Web3</Badge>}
-                {tag.trim() && <Badge variant="secondary">{tag.trim()}</Badge>}
-              </div>
-            </div>
-            <div className="ev-body">
-              <div className="ev-title" style={{ color: "var(--fg1)" }}>
-                {name.trim() || "Your event name"}
-              </div>
-              <div
-                className="flex items-center gap-1.5 text-[13px]"
-                style={{ color: "var(--fg3)" }}
-              >
-                <Icon icon="carbon:location" size={14} /> <span>{venueLabel}</span>
-              </div>
-              <div
-                className="flex items-center gap-1.5 text-[13px]"
-                style={{ color: "var(--fg3)" }}
-              >
-                <Icon icon="proicons:calendar" size={14} /> <span>{dateLabel}</span>
-              </div>
-              <div className="ev-foot" style={{ flexWrap: "wrap" }}>
-                {isFree ? (
-                  <Badge variant="secondary">Claim free</Badge>
-                ) : basePrice.trim() ? (
-                  <Badge variant="secondary">
-                    {basePrice} {ci.symbol}
-                  </Badge>
-                ) : (
-                  <Badge variant="outline">Price not set</Badge>
-                )}
-                {poap && (
-                  <Badge variant="secondary">
-                    <Icon icon="ph:seal-check-fill" size={11} /> POAP
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </div>
-          <p className="text-xs" style={{ color: "var(--fg3)" }}>
-            This is roughly how your event appears in Discover.
+        {/* ── live ticket stub: the product, mid-fabrication ── */}
+        <aside className="space-y-2.5" style={{ position: "sticky", top: 20 }}>
+          <TicketStub
+            name={name}
+            category={category}
+            startMs={startMs}
+            endMs={endMs}
+            venue={venue}
+            city={city}
+            isFree={isFree}
+            price={basePrice}
+            coinSymbol={ci.symbol}
+            capacity={maxTickets}
+            organizer={addr}
+            gasSponsored={ENOKI_ENABLED}
+            coverUrl={coverPreview ?? undefined}
+          />
+          <p
+            className="mono"
+            style={{ textAlign: "center", color: "var(--fg3)", fontSize: 11, letterSpacing: ".04em" }}
+          >
+            <Icon icon="ph:eye-fill" size={12} /> Live preview · this is the ticket
           </p>
         </aside>
       </div>
@@ -1609,530 +1514,6 @@ function AdvancedCreate({
   );
 }
 
-// ── Quick (instant) create ────────────────────────────────────────────────────
-// A single compact form. Hardcodes max_per_user = 1, no tiers, no cover. Stores a
-// minimal sentinel metadata blob ({ v:1, category }) on Walrus, creates the event
-// (uri = blobId) — if paid, atomically via create_event_with_price (#68) so the
-// price is set in the same tx. Rich metadata (cover, description, tiers) is added
-// later from the manage screen.
-const QUICK_DEFAULT_DURATION_MIN = 3 * 60; // default end = start + 3h
-
-function QuickCreate({
-  onDirtyChange,
-  initial,
-  draftId: initialDraftId,
-}: {
-  onDirtyChange?: (dirty: boolean) => void;
-  // Rehydration source when resuming a saved draft (GH#46).
-  initial?: Partial<EventDraftForm>;
-  draftId?: string;
-}) {
-  const account = useCurrentAccount();
-  const addr = account?.address ?? null;
-  const client = useCurrentClient();
-  const regular = useSignAndExecute();
-  const sponsored = useSponsorAndExecute();
-  const txPending = regular.isPending || sponsored.isPending;
-
-  const [name, setName] = useState(initial?.name ?? "");
-  const [category, setCategory] = useState(initial?.category ?? PICKABLE[0].id);
-  const [start, setStart] = useState(() => initial?.start ?? isoLocal(60)); // now + 1h
-  const [end, setEnd] = useState(
-    () => initial?.end ?? isoLocal(60 + QUICK_DEFAULT_DURATION_MIN),
-  ); // start + 3h
-  // End auto-tracks start + 3h until the user edits End themselves (#78).
-  const endTouched = useRef(initial?.end != null);
-  const [maxTickets, setMaxTickets] = useState(initial?.maxTickets ?? "100");
-  const [isFree, setIsFree] = useState(initial?.isFree ?? false);
-  const [basePrice, setBasePrice] = useState(initial?.basePrice ?? "");
-  const [coinType, setCoinType] = useState(initial?.coinType ?? COINS[0].type);
-
-  // Draft id for save/replace (GH#46): set on resume, refreshed on each save.
-  const [draftId, setDraftId] = useState<string | null>(initialDraftId ?? null);
-  const [savingDraft, setSavingDraft] = useState(false);
-
-  const [busy, setBusy] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
-  const [createdEventId, setCreatedEventId] = useState<string | null>(null);
-  const [priceSet, setPriceSet] = useState<boolean | null>(null);
-  // Walrus upload cache so a create retry doesn't re-upload an identical blob.
-  const [metaCache, setMetaCache] = useState<{ key: string; blobId: string } | null>(null);
-
-  const [p1] = catPalette(category);
-  const ci = coinInfo(coinType);
-
-  const quickDirty =
-    Boolean(digest) ||
-    name.trim() !== "" ||
-    basePrice.trim() !== "" ||
-    maxTickets !== "100" ||
-    category !== PICKABLE[0].id ||
-    isFree !== false ||
-    coinType !== COINS[0].type;
-  useEffect(() => {
-    onDirtyChange?.(quickDirty);
-  }, [quickDirty, onDirtyChange]);
-
-  const startMs = Date.parse(start);
-  const endMs = Date.parse(end);
-
-  // Time validation matching the NEW Move contract:
-  //   start_ms >= now, end_ms > start_ms, purchase_start_ms = now (sales open now).
-  function validateTimes(): string | null {
-    if (![startMs, endMs].every(Number.isFinite)) return "Dates must be valid.";
-    // Small slack so "now" set a moment ago isn't rejected as past by the time
-    // the tx lands (the contract checks start_ms >= now at execution).
-    if (startMs < Date.now() - 60_000) return "Start can't be in the past.";
-    if (endMs <= startMs) return "End must be after start.";
-    return null;
-  }
-
-  function validate(): string | null {
-    if (!name.trim()) return "Event name is required.";
-    const t = validateTimes();
-    if (t) return t;
-    const maxT = Number(maxTickets);
-    if (!Number.isInteger(maxT) || maxT <= 0)
-      return "Capacity must be a whole number greater than 0.";
-    if (maxT > MAX_TICKET_LIMIT)
-      return `Capacity can't exceed ${MAX_TICKET_LIMIT.toLocaleString()}.`;
-    if (!isFree) {
-      if (!basePrice.trim()) return "Set a price, or mark the event as free.";
-      const price = Number(basePrice);
-      if (!Number.isFinite(price) || price <= 0)
-        return "Price must be a number greater than 0.";
-    }
-    return null;
-  }
-
-  const dateError = validateTimes();
-  const formError = validate();
-
-  // Smart time UX (#78): End follows Start by +3h until the user edits End.
-  function onStartChange(v: string) {
-    setStart(v);
-    if (!endTouched.current) {
-      const ms = Date.parse(v);
-      if (Number.isFinite(ms)) setEnd(isoFromMs(ms + 3 * 3_600_000));
-    }
-  }
-  function onEndChange(v: string) {
-    endTouched.current = true;
-    setEnd(v);
-  }
-
-  async function publish() {
-    if (!addr) return setErr("Connect a wallet to publish.");
-    const e = validate();
-    if (e) return setErr(e);
-
-    setErr(null);
-    setDigest(null);
-    setCreatedEventId(null);
-    setPriceSet(null);
-    // Sales open immediately; clamp to start so on-chain purchase_start_ms <= start_ms.
-    const purchaseStartMs = Math.min(Date.now(), startMs);
-    try {
-      // 1) Minimal sentinel metadata → Walrus (tiny, fast). Reuse on retry.
-      const metadata = minimalEventMetadata(category);
-      const metaKey = JSON.stringify(metadata);
-      let blobId: string;
-      if (metaCache && metaCache.key === metaKey) {
-        blobId = metaCache.blobId;
-      } else {
-        setBusy("Storing event metadata on Walrus…");
-        blobId = await putEventMetadata(metadata);
-        setMetaCache({ key: metaKey, blobId });
-      }
-
-      // 2) Create the event on-chain (uri = metadata blobId, max_per_user = 1).
-      // Paid events use the ATOMIC create_event_with_price (#68); free events use
-      // create_event. No follow-up set_price — price is set in the same tx.
-      const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
-      const priceUnits = wantsPrice ? toUnits(basePrice, coinInfo(coinType).decimals) : 0n;
-      // A paid event must resolve to a positive on-chain price; reject sub-unit
-      // precision (toUnits → null) HERE so we never build a priced-less event (#68).
-      if (wantsPrice && (priceUnits === null || priceUnits <= 0n)) {
-        setBusy(null);
-        toast.error("That price is too small for this coin's precision — use a larger amount.");
-        return;
-      }
-      setBusy("Creating event on Sui…");
-      const tx = buildCreateEventTx(
-        {
-          name: name.trim(),
-          symbol: category.slice(0, 4).toUpperCase(),
-          uri: blobId,
-          startMs: BigInt(startMs),
-          endMs: BigInt(endMs),
-          purchaseStartMs: BigInt(purchaseStartMs),
-          maxTickets: BigInt(Math.trunc(Number(maxTickets))),
-          maxPerUser: 1n,
-          isFree,
-          isRefundable: false,
-          coinType,
-          price: priceUnits ?? 0n,
-        },
-        addr,
-      );
-      const out = ENOKI_ENABLED
-        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
-        : await regular.mutateAsync({ transaction: tx });
-      setDigest(out.digest);
-      toast.success("Your event is live", {
-        description: <TxLink digest={out.digest} chars={10} />,
-      });
-
-      // The draft is now a real event — drop it from the index (GH#46).
-      if (draftId && addr) {
-        deleteDraft(addr, draftId);
-        setDraftId(null);
-      }
-
-      const ids = await resolveCreatedIds(client, out.digest).catch(() => null);
-      if (ids?.eventId) setCreatedEventId(ids.eventId);
-      setPriceSet(wantsPrice ? true : null);
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  // ── Save as draft (GH#46) ───────────────────────────────────────────────────
-  // Encrypts the Quick form (Seal) and stores it on Walrus via lib/drafts. Quick
-  // has no cover, so no upload step; max_per_user is fixed at 1 here as well.
-  async function saveAsDraft() {
-    if (!addr) return; // guarded by the disabled button — needs addr for Seal + index
-    setSavingDraft(true);
-    try {
-      const form: EventDraftForm = {
-        name,
-        category,
-        start,
-        end,
-        maxTickets,
-        maxPerUser: "1",
-        isFree,
-        basePrice,
-        coinType,
-      };
-      const draft: EventDraft = {
-        v: 1,
-        mode: "quick",
-        title: name.trim() || "Untitled draft",
-        savedAt: Date.now(),
-        form,
-      };
-      const entry = await saveDraft(client, addr, draft, draftId ?? undefined);
-      setDraftId(entry.id);
-      toast.success("Draft saved");
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-    } finally {
-      setSavingDraft(false);
-    }
-  }
-
-  // ── success ──
-  if (digest) {
-    return (
-      <div className="space-y-6 screen-in" style={{ maxWidth: 420, margin: "0 auto" }}>
-        <div style={{ maxWidth: 340, margin: "0 auto" }}>
-          <TicketStub
-            name={name}
-            category={category}
-            startMs={startMs}
-            endMs={endMs}
-            isFree={isFree}
-            price={basePrice}
-            coinSymbol={ci.symbol}
-            capacity={maxTickets}
-            organizer={addr}
-            gasSponsored={ENOKI_ENABLED}
-            published
-          />
-        </div>
-        <Card className="text-center" style={{ padding: 28 }}>
-          <h1 className="page-title" style={{ fontSize: 26 }}>
-            Your event is live
-          </h1>
-          <p className="page-sub">
-            <strong style={{ color: "var(--fg1)" }}>{name.trim() || "Your event"}</strong> is now on
-            Sui. Add a cover, description and ticket tiers any time from your event&apos;s manage
-            page.
-          </p>
-          <div style={{ marginTop: 10 }}>
-            <TxLink digest={digest} chars={12} className="mono" />
-          </div>
-          {!isFree && priceSet === true && (
-            <Card
-              style={{
-                marginTop: 18,
-                textAlign: "left",
-                padding: 16,
-                background: "rgba(0,200,120,.08)",
-                borderColor: "var(--color-success)",
-              }}
-            >
-              <div className="flex items-center gap-2" style={{ color: "var(--color-success)" }}>
-                <Icon icon="ph:check-circle-fill" size={16} />
-                <span className="text-sm font-semibold">Ticket price set</span>
-              </div>
-              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
-                Your price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} is live on-chain.
-                Adjust pricing and add more coins from your{" "}
-                <Link href="/dashboard" style={{ color: "var(--hi-blue)", fontWeight: 600 }}>
-                  dashboard
-                </Link>
-                .
-              </p>
-            </Card>
-          )}
-          <div className="flex gap-2 justify-center" style={{ marginTop: 22, flexWrap: "wrap" }}>
-            <Button asChild size="lg">
-              <Link href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}>
-                <Icon icon="ph:pencil-simple-fill" size={18} /> Add details
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDigest(null);
-                setCreatedEventId(null);
-                setPriceSet(null);
-                setName("");
-                setBasePrice("");
-                setCategory(PICKABLE[0].id);
-                setStart(isoLocal(60));
-                setEnd(isoLocal(60 + QUICK_DEFAULT_DURATION_MIN));
-                endTouched.current = false;
-                setMaxTickets("100");
-                setIsFree(false);
-                setCoinType(COINS[0].type);
-              }}
-            >
-              Create another
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6 screen-in">
-      <header className="relative">
-        <div
-          className="glow"
-          style={{ width: 360, height: 360, background: p1, top: -150, right: -40, opacity: 0.16 }}
-        />
-        <span className="eyebrow">
-          <Icon icon="ph:lightning-fill" size={14} /> Quick host
-        </span>
-        <h1 className="page-title" style={{ marginTop: 12, fontSize: 32 }}>
-          Forge an event
-        </h1>
-        <p className="page-sub">
-          Fill the stub — it becomes the ticket attendees hold and scan. Publishes in seconds; sales
-          open immediately.
-          {ENOKI_ENABLED && <span style={{ color: "var(--color-success)" }}> Gas is sponsored.</span>}
-        </p>
-      </header>
-
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
-      <Card className="space-y-5 order-2 lg:order-1" style={{ padding: 20 }}>
-        <div className="space-y-1.5">
-          <Label htmlFor="qc-event-name">Event name</Label>
-          <Input
-            id="qc-event-name"
-            placeholder="e.g. Sui Builders Night"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="qc-category">Category</Label>
-          <Select value={category} onValueChange={(v) => setCategory(v)}>
-            <SelectTrigger id="qc-category" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PICKABLE.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="qc-start">Starts</Label>
-            <DateTimePicker id="qc-start" value={start} min={isoLocal()} onChange={onStartChange} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="qc-end">Ends</Label>
-            <DateTimePicker id="qc-end" value={end} min={start} onChange={onEndChange} />
-          </div>
-        </div>
-        <p className="text-xs" style={{ color: dateError ? "var(--color-danger)" : "var(--fg3)" }}>
-          {dateError ? (
-            <>
-              <Icon icon="ph:warning-circle-fill" size={12} /> {dateError}
-            </>
-          ) : (
-            <>End follows start by 3h until you change it.</>
-          )}
-        </p>
-
-        <div className="space-y-1.5" style={{ maxWidth: 220 }}>
-          <Label htmlFor="qc-capacity">Capacity</Label>
-          <Input
-            id="qc-capacity"
-            type="number"
-            min={1}
-            step="1"
-            value={maxTickets}
-            onChange={(e) => setMaxTickets(e.target.value)}
-          />
-          <p className="text-xs" style={{ color: "var(--fg3)" }}>
-            One ticket per attendee.
-          </p>
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold">Free event</div>
-            <div className="text-xs" style={{ color: "var(--fg3)" }}>
-              Attendees claim for free — no on-chain price.
-            </div>
-          </div>
-          <Switch
-            aria-label="Free event"
-            checked={isFree}
-            onCheckedChange={(v) => setIsFree(Boolean(v))}
-          />
-        </div>
-
-        {!isFree && (
-          <div className="grid sm:grid-cols-[1fr_140px] gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="qc-price">Price</Label>
-              <Input
-                id="qc-price"
-                type="number"
-                min={0}
-                step="any"
-                placeholder="0.00"
-                value={basePrice}
-                onChange={(e) => setBasePrice(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="qc-coin">Coin</Label>
-              <Select value={coinType} onValueChange={(v) => setCoinType(v)}>
-                <SelectTrigger id="qc-coin" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {COINS.map((c) => (
-                    <SelectItem key={c.type} value={c.type}>
-                      {c.symbol}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        )}
-        {!isFree && (
-          <p className="text-xs" style={{ color: "var(--fg3)" }}>
-            A 3% platform fee is added on top at checkout. Pricing is applied as a follow-up call
-            after creation (the Event is shared on-chain).
-          </p>
-        )}
-
-        {err && (
-          <div className="text-sm break-words" style={{ color: "var(--color-danger)" }}>
-            <Icon icon="ph:warning-circle-fill" size={14} /> {err}
-          </div>
-        )}
-        {busy && (
-          <div className="mono" style={{ color: "var(--hi-blue)" }}>
-            <Icon icon="svg-spinners:3-dots-fade" size={16} /> {busy}
-          </div>
-        )}
-
-        <div className="flex items-center justify-end gap-2 pt-1">
-          {/* Save as draft (GH#46) — needs a wallet for the Seal policy + index. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={!addr ? 0 : -1}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={saveAsDraft}
-                  disabled={!addr || savingDraft || !!busy || txPending}
-                >
-                  {savingDraft ? (
-                    <>
-                      <Icon icon="svg-spinners:3-dots-fade" size={14} /> Saving…
-                    </>
-                  ) : (
-                    <>
-                      <Icon icon="ph:floppy-disk-fill" size={14} /> Save draft
-                    </>
-                  )}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              {!addr
-                ? "Connect a wallet to save an encrypted draft"
-                : "Encrypt and save this draft to Walrus"}
-            </TooltipContent>
-          </Tooltip>
-          {!addr ? (
-            <Badge variant="outline">Connect a wallet to publish</Badge>
-          ) : (
-            <Button size="lg" onClick={publish} disabled={!!busy || txPending || !!formError}>
-              <Icon icon="ph:lightning-fill" size={18} />
-              {busy || txPending ? "Forging…" : "Publish event"}
-            </Button>
-          )}
-        </div>
-      </Card>
-
-        {/* ── live ticket stub: the product, mid-fabrication ── */}
-        <div className="order-1 lg:order-2 lg:sticky lg:top-6 space-y-2.5">
-          <TicketStub
-            name={name}
-            category={category}
-            startMs={startMs}
-            endMs={endMs}
-            isFree={isFree}
-            price={basePrice}
-            coinSymbol={ci.symbol}
-            capacity={maxTickets}
-            organizer={addr}
-            gasSponsored={ENOKI_ENABLED}
-          />
-          <p
-            className="mono"
-            style={{ textAlign: "center", color: "var(--fg3)", fontSize: 11, letterSpacing: ".04em" }}
-          >
-            <Icon icon="ph:eye-fill" size={12} /> Live preview · this is the ticket
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function Toggle({
   on,
   set,
@@ -2163,6 +1544,71 @@ function Toggle({
         onCheckedChange={(v) => set(Boolean(v))}
       />
     </Card>
+  );
+}
+
+// Cover upload affordance: a click/drop dashed tile when empty, a thumbnail with
+// hover Replace/Remove when set. Validation (type/size) lives in the caller's
+// onPick; the object-URL preview is owned + revoked by the caller.
+function CoverPicker({
+  previewUrl,
+  onPick,
+  onClear,
+}: {
+  previewUrl: string | null;
+  onPick: (f: File | null) => void;
+  onClear: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
+  return (
+    <div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        aria-label="Cover image"
+        onChange={(e) => {
+          onPick(e.target.files?.[0] ?? null);
+          e.target.value = "";
+        }}
+      />
+      {previewUrl ? (
+        <div className="cover-pick has">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewUrl} alt="Cover preview" className="cover-pick-img" />
+          <div className="cover-pick-actions">
+            <Button type="button" size="sm" variant="outline" onClick={() => inputRef.current?.click()}>
+              <Icon icon="ph:arrow-clockwise-bold" size={13} /> Replace
+            </Button>
+            <Button type="button" size="sm" variant="destructive" onClick={onClear}>
+              <Icon icon="ph:trash-fill" size={13} /> Remove
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={`cover-pick empty${drag ? " drag" : ""}`}
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDrag(true);
+          }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDrag(false);
+            onPick(e.dataTransfer.files?.[0] ?? null);
+          }}
+        >
+          <Icon icon="ph:image-square-fill" size={26} />
+          <span className="cover-pick-title">Add a cover image</span>
+          <span className="cover-pick-hint">Click or drop · PNG, JPG, WebP · up to 8 MB</span>
+        </button>
+      )}
+    </div>
   );
 }
 
