@@ -249,6 +249,20 @@ public fun claim<T>(
     let stake = remove_winning_stake(market, caller);
     assert!(stake > 0, E_NO_STAKE);
 
+    // The final winner (whose claim just emptied the winning-side table) absorbs
+    // the entire remaining losing pool — their pro-rata share plus the sub-unit
+    // rounding dust left by earlier winners' floored draws — so the pool reaches
+    // exactly 0 and nothing locks. Safe: this branch runs only when
+    // `winning_total > 0` (the no-winner branch above hard-returns), and zero
+    // bets are rejected (`E_ZERO_BET`), so an empty winning table means every
+    // winner has already claimed. Read the WINNING side only, AFTER the removal
+    // and the `stake > 0` assert, as a local `bool` BEFORE the mutable borrow.
+    let is_last_winner = if (market.outcome_yes) {
+        table::is_empty(&market.yes_stakes)
+    } else {
+        table::is_empty(&market.no_stakes)
+    };
+
     // Pro-rata share of the losing pool. `winning_total > 0` is guaranteed
     // because this caller had stake > 0 on the winning side. If `losing_total`
     // is 0 (one-sided market), winners just reclaim their own stake.
@@ -258,11 +272,15 @@ public fun claim<T>(
         0
     };
 
-    // Pull `stake` from the winning pool and `loser_share` from the losing pool,
-    // then merge and hand the caller a single coin.
+    // Pull `stake` from the winning pool; the last winner drains whatever remains
+    // in the losing pool (own share + accumulated dust; 0 if one-sided —
+    // `withdraw_all` of an empty pool yields a zero balance and cannot abort),
+    // while every earlier winner takes only its floored `loser_share`.
     let (winning_pool_mut, losing_pool_mut) = winning_losing_pools_mut(market);
     let mut payout_bal = balance::split(winning_pool_mut, stake);
-    if (loser_share > 0) {
+    if (is_last_winner) {
+        balance::join(&mut payout_bal, balance::withdraw_all(losing_pool_mut));
+    } else if (loser_share > 0) {
         balance::join(&mut payout_bal, balance::split(losing_pool_mut, loser_share));
     };
 
@@ -613,11 +631,12 @@ public fun claim_range<T>(
 
         // losing_total = sum(totals) - totals[wb].
         let losing_total = sum_totals(market) - winning_total;
-        let loser_share = if (losing_total > 0) {
-            (((stake as u128) * (losing_total as u128)) / (winning_total as u128)) as u64
-        } else {
-            0
-        };
+
+        // The final winning-bucket claimant (whose claim just emptied the
+        // winning bucket's stake table) absorbs ALL remaining losing-bucket
+        // funds. Read the winning bucket's table only, AFTER the removal and the
+        // `stake > 0` assert, as a local `bool` BEFORE any mutable pool borrow.
+        let is_last_winner = table::is_empty(vector::borrow(&market.stakes, wb));
 
         // Take own stake from the winning pool.
         let mut payout_bal = balance::split(
@@ -625,39 +644,64 @@ public fun claim_range<T>(
             stake,
         );
 
-        // Draw `loser_share` pro-rata across the losing pools, weighted by each
-        // losing bucket's ORIGINAL total (`market.totals[b]`), not its live
-        // remaining balance (which earlier claimants have already drained).
-        // Each per-bucket draw is `floor(loser_share * totals[b] / losing_total)`
-        // and is clamped to what the pool still holds; `remaining` caps the
-        // cumulative draw so the sum never exceeds `loser_share`. Across all
-        // winners these floored per-bucket shares sum to <= each losing bucket's
-        // total, so nothing overdraws and only sub-unit rounding dust can remain.
-        if (loser_share > 0) {
-            let mut remaining = loser_share;
+        if (is_last_winner) {
+            // Drain EVERY non-winning bucket FULLY — NOT the floored pro-rata
+            // loop, which `&& remaining > 0`-exits and can leave a losing bucket
+            // entirely undrawn. This recovers all rounding dust AND any bucket
+            // the floored loop never reached, so every pool reaches exactly 0.
+            // `withdraw_all` of an empty pool yields a zero balance, never aborts.
             let buckets = vector::length(&market.pools);
             let mut b = 0;
-            while (b < buckets && remaining > 0) {
+            while (b < buckets) {
                 if (b != wb) {
-                    let orig = *vector::borrow(&market.totals, b);
-                    if (orig > 0) {
-                        // Pro-rata of THIS losing bucket by original weight.
-                        let want = (((loser_share as u128) * (orig as u128))
-                            / (losing_total as u128)) as u64;
-                        let pool_val = balance::value(vector::borrow(&market.pools, b));
-                        // Clamp to remaining budget and to what's actually left.
-                        let mut take = if (want > remaining) { remaining } else { want };
-                        if (take > pool_val) { take = pool_val };
-                        if (take > 0) {
-                            balance::join(
-                                &mut payout_bal,
-                                balance::split(vector::borrow_mut(&mut market.pools, b), take),
-                            );
-                            remaining = remaining - take;
-                        };
-                    };
+                    balance::join(
+                        &mut payout_bal,
+                        balance::withdraw_all(vector::borrow_mut(&mut market.pools, b)),
+                    );
                 };
                 b = b + 1;
+            };
+        } else {
+            let loser_share = if (losing_total > 0) {
+                (((stake as u128) * (losing_total as u128)) / (winning_total as u128)) as u64
+            } else {
+                0
+            };
+
+            // Draw `loser_share` pro-rata across the losing pools, weighted by each
+            // losing bucket's ORIGINAL total (`market.totals[b]`), not its live
+            // remaining balance (which earlier claimants have already drained).
+            // Each per-bucket draw is `floor(loser_share * totals[b] / losing_total)`
+            // and is clamped to what the pool still holds; `remaining` caps the
+            // cumulative draw so the sum never exceeds `loser_share`. Across all
+            // winners these floored per-bucket shares sum to <= each losing bucket's
+            // total, so nothing overdraws and only sub-unit rounding dust can remain.
+            if (loser_share > 0) {
+                let mut remaining = loser_share;
+                let buckets = vector::length(&market.pools);
+                let mut b = 0;
+                while (b < buckets && remaining > 0) {
+                    if (b != wb) {
+                        let orig = *vector::borrow(&market.totals, b);
+                        if (orig > 0) {
+                            // Pro-rata of THIS losing bucket by original weight.
+                            let want = (((loser_share as u128) * (orig as u128))
+                                / (losing_total as u128)) as u64;
+                            let pool_val = balance::value(vector::borrow(&market.pools, b));
+                            // Clamp to remaining budget and to what's actually left.
+                            let mut take = if (want > remaining) { remaining } else { want };
+                            if (take > pool_val) { take = pool_val };
+                            if (take > 0) {
+                                balance::join(
+                                    &mut payout_bal,
+                                    balance::split(vector::borrow_mut(&mut market.pools, b), take),
+                                );
+                                remaining = remaining - take;
+                            };
+                        };
+                    };
+                    b = b + 1;
+                };
             };
         };
 

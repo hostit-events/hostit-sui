@@ -354,6 +354,68 @@ fun empty_cutoffs_aborts() {
     sc.end();
 }
 
+// === Rounding dust across TWO losing buckets folds into the final winner ===
+//
+// cutoffs = [100, 500] -> 3 buckets. Winning bucket 1 has two UNEVEN winners;
+// the two OTHER buckets (0 and 2) both lose, so the floored pro-rata loop can
+// leave dust (or a whole bucket undrawn) for the non-last winner.
+//   Winning bucket 1: ALICE 1, BOB 2  => totals[1] = 3 (winning_total)
+//   Losing  bucket 0: CAROL 5
+//   Losing  bucket 2: DAVE  5         => losing_total = 10
+// minted = 250 -> bucket 1 wins. Total pot = 3 + 5 + 5 = 13.
+//
+// ALICE (claims first, NOT last, stake 1): loser_share = floor(1*10/3) = 3.
+//   Floored loop (weighted by original totals): draws 1 from bucket 0 and 1 from
+//   bucket 2 (want = floor(3*5/10) = 1 each), leaving 1 of her share undrawn as
+//   dust. ALICE payout = 1 (own) + 1 + 1 = 3.
+// BOB (claims last, stake 2): his removal empties the winning bucket's table, so
+//   the fold fires: own stake 2 from bucket 1 + DRAIN every non-winning bucket
+//   fully -> bucket 0 (5-1=4) + bucket 2 (5-1=4) = 8. BOB payout = 2 + 8 = 10.
+// 3 + 10 = 13 == pot. Every bucket pool reaches exactly 0 (no dust locked).
+#[test]
+fun range_dust_folds_to_last_winner() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+
+    open_market(&mut sc, &clock, ALICE, vector[100, 500]);
+
+    clock.set_for_testing(BET_NOW);
+    place_bet(&mut sc, &clock, ALICE, 1, 1); // winning bucket, small
+    place_bet(&mut sc, &clock, BOB, 1, 2); // winning bucket, larger
+    place_bet(&mut sc, &clock, CAROL, 0, 5); // losing bucket 0
+    place_bet(&mut sc, &clock, DAVE, 2, 5); // losing bucket 2
+
+    mint_tickets(&mut sc, &mut clock, 250); // bucket 1 wins
+
+    clock.set_for_testing(SETTLE_NOW);
+    settle(&mut sc, &clock);
+
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<RangeMarket<USD>>();
+    assert!(predict::range_winning_bucket(&mkt) == 1, 0);
+    assert!(predict::range_total(&mkt, 1) == 3, 1);
+    ts::return_shared(mkt);
+
+    // Non-last winner gets only its floored pro-rata share.
+    assert!(claim_amount(&mut sc, ALICE) == 3, 2);
+    // Final winner absorbs own stake + the FULL remaining of BOTH losing buckets,
+    // sweeping all rounding dust the floored loop left behind.
+    assert!(claim_amount(&mut sc, BOB) == 10, 3);
+
+    // EVERY bucket pool reaches exactly 0 — nothing locked.
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<RangeMarket<USD>>();
+    assert!(predict::range_pool_value(&mkt, 0) == 0, 4);
+    assert!(predict::range_pool_value(&mkt, 1) == 0, 5);
+    assert!(predict::range_pool_value(&mkt, 2) == 0, 6);
+    ts::return_shared(mkt);
+
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
 // === Settle picks first bucket (minted below first cutoff) ===
 #[test]
 fun settle_picks_first_bucket() {
