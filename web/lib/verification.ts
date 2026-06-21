@@ -1,33 +1,28 @@
 "use client";
 
 import { useQueries } from "@tanstack/react-query";
-import { useCurrentClient } from "@mysten/dapp-kit-react";
+import { getSuiNSClient, SUINS_NETWORK } from "./suinsClient";
 
 /**
  * Batched suiNS reverse-lookup for many addresses at once. Each lookup is
  * keyed individually in tanstack-query so the cache survives address-list
- * changes (an additional address just fires one new query).
+ * changes (an additional address just fires one new query). Resolves on the
+ * MAINNET suiNS client (names don't exist on testnet) — shares the same
+ * network-scoped cache key as `useSuiNSName`, so single + batch lookups dedupe.
  */
 export function useSuiNSNames(addresses: string[]): Map<string, string | null> {
-  const client = useCurrentClient() as unknown as {
-    resolveNameServiceNames: (input: { address: string; limit?: number }) => Promise<{
-      data: string[];
-    }>;
-  };
+  const client = getSuiNSClient();
 
   const results = useQueries({
     queries: addresses.map((address) => ({
-      queryKey: ["suins-reverse", address],
+      queryKey: ["suins-reverse", SUINS_NETWORK, address],
       queryFn: async () => {
-        try {
-          const res = await client.resolveNameServiceNames({ address, limit: 1 });
-          return res.data[0] ?? null;
-        } catch {
-          return null;
-        }
+        const res = await client.resolveNameServiceNames({ address, limit: 1 });
+        return res.data[0] ?? null;
       },
       staleTime: 5 * 60_000,
       gcTime: 30 * 60_000,
+      retry: 1,
     })),
   });
 
