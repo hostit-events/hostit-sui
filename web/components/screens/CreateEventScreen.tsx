@@ -32,7 +32,8 @@ import { ArrowRight } from "@/components/animate-ui/icons/arrow-right";
 import { DateTimePicker } from "@/components/DateTimePicker";
 import { TicketStub } from "@/components/TicketStub";
 import { TxLink } from "@/components/TxLink";
-import { useOrganizerMemory } from "@/lib/memoryClient";
+import { useOrganizerMemory, suggestEvent } from "@/lib/memoryClient";
+import { coerceSuggestion, type EventSuggestion } from "@/lib/suggest";
 import {
   CREATE_MEMORY_QUERY,
   buildCreateSummary,
@@ -394,6 +395,10 @@ function AdvancedCreate({
   // draft would overwrite existing text we stash the ctx here and open a confirm.
   const [drafting, setDrafting] = useState(false);
   const [confirmDraft, setConfirmDraft] = useState(false);
+  // "Suggest" — AI-fill the whole form with a funny event concept (#93).
+  const [suggesting, setSuggesting] = useState(false);
+  const [confirmSuggest, setConfirmSuggest] = useState(false);
+  const [suggestedOnce, setSuggestedOnce] = useState(false);
   // Read-only suggestions derived from past events; null until recall resolves.
   const [suggested, setSuggested] = useState<CreatePrefs | null>(null);
   const [suggestDismissed, setSuggestDismissed] = useState(false);
@@ -611,6 +616,60 @@ function AdvancedCreate({
       return;
     }
     void runDraft();
+  }
+
+  // ── Suggest: AI-fill the form with a funny event concept (#93) ──────────────
+  // Apply a (already-coerced) suggestion to the form. Keeps the smart time
+  // defaults and the generated cover art; the organizer edits anything before
+  // publishing.
+  function applySuggestion(s: EventSuggestion) {
+    setName(s.name);
+    setCategory(s.category);
+    if (s.category === "web3") setWeb3(true);
+    setTag(s.tag ?? "");
+    setVenue(s.venue ?? "");
+    setCity(s.city ?? "");
+    setDescription(s.description);
+    setIsFree(s.free);
+    if (!s.free) {
+      setBasePrice(s.price != null ? String(s.price) : "");
+      setCoinType(COINS.find((c) => c.symbol === s.coin)?.type ?? COINS[0].type);
+    }
+    if (s.capacity != null) setMaxTickets(String(s.capacity));
+    if (s.maxPerUser != null) setMaxPerUser(String(s.maxPerUser));
+    setSuggestDismissed(true); // hide the past-events suggestion banner if shown
+  }
+
+  async function runSuggest() {
+    if (suggesting) return;
+    setSuggesting(true);
+    try {
+      const { suggestion, sourced } = await suggestEvent();
+      const safe = coerceSuggestion(suggestion); // defense — server already coerces
+      if (!safe) throw new Error("The suggestion came back malformed. Try again.");
+      applySuggestion(safe);
+      setSuggestedOnce(true);
+      toast.success(
+        sourced === "groq" ? "Conjured a fresh event ✨" : "Here's a starter event",
+        sourced === "fallback"
+          ? { description: "AI was busy — here's a fun one to riff on. Edit anything." }
+          : { description: "Tweak anything, then publish." },
+      );
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  // Confirm before overwriting a form the user has already started.
+  function onSuggestClick() {
+    if (suggesting) return;
+    if (name.trim() || description.trim()) {
+      setConfirmSuggest(true);
+      return;
+    }
+    void runSuggest();
   }
 
   async function publish() {
@@ -917,6 +976,35 @@ function AdvancedCreate({
           className="glow"
           style={{ width: 360, height: 360, background: p1, top: -150, right: -40, opacity: 0.16 }}
         />
+        {/* Suggest (#93): one tap fills the whole form with a funny AI event. */}
+        <div className="absolute right-0 top-0 z-10">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onSuggestClick}
+                disabled={suggesting}
+                aria-label="Suggest a fun event"
+              >
+                {suggesting ? (
+                  <>
+                    <Icon icon="svg-spinners:3-dots-fade" size={14} /> Conjuring…
+                  </>
+                ) : (
+                  <>
+                    <Icon icon="ph:magic-wand-fill" size={14} />{" "}
+                    {suggestedOnce ? "Suggest another" : "Suggest"}
+                  </>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Fill the form with a fun AI-generated event — edit anything before you publish.
+            </TooltipContent>
+          </Tooltip>
+        </div>
         <span className="eyebrow">
           <Icon icon="mdi:rocket-launch" size={14} /> Host
         </span>
@@ -1506,6 +1594,32 @@ function AdvancedCreate({
               }}
             >
               <Icon icon="ph:sparkle-fill" size={14} /> Replace with AI draft
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm before a Suggest overwrites a form the user has started (#93). */}
+      <Dialog open={confirmSuggest} onOpenChange={(o) => !o && setConfirmSuggest(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Replace your draft with a suggestion?</DialogTitle>
+            <DialogDescription>
+              This fills the form with a fresh AI-generated event, replacing what you&apos;ve
+              entered. You can edit everything before publishing.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmSuggest(false)}>
+              Keep what I have
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmSuggest(false);
+                void runSuggest();
+              }}
+            >
+              <Icon icon="ph:magic-wand-fill" size={14} /> Surprise me
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -28,6 +28,7 @@ import {
 import { verifyMemoryCaller } from "@/lib/memwalAuth";
 import { rateLimit, clientIpFromHeaders } from "@/lib/rateLimit";
 import { verifyTurnstile, blockedByTurnstile } from "@/lib/turnstile";
+import { coerceSuggestion, pickFallback, SUGGEST_CATEGORIES } from "@/lib/suggest";
 
 export const dynamic = "force-dynamic";
 
@@ -150,6 +151,83 @@ function memoryLinesFrom(result: RecallOutcome): string[] {
     .map((t) => t.trim().slice(0, MAX_MEMORY_ITEM_LEN));
 }
 
+// --- "Suggest" mode (#93): invent a full FUNNY event concept --------------
+
+const SUGGEST_SYSTEM = [
+  "You are HostIt's mischievous event generator for a permissionless on-chain",
+  "ticketing app. Invent ONE short, FUNNY, lightly SARCASTIC but plausible event.",
+  "Rules:",
+  `- category MUST be exactly one of: ${SUGGEST_CATEGORIES.join(", ")}.`,
+  "- Humor = self-deprecating crypto / tech / event in-jokes. Clever, not crude.",
+  "- NEVER reference real or identifiable people, companies, or brands. No slurs,",
+  "  no NSFW, no harassment, no protected-class jokes, no politics, no real tragedies.",
+  "- Invent a fun fake venue and a real-ish city. Keep numbers small and sane.",
+  "- Return ONLY a JSON object (no prose, no markdown) with these keys:",
+  '  name (string <=80 chars), category, tag (string <=24 chars, a funny label),',
+  "  venue, city, description (1-2 sentences <=300 chars, plain text, no emoji/hashtags),",
+  '  free (boolean), price (number, only if not free; small, 1-50), coin ("SUI" or "USDC"),',
+  "  capacity (integer 20-500), maxPerUser (integer 1-10).",
+].join("\n");
+
+/** Parse a model reply into an object: strict JSON first, then a braces-extract fallback. */
+function parseSuggestJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    /* fall through */
+  }
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (m) {
+    try {
+      return JSON.parse(m[0]);
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+/**
+ * Generate a funny event concept. A blocked bot-check or any Groq failure returns
+ * the FREE curated fallback (never the paid model), so the button always works.
+ */
+async function suggestResponse(token: string | undefined, ip: string): Promise<Response> {
+  if (blockedByTurnstile(await verifyTurnstile(token, ip))) {
+    return Response.json({ suggestion: pickFallback(), sourced: "fallback" });
+  }
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    return Response.json({ suggestion: pickFallback(), sourced: "fallback" });
+  }
+  try {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 320,
+        temperature: 1.1, // a little wild — funnier, more varied on reroll
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SUGGEST_SYSTEM },
+          { role: "user", content: "Generate the event now. Return ONLY the JSON object." },
+        ],
+      }),
+    });
+    if (!r.ok) return Response.json({ suggestion: pickFallback(), sourced: "fallback" });
+    const j = (await r.json()) as { choices?: { message?: { content?: string } }[] };
+    // Coerce the UNTRUSTED model output to a safe, in-range shape; fall back if invalid.
+    const coerced = coerceSuggestion(parseSuggestJson(j.choices?.[0]?.message?.content ?? ""));
+    return Response.json(
+      coerced
+        ? { suggestion: coerced, sourced: "groq" }
+        : { suggestion: pickFallback(), sourced: "fallback" },
+    );
+  } catch {
+    return Response.json({ suggestion: pickFallback(), sourced: "fallback" });
+  }
+}
+
 export async function POST(req: Request) {
   // Byte-cap the raw payload BEFORE parsing (413 on oversize). Content-Length
   // lets us short-circuit; otherwise measure the decoded body.
@@ -174,6 +252,7 @@ export async function POST(req: Request) {
   }
 
   let body: {
+    kind?: string;
     ctx?: unknown;
     owner?: string;
     message?: string;
@@ -194,6 +273,12 @@ export async function POST(req: Request) {
       { error: "Rate limit exceeded" },
       { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
     );
+  }
+
+  // "Suggest" mode (#93) — invent a full funny event concept. No ctx/memory; the
+  // same rate-limit + Turnstile bot-wall guard it as the description draft below.
+  if (body.kind === "suggest") {
+    return suggestResponse(body.turnstileToken, ip);
   }
 
   // Whitelist/sanitize ctx into a fresh object before it reaches the prompt.
