@@ -154,9 +154,15 @@ export const targetLatest = (mod: string, fn: string) =>
  */
 export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::event::create_event`,
+  `${PACKAGE_ID}::event::create_event_with_price`, // atomic create+price (#68)
   `${PACKAGE_ID}::event::set_price`,
   `${PACKAGE_ID}::event::set_allow_self_checkin`,
   `${PACKAGE_ID}::event::add_checkin_signer`,
+  // Organizer edits (#69) — wire the existing update_* fns into Manage, gasless.
+  `${PACKAGE_ID}::event::update_metadata`,
+  `${PACKAGE_ID}::event::update_times`,
+  `${PACKAGE_ID}::event::update_max_tickets`,
+  `${PACKAGE_ID}::event::update_max_per_user`,
   `${PACKAGE_ID}::market::withdraw_event_balance`,
   `${PACKAGE_ID}::market::buy`,
   `${PACKAGE_ID}::market::buy_with_sui`,

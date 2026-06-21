@@ -67,6 +67,50 @@ export function setPriceTx(args: SetPriceArgs): Transaction {
   return tx;
 }
 
+export interface CreateEventWithPriceArgs {
+  name: string;
+  symbol: string;
+  uri: string;
+  startMs: bigint;
+  endMs: bigint;
+  purchaseStartMs: bigint;
+  maxTickets: bigint;
+  maxPerUser: bigint;
+  isRefundable: boolean;
+  coinType: string;
+  price: bigint;
+}
+
+/**
+ * Atomic paid-event creation (#68): create the event AND set its `coinType`
+ * price in a single tx — a paid event can never be left priced-less/un-buyable.
+ * Returns the OrganizerCap to `sender`; the Event is shared inside the call.
+ * Inherently paid — use `createEventTx` for free events.
+ */
+export function createEventWithPriceTx(args: CreateEventWithPriceArgs, sender: string): Transaction {
+  const tx = new Transaction();
+  const cap = tx.moveCall({
+    target: target("event", "create_event_with_price"),
+    typeArguments: [args.coinType],
+    arguments: [
+      tx.object(HUB_ID),
+      tx.pure.string(args.name),
+      tx.pure.string(args.symbol),
+      tx.pure.string(args.uri),
+      tx.pure.u64(args.startMs),
+      tx.pure.u64(args.endMs),
+      tx.pure.u64(args.purchaseStartMs),
+      tx.pure.u64(args.maxTickets),
+      tx.pure.u64(args.maxPerUser),
+      tx.pure.bool(args.isRefundable),
+      tx.pure.u64(args.price),
+      tx.object(CLOCK_ID),
+    ],
+  });
+  tx.transferObjects([cap], sender);
+  return tx;
+}
+
 // === Buy / claim ===
 
 export interface BuyArgs {
@@ -292,6 +336,72 @@ export function updateMaxTicketsTx(args: UpdateMaxTicketsArgs): Transaction {
   tx.moveCall({
     target: target("event", "update_max_tickets"),
     arguments: [tx.object(args.capId), tx.object(args.eventId), tx.pure.u64(args.maxTickets)],
+  });
+  return tx;
+}
+
+// === Organizer edits (issue #69) ===
+
+export interface UpdateMetadataArgs {
+  capId: string;
+  eventId: string;
+  name: string;
+  symbol: string;
+  /** New Walrus metadata blob id (image/description/location/category/tag). */
+  uri: string;
+}
+
+export function updateMetadataTx(args: UpdateMetadataArgs): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: target("event", "update_metadata"),
+    arguments: [
+      tx.object(args.capId),
+      tx.object(args.eventId),
+      tx.pure.string(args.name),
+      tx.pure.string(args.symbol),
+      tx.pure.string(args.uri),
+      tx.object(CLOCK_ID),
+    ],
+  });
+  return tx;
+}
+
+export interface UpdateTimesArgs {
+  capId: string;
+  eventId: string;
+  startMs: bigint;
+  endMs: bigint;
+  purchaseStartMs: bigint;
+}
+
+export function updateTimesTx(args: UpdateTimesArgs): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: target("event", "update_times"),
+    arguments: [
+      tx.object(args.capId),
+      tx.object(args.eventId),
+      tx.pure.u64(args.startMs),
+      tx.pure.u64(args.endMs),
+      tx.pure.u64(args.purchaseStartMs),
+      tx.object(CLOCK_ID),
+    ],
+  });
+  return tx;
+}
+
+export interface UpdateMaxPerUserArgs {
+  capId: string;
+  eventId: string;
+  maxPerUser: bigint;
+}
+
+export function updateMaxPerUserTx(args: UpdateMaxPerUserArgs): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: target("event", "update_max_per_user"),
+    arguments: [tx.object(args.capId), tx.object(args.eventId), tx.pure.u64(args.maxPerUser)],
   });
   return tx;
 }

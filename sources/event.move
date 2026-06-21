@@ -151,6 +151,91 @@ public fun create_event(
     clock: &Clock,
     ctx: &mut TxContext,
 ): OrganizerCap {
+    let (event, cap) = build_event(
+        hub,
+        name,
+        symbol,
+        uri,
+        start_ms,
+        end_ms,
+        purchase_start_ms,
+        max_tickets,
+        max_per_user,
+        is_free,
+        is_refundable,
+        clock,
+        ctx,
+    );
+    transfer::share_object(event);
+    cap
+}
+
+/// Atomic paid-event creation (issue #68): build the event, set the `T` price,
+/// and share — all in one transaction. A paid event can therefore never end up
+/// priced-less (the partial-failure window of separate `create_event` +
+/// `set_price` txs, which left an un-buyable "Price not set" event). Inherently
+/// paid (`is_free = false`); free events keep using `create_event`.
+public fun create_event_with_price<T>(
+    hub: &mut Hub,
+    name: String,
+    symbol: String,
+    uri: String,
+    start_ms: u64,
+    end_ms: u64,
+    purchase_start_ms: u64,
+    max_tickets: u64,
+    max_per_user: u64,
+    is_refundable: bool,
+    price: u64,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): OrganizerCap {
+    assert!(price > 0, E_ZERO_PRICE);
+    let (mut event, cap) = build_event(
+        hub,
+        name,
+        symbol,
+        uri,
+        start_ms,
+        end_ms,
+        purchase_start_ms,
+        max_tickets,
+        max_per_user,
+        false, // paid
+        is_refundable,
+        clock,
+        ctx,
+    );
+    // Price the not-yet-shared event directly — no shared-object PTB constraint
+    // (the very reason a client-side create+set_price PTB can't be atomic).
+    df::add(&mut event.id, PriceKey<T> {}, price);
+    event::emit(PriceSet {
+        event_seq: event.event_seq,
+        coin_type: type_name::with_defining_ids<T>().into_string(),
+        price,
+    });
+    transfer::share_object(event);
+    cap
+}
+
+/// Validate inputs, emit `EventCreated`, and build the `Event` + its
+/// `OrganizerCap` **without sharing** — the shared core of `create_event` and
+/// `create_event_with_price`.
+fun build_event(
+    hub: &mut Hub,
+    name: String,
+    symbol: String,
+    uri: String,
+    start_ms: u64,
+    end_ms: u64,
+    purchase_start_ms: u64,
+    max_tickets: u64,
+    max_per_user: u64,
+    is_free: bool,
+    is_refundable: bool,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): (Event, OrganizerCap) {
     assert!(string::length(&name) > 0, E_EMPTY_NAME);
     assert!(string::length(&uri) > 0, E_EMPTY_URI);
     let now = clock::timestamp_ms(clock);
@@ -209,9 +294,8 @@ public fun create_event(
         day_attendees: table::new(ctx),
         attendees: table::new(ctx),
     };
-    transfer::share_object(event);
 
-    OrganizerCap { id: object::new(ctx), event_id }
+    (event, OrganizerCap { id: object::new(ctx), event_id })
 }
 
 // === Organizer updates (granular setters; compose in a PTB) ===

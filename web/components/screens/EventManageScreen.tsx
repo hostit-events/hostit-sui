@@ -20,6 +20,10 @@ import {
   getFields,
   setAllowSelfCheckinTx,
   setPriceTx,
+  updateMaxPerUserTx,
+  updateMaxTicketsTx,
+  updateMetadataTx,
+  updateTimesTx,
   withdrawEventBalanceTx,
 } from "@/lib/ticketing";
 import {
@@ -33,18 +37,21 @@ import { useAllEvents } from "@/lib/events";
 import { useEventMarkets } from "@/lib/markets";
 import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { humanizeError } from "@/lib/moveErrors";
-import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
-import { catPalette, catGlyph } from "@/lib/data";
+import { getEventMetadata, putEventMetadata, type EventMetadata } from "@/lib/metadata";
+import { storeFile } from "@/lib/walrus";
+import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { Copy } from "@/components/animate-ui/icons/copy";
 import { RefreshCw } from "@/components/animate-ui/icons/refresh-cw";
 import { TxLink } from "@/components/TxLink";
 import { CopilotLauncher } from "@/components/screens/CopilotLauncher";
+import { DateTimePicker } from "@/components/DateTimePicker";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -591,6 +598,25 @@ export function EventManageScreen({ id }: { id: string }) {
         </Card>
       </section>
 
+      {/* === Edit event (details / schedule / capacity) === */}
+      <EditEventPanel
+        capId={capId}
+        eventId={id}
+        meta={meta}
+        currentName={name}
+        currentSymbol={String(f.symbol ?? "")}
+        currentUri={uri}
+        startMs={startMs}
+        endMs={endMs}
+        purchaseStartMs={purchaseStartMs}
+        maxTickets={maxTickets}
+        minted={minted}
+        maxPerUser={BigInt((f.max_per_user as string) ?? "0")}
+        isFree={isFree}
+        isRefundable={isRefundable}
+        onDone={() => eventQ.refetch()}
+      />
+
       {/* === Prediction markets (organizer view: open + pool volume) === */}
       <PredictionMarketsPanel
         eventId={id}
@@ -890,6 +916,626 @@ function PredictionMarketsPanel({
         </Card>
       </div>
     </section>
+  );
+}
+
+// === Edit event (issue #69) ===
+
+// CATEGORIES[0] is the "all" discovery filter, not a real event category.
+const EDIT_CATEGORIES = CATEGORIES.filter((c) => c.id !== "all");
+
+// Sane upper bound for ticket counts (mirrors CreateEventScreen's MAX_TICKET_LIMIT).
+const EDIT_MAX_TICKET_LIMIT = 10_000_000;
+
+// epoch ms -> the "YYYY-MM-DDTHH:mm" local string DateTimePicker round-trips.
+function msToLocal(ms: number): string {
+  if (!Number.isFinite(ms)) return "";
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+}
+
+// "now" as a local datetime-picker string. Wrapped in a plain function (like
+// CreateEventScreen's isoLocal) so the impure Date.now() never sits in a render
+// body — the picker's `min` floor is computed at call time, not during render.
+function nowLocal(): string {
+  return msToLocal(Date.now());
+}
+
+/**
+ * Organizer "Edit event" panel (#69). Four cap-gated, self-contained sub-forms
+ * pre-filled from the live on-chain Event + its Walrus metadata:
+ *  - Details  → update_metadata: re-uploads a Walrus metadata blob (PRESERVING
+ *               every existing field; only edited ones change) + an optional new
+ *               cover, then writes the new blob id on-chain.
+ *  - Schedule → update_times: start / end / purchase_start. Disabled once the
+ *               event has started (Move asserts start_ms >= now), so the tx can
+ *               never abort on a stale start.
+ *  - Max per user → update_max_per_user (> 0).
+ *  - Max tickets  → update_max_tickets, clamped to the live minted count
+ *               (Move asserts max_tickets >= minted).
+ * Each form submits via the same sponsored/direct pattern as PricePanel and
+ * refetches the event on success via `onDone`. Flipping is_free / is_refundable
+ * and multi-coin pricing are intentionally out of scope (see notes in the UI).
+ */
+function EditEventPanel({
+  capId,
+  eventId,
+  meta,
+  currentName,
+  currentSymbol,
+  currentUri,
+  startMs,
+  endMs,
+  purchaseStartMs,
+  maxTickets,
+  minted,
+  maxPerUser,
+  isFree,
+  isRefundable,
+  onDone,
+}: {
+  capId: string;
+  eventId: string;
+  meta: EventMetadata | null;
+  currentName: string;
+  currentSymbol: string;
+  currentUri: string;
+  startMs: number;
+  endMs: number;
+  purchaseStartMs: number;
+  maxTickets: bigint;
+  minted: bigint;
+  maxPerUser: bigint;
+  isFree: boolean;
+  isRefundable: boolean;
+  onDone: () => void;
+}) {
+  const account = useCurrentAccount();
+  const addr = account?.address ?? null;
+  const regular = useSignAndExecute();
+  const sponsored = useSponsorAndExecute();
+  const isPending = regular.isPending || sponsored.isPending;
+
+  const [open, setOpen] = useState(false);
+
+  // Submit helper mirroring PricePanel: sponsor gas when Enoki is on (all four
+  // update_* targets are on SPONSORED_TARGETS), else sign directly.
+  async function submit(tx: Transaction, successMsg: string): Promise<boolean> {
+    if (!addr) {
+      toast.error("Connect a wallet to edit this event.");
+      return false;
+    }
+    try {
+      const out = ENOKI_ENABLED
+        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
+        : await regular.mutateAsync({ transaction: tx });
+      toast.success(successMsg, { description: <TxLink digest={out.digest} chars={10} /> });
+      onDone();
+      return true;
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+      return false;
+    }
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-end justify-between gap-2" style={{ flexWrap: "wrap" }}>
+        <div>
+          <span className="eyebrow">
+            <Icon icon="ph:note-pencil-fill" size={14} /> Edit event
+          </span>
+          <h2 className="page-title" style={{ marginTop: 12, fontSize: 22 }}>
+            Update details, schedule &amp; capacity
+          </h2>
+          <p className="page-sub">
+            Change the on-chain Event and its Walrus metadata. Each save is a separate cap-gated
+            transaction.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)}>
+          <Icon icon={open ? "ph:caret-up-bold" : "ph:caret-down-bold"} size={15} />
+          {open ? "Hide" : "Edit"}
+        </Button>
+      </div>
+
+      {open && (
+        <div className="space-y-4">
+          {/* Details editor seeds its fields from the loaded metadata, so only
+              mount it once `meta` has resolved — otherwise a save could overwrite
+              description/venue/city with empty defaults. Schedule + capacity below
+              don't depend on metadata and always render. */}
+          {meta === null ? (
+            <Card className="p-4 text-sm text-muted-foreground">Loading event details…</Card>
+          ) : (
+            <EditDetailsPanel
+              meta={meta}
+              currentName={currentName}
+              currentSymbol={currentSymbol}
+              currentUri={currentUri}
+              capId={capId}
+              eventId={eventId}
+              isPending={isPending}
+              submit={submit}
+            />
+          )}
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}
+          >
+            <EditSchedulePanel
+              capId={capId}
+              eventId={eventId}
+              startMs={startMs}
+              endMs={endMs}
+              purchaseStartMs={purchaseStartMs}
+              isPending={isPending}
+              submit={submit}
+            />
+            <EditCapacityPanel
+              capId={capId}
+              eventId={eventId}
+              maxTickets={maxTickets}
+              minted={minted}
+              maxPerUser={maxPerUser}
+              isPending={isPending}
+              submit={submit}
+            />
+          </div>
+
+          {/* Out-of-scope flags: read-only, no Move setter exists for these. */}
+          <Card className="space-y-2 p-5">
+            <div className="font-medium">Fixed at creation</div>
+            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+              <Badge variant={isFree ? "secondary" : "outline"}>
+                {isFree ? "Free event" : "Paid event"}
+              </Badge>
+              <Badge variant={isRefundable ? "secondary" : "outline"}>
+                {isRefundable ? "Refundable" : "Non-refundable"}
+              </Badge>
+            </div>
+            <p className="text-[12px]" style={{ color: "var(--fg3)" }}>
+              Free/paid and refundability are immutable after creation. Ticket pricing is edited in
+              the <span className="font-medium">Set price</span> panel above.
+            </p>
+          </Card>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// --- Details → update_metadata (preserve-and-merge Walrus round-trip) ---
+function EditDetailsPanel({
+  meta,
+  currentName,
+  currentSymbol,
+  currentUri,
+  capId,
+  eventId,
+  isPending,
+  submit,
+}: {
+  meta: EventMetadata | null;
+  currentName: string;
+  currentSymbol: string;
+  currentUri: string;
+  capId: string;
+  eventId: string;
+  isPending: boolean;
+  submit: (tx: Transaction, successMsg: string) => Promise<boolean>;
+}) {
+  const [name, setName] = useState(currentName);
+  const [description, setDescription] = useState(meta?.description ?? "");
+  const [category, setCategory] = useState(meta?.category ?? EDIT_CATEGORIES[0].id);
+  const [tag, setTag] = useState(meta?.tag ?? "");
+  const [venue, setVenue] = useState(meta?.venue ?? "");
+  const [city, setCity] = useState(meta?.city ?? "");
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function save() {
+    if (!name.trim()) {
+      toast.error("Event name can't be empty.");
+      return;
+    }
+    try {
+      // 1) Optional NEW cover → Walrus (only when the organizer picked a file).
+      let coverBlobId = meta?.coverBlobId;
+      if (coverFile) {
+        setBusy("Uploading cover to Walrus…");
+        coverBlobId = await storeFile(coverFile);
+      }
+
+      // 2) Rebuild metadata by SPREADING the existing blob first (preserving
+      // tiers, poap, web3, refundable and any future fields), then overriding
+      // ONLY the edited fields. Empty optional strings are dropped (key removed).
+      const base: EventMetadata = meta ?? { v: 1, category: category.trim() || "community" };
+      const next: EventMetadata = {
+        ...base,
+        v: 1,
+        category: category.trim() || base.category,
+      };
+      const setOrDrop = (key: "tag" | "venue" | "city", value: string) => {
+        const v = value.trim();
+        if (v) next[key] = v;
+        else delete next[key];
+      };
+      const desc = description.trim();
+      if (desc) next.description = desc;
+      else delete next.description;
+      setOrDrop("tag", tag);
+      setOrDrop("venue", venue);
+      setOrDrop("city", city);
+      if (coverBlobId) next.coverBlobId = coverBlobId;
+      else delete next.coverBlobId;
+
+      // 3) Upload the merged metadata → new blob id (only if it actually changed
+      // or a new cover bumped it; otherwise reuse the current uri to skip a write).
+      setBusy("Storing metadata on Walrus…");
+      const sameAsBefore =
+        meta !== null && JSON.stringify(next) === JSON.stringify(meta) && !coverFile;
+      const newUri = sameAsBefore ? currentUri : await putEventMetadata(next);
+
+      // 4) update_metadata on-chain. Symbol stays the current one, or is derived
+      // from the (possibly changed) category like create does when none is set.
+      const symbol =
+        currentSymbol.trim() || (category.trim().slice(0, 4).toUpperCase() || "EVNT");
+      setBusy("Saving on-chain…");
+      const ok = await submit(
+        updateMetadataTx({ capId, eventId, name: name.trim(), symbol, uri: newUri }),
+        "Details updated",
+      );
+      if (ok) setCoverFile(null);
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card className="space-y-4 p-5">
+      <div>
+        <div className="font-medium">Details</div>
+        <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+          Name, description, location and cover — stored on Walrus, then written on-chain.
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="ee-name">Event name</Label>
+        <Input id="ee-name" value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="ee-description">Description</Label>
+        <Textarea
+          id="ee-description"
+          placeholder="What is this event about? Who is it for?"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="ee-category">Category</Label>
+          <Select value={category} onValueChange={(v) => setCategory(v)}>
+            <SelectTrigger id="ee-category" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EDIT_CATEGORIES.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ee-tag">Tag (optional)</Label>
+          <Input
+            id="ee-tag"
+            placeholder="e.g. Conference, Festival"
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="ee-venue">Venue</Label>
+          <Input id="ee-venue" value={venue} onChange={(e) => setVenue(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ee-city">City</Label>
+          <Input id="ee-city" value={city} onChange={(e) => setCity(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="ee-cover">Cover image (upload to replace)</Label>
+        <Input
+          id="ee-cover"
+          type="file"
+          accept="image/*"
+          onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
+        />
+        <p className="text-[12px]" style={{ color: "var(--fg3)" }}>
+          {coverFile ? (
+            <>
+              <Icon icon="ph:image-fill" size={13} /> {coverFile.name}
+            </>
+          ) : meta?.coverBlobId ? (
+            "A cover is set — leave empty to keep it."
+          ) : (
+            "No cover yet — optional."
+          )}
+        </p>
+      </div>
+
+      {busy && (
+        <div className="mono text-sm" style={{ color: "var(--hi-blue)" }}>
+          <Icon icon="svg-spinners:3-dots-fade" size={15} /> {busy}
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <Button disabled={isPending || Boolean(busy)} onClick={save}>
+          {busy || isPending ? "Saving…" : "Save details"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+// --- Schedule → update_times (time-gated: disabled once the event has started) ---
+function EditSchedulePanel({
+  capId,
+  eventId,
+  startMs,
+  endMs,
+  purchaseStartMs,
+  isPending,
+  submit,
+}: {
+  capId: string;
+  eventId: string;
+  startMs: number;
+  endMs: number;
+  purchaseStartMs: number;
+  isPending: boolean;
+  submit: (tx: Transaction, successMsg: string) => Promise<boolean>;
+}) {
+  // The Move contract asserts start_ms >= now, so a started/elapsed event can
+  // never have its schedule changed — lock the form rather than let the tx abort.
+  // Captured once at mount (lazy initializer) so the impure read stays out of the
+  // render body; the schedule is fixed for the lifetime of this panel anyway.
+  const [locked] = useState(() => startMs < Date.now());
+
+  const [start, setStart] = useState(() => msToLocal(startMs));
+  const [end, setEnd] = useState(() => msToLocal(endMs));
+  // Whether sales open immediately (purchase_start = now, clamped <= start) or at
+  // a custom instant. Default reflects the live value: "now" when it's at/before now.
+  const [saleOpensNow, setSaleOpensNow] = useState(() => purchaseStartMs <= Date.now());
+  const [purchaseStart, setPurchaseStart] = useState(() => msToLocal(purchaseStartMs));
+
+  function validate(sMs: number, eMs: number, pMs: number): string | null {
+    if (![sMs, eMs, pMs].every(Number.isFinite)) return "Dates must be valid.";
+    if (sMs < Date.now() - 60_000) return "Start can't be in the past.";
+    if (eMs <= sMs) return "End must be after start.";
+    if (pMs > sMs) return "Sale can't open after the event starts.";
+    if (pMs > eMs) return "Sale can't open after the event ends.";
+    return null;
+  }
+
+  async function save() {
+    if (locked) return;
+    const sMs = Date.parse(start);
+    const eMs = Date.parse(end);
+    // Sales-open-now clamps to start so on-chain purchase_start_ms <= start_ms.
+    const pMs = saleOpensNow ? Math.min(Date.now(), sMs) : Date.parse(purchaseStart);
+    const err = validate(sMs, eMs, pMs);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    await submit(
+      updateTimesTx({
+        capId,
+        eventId,
+        startMs: BigInt(sMs),
+        endMs: BigInt(eMs),
+        purchaseStartMs: BigInt(pMs),
+      }),
+      "Schedule updated",
+    );
+  }
+
+  return (
+    <Card className="space-y-4 p-5">
+      <div>
+        <div className="font-medium">Schedule</div>
+        <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+          Start, end and when sales open.
+        </div>
+      </div>
+
+      {locked ? (
+        <div
+          className="text-sm"
+          style={{
+            color: "var(--fg2)",
+            background: "rgba(245,166,35,.08)",
+            border: "1px solid var(--hi-amber)",
+            borderRadius: 10,
+            padding: 12,
+          }}
+        >
+          <Icon icon="ph:lock-fill" size={14} style={{ color: "var(--hi-amber)" }} /> This event has
+          already started, so its schedule is locked on-chain (a new start must be in the future).
+        </div>
+      ) : (
+        <>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="ee-start">Event starts</Label>
+              <DateTimePicker id="ee-start" value={start} min={nowLocal()} onChange={setStart} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ee-end">Event ends</Label>
+              <DateTimePicker id="ee-end" value={end} min={start} onChange={setEnd} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">Sales open immediately</div>
+              <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
+                Otherwise pick when purchases open.
+              </div>
+            </div>
+            <Switch
+              aria-label="Sales open immediately"
+              checked={saleOpensNow}
+              onCheckedChange={(v) => setSaleOpensNow(Boolean(v))}
+            />
+          </div>
+          {!saleOpensNow && (
+            <div className="space-y-1.5">
+              <Label htmlFor="ee-purchase-start">Sales open</Label>
+              <DateTimePicker
+                id="ee-purchase-start"
+                value={purchaseStart}
+                min={nowLocal()}
+                onChange={setPurchaseStart}
+              />
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button disabled={isPending} onClick={save}>
+              {isPending ? "Saving…" : "Save schedule"}
+            </Button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// --- Capacity → update_max_tickets (clamped to minted) + update_max_per_user ---
+function EditCapacityPanel({
+  capId,
+  eventId,
+  maxTickets,
+  minted,
+  maxPerUser,
+  isPending,
+  submit,
+}: {
+  capId: string;
+  eventId: string;
+  maxTickets: bigint;
+  minted: bigint;
+  maxPerUser: bigint;
+  isPending: boolean;
+  submit: (tx: Transaction, successMsg: string) => Promise<boolean>;
+}) {
+  const [maxTicketsStr, setMaxTicketsStr] = useState(String(maxTickets));
+  const [maxPerUserStr, setMaxPerUserStr] = useState(String(maxPerUser));
+
+  async function saveMaxTickets() {
+    const n = Number(maxTicketsStr);
+    if (!Number.isInteger(n) || n <= 0) {
+      toast.error("Max tickets must be a whole number greater than 0.");
+      return;
+    }
+    if (n > EDIT_MAX_TICKET_LIMIT) {
+      toast.error(`Max tickets can't exceed ${EDIT_MAX_TICKET_LIMIT.toLocaleString()}.`);
+      return;
+    }
+    // Move asserts max_tickets >= minted; block locally so the tx never aborts.
+    if (BigInt(n) < minted) {
+      toast.error(`Max tickets can't be below the ${String(minted)} already sold.`);
+      return;
+    }
+    await submit(
+      updateMaxTicketsTx({ capId, eventId, maxTickets: BigInt(n) }),
+      "Max tickets updated",
+    );
+  }
+
+  async function saveMaxPerUser() {
+    const n = Number(maxPerUserStr);
+    if (!Number.isInteger(n) || n <= 0) {
+      toast.error("Max per attendee must be a whole number greater than 0.");
+      return;
+    }
+    await submit(
+      updateMaxPerUserTx({ capId, eventId, maxPerUser: BigInt(n) }),
+      "Max per attendee updated",
+    );
+  }
+
+  // Live clamp: the input's floor is whichever is larger, 1 or the sold count.
+  const ticketFloor = minted > 0n ? Number(minted) : 1;
+
+  return (
+    <Card className="space-y-4 p-5">
+      <div>
+        <div className="font-medium">Capacity</div>
+        <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+          Total tickets and per-attendee limit.
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="ee-max-tickets">Max tickets</Label>
+        <div className="flex items-end gap-2">
+          <Input
+            id="ee-max-tickets"
+            type="number"
+            min={ticketFloor}
+            step="1"
+            value={maxTicketsStr}
+            onChange={(e) => setMaxTicketsStr(e.target.value)}
+          />
+          <Button variant="outline" disabled={isPending} onClick={saveMaxTickets}>
+            {isPending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+        <p className="text-[12px]" style={{ color: "var(--fg3)" }}>
+          {String(minted)} sold so far — can&apos;t go below that.
+        </p>
+      </div>
+
+      <div className="space-y-1.5" style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }}>
+        <Label htmlFor="ee-max-per-user">Max per attendee</Label>
+        <div className="flex items-end gap-2">
+          <Input
+            id="ee-max-per-user"
+            type="number"
+            min={1}
+            step="1"
+            value={maxPerUserStr}
+            onChange={(e) => setMaxPerUserStr(e.target.value)}
+          />
+          <Button variant="outline" disabled={isPending} onClick={saveMaxPerUser}>
+            {isPending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+        <p className="text-[12px]" style={{ color: "var(--fg3)" }}>
+          How many tickets one wallet can hold. Must be greater than 0.
+        </p>
+      </div>
+    </Card>
   );
 }
 
