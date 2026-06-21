@@ -356,7 +356,7 @@ function AdvancedCreate({
   const [basePrice, setBasePrice] = useState(initial?.basePrice ?? "");
   const [coinType, setCoinType] = useState(initial?.coinType ?? COINS[0].type);
   const [maxTickets, setMaxTickets] = useState(initial?.maxTickets ?? "100");
-  const [maxPerUser, setMaxPerUser] = useState(initial?.maxPerUser ?? "5");
+  const [maxPerUser, setMaxPerUser] = useState(initial?.maxPerUser ?? "1");
   const [tiers, setTiers] = useState<ExtraTier[]>(
     () => (initial?.tiers as ExtraTier[] | undefined) ?? [],
   );
@@ -441,7 +441,7 @@ function AdvancedCreate({
     coverFile !== null ||
     tiers.length > 0 ||
     maxTickets !== "100" ||
-    maxPerUser !== "5";
+    maxPerUser !== "1";
   useEffect(() => {
     onDirtyChange?.(advancedDirty);
   }, [advancedDirty, onDirtyChange]);
