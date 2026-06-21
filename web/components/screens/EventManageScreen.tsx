@@ -55,6 +55,7 @@ import { EV_EMAIL_GRANT_CREATED } from "@/lib/identity";
 import { createSessionKey } from "@/lib/seal";
 import { useSignPersonalMessage, decryptAttendeeEmail } from "@/lib/emailBinding";
 import type { ProfileEnvelope } from "@/lib/profile";
+import { getTurnstileToken } from "@/lib/turnstileClient";
 import { useAllEvents } from "@/lib/events";
 import { useEventMarkets } from "@/lib/markets";
 import {
@@ -822,10 +823,11 @@ function OrganizerEmailCheckinCard({ ctx }: { ctx: DeckCtx }) {
     if (!em) return;
     setBusy(true);
     try {
+      const turnstileToken = await getTurnstileToken();
       const r = await fetch("/api/identity/lookup-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: em }),
+        body: JSON.stringify({ email: em, turnstileToken }),
       });
       const j = (await r.json()) as { address?: string | null; error?: string };
       if (!r.ok) throw new Error(j.error || "Lookup failed");
