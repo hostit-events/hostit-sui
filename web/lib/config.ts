@@ -63,6 +63,16 @@ export const OZ_ACCESS_PKG =
 export const GOVERNANCE_REGISTRY_ID =
   process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "0x43933dca58136b34866f9e80af36fa712b7ff533fff3c47d20e875f5134fe01c";
 
+/**
+ * Shared `identity::EmailRegistry` (one-account-one-email, GH#96) — created by
+ * `identity::init` at publish, so it's (re)minted on every fresh publish. Empty
+ * until the identity module is first published; roll it via
+ * scripts/roll-fresh-publish.mjs. Email binding no-ops until then (like reviews
+ * did pre-deploy).
+ */
+export const EMAIL_REGISTRY_ID =
+  process.env.NEXT_PUBLIC_HOSTIT_EMAIL_REGISTRY_ID ?? "";
+
 /** Target a function in the OZ `access_control` module (root-admin flow). */
 export const ozAccessTarget = (fn: string) =>
   `${OZ_ACCESS_PKG}::access_control::${fn}` as const;
@@ -147,6 +157,11 @@ export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::forum::post_as_organizer`,
   `${PACKAGE_ID}::forum::moderate`,
   `${PACKAGE_ID}::reviews::post_review`,
+  // Account identity (GH#96): gasless email register/unregister + opt-in share grant.
+  `${PACKAGE_ID}::identity::register_email`,
+  `${PACKAGE_ID}::identity::unregister_email`,
+  `${PACKAGE_ID}::identity::grant_email_access`,
+  `${PACKAGE_ID}::identity::revoke_email_grant`,
   `${PACKAGE_ID}::predict::create_sellout_market`,
   `${PACKAGE_ID}::predict::bet_yes`,
   `${PACKAGE_ID}::predict::bet_no`,

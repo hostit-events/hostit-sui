@@ -20,6 +20,8 @@ describe("SPONSORED_TARGETS", () => {
       `${PACKAGE_ID}::forum::post_as_organizer`,
       `${PACKAGE_ID}::forum::moderate`,
       `${PACKAGE_ID}::reviews::post_review`,
+      `${PACKAGE_ID}::identity::register_email`,
+      `${PACKAGE_ID}::identity::grant_email_access`,
     ])
       expect(SPONSORED_TARGETS).toContain(t);
   });

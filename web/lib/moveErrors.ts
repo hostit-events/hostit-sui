@@ -66,6 +66,10 @@ const MAP: Record<string, Record<number, string>> = {
     2: "Rating must be between 1 and 5 stars.",
     3: "You've already reviewed this event.",
   },
+  identity: {
+    1: "That email is already linked to another account.",
+    2: "You don't own this email or share grant.",
+  },
   hub: { 1: "Insufficient balance.", 2: "No balance to withdraw.", 3: "Value too high." },
   predict: {
     1: "This market is already settled.",

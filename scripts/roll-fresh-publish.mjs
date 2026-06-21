@@ -52,6 +52,8 @@ const newHub = byTypeSuffix("::hub::Hub")?.objectId;
 const newPolicy = byTypeBoth("::transfer_policy::TransferPolicy<", "::ticket::Ticket")?.objectId;
 // AccessControl<…::governance::GOVERNANCE> — the protocol RBAC registry.
 const newGov = byTypeBoth("::access_control::AccessControl<", "::governance::GOVERNANCE")?.objectId;
+// identity::EmailRegistry — one-account-one-email registry (GH#96).
+const newEmailReg = byTypeSuffix("::identity::EmailRegistry")?.objectId;
 const newUpgradeCap = byTypeSuffix("::package::UpgradeCap")?.objectId;
 
 const missing = Object.entries({ newPkg, newHub, newPolicy, newGov }).filter(([, v]) => !v);
@@ -88,6 +90,19 @@ console.log(`config.ts: PACKAGE_ID ${oldPkg.slice(0, 10)}… → ${newPkg.slice(
 [config, n] = replaceAllCount(config, oldHub, newHub); console.log(`config.ts: HUB_ID (${n})`);
 [config, n] = replaceAllCount(config, oldPolicy, newPolicy); console.log(`config.ts: TRANSFER_POLICY_ID (${n})`);
 [config, n] = replaceAllCount(config, oldGov, newGov); console.log(`config.ts: GOVERNANCE_REGISTRY_ID (${n})`);
+// EMAIL_REGISTRY_ID starts as `?? ""` (created only once identity ships) and is a
+// 0x id on later publishes — handle both.
+if (newEmailReg) {
+  const emailM = config.match(/NEXT_PUBLIC_HOSTIT_EMAIL_REGISTRY_ID\s*\?\?\s*"(0x[0-9a-fA-F]{64}|)"/);
+  if (emailM) {
+    config = config.replace(emailM[0], emailM[0].replace(`"${emailM[1]}"`, `"${newEmailReg}"`));
+    console.log(`config.ts: EMAIL_REGISTRY_ID → ${newEmailReg.slice(0, 10)}…`);
+  } else {
+    console.log("config.ts: EMAIL_REGISTRY_ID not found (skipped — set NEXT_PUBLIC_HOSTIT_EMAIL_REGISTRY_ID manually)");
+  }
+} else {
+  console.log("publish JSON had no identity::EmailRegistry (identity module not in this publish?)");
+}
 writeFileSync(CONFIG, config);
 
 // --- patch Move.toml [addresses] (NOT [dev-addresses], which is 0xCAFE) ---
@@ -102,9 +117,11 @@ console.log(`package                 ${newPkg}`);
 console.log(`Hub                     ${newHub}`);
 console.log(`TransferPolicy<Ticket>  ${newPolicy}`);
 console.log(`AccessControl<GOV>      ${newGov}`);
+if (newEmailReg) console.log(`EmailRegistry           ${newEmailReg}`);
 if (newUpgradeCap) console.log(`UpgradeCap              ${newUpgradeCap}`);
 console.log("\nVercel env (Production) — update if these env overrides are set:");
 console.log(`  NEXT_PUBLIC_HOSTIT_PACKAGE_ID=${newPkg}`);
 console.log(`  NEXT_PUBLIC_HOSTIT_HUB_ID=${newHub}`);
 console.log(`  NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID=${newGov}`);
+if (newEmailReg) console.log(`  NEXT_PUBLIC_HOSTIT_EMAIL_REGISTRY_ID=${newEmailReg}`);
 console.log("\nNext: bunx tsc --noEmit (in web/) · update .suiperpower/deploy-context.md · re-attach policy_rules if resale is live · commit + push.");
