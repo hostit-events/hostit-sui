@@ -24,6 +24,7 @@ import { storeBlob, readBlob, storeJson } from "./walrus";
 import { registerEmailTx, unregisterEmailTx } from "./identity";
 import { canonicalizeEmail } from "./emailCanonical";
 import { emailBindMessage, profilePointerMessage } from "./accountMessages";
+import { getTurnstileToken } from "./turnstileClient";
 import type { ProfileEnvelope } from "./profile";
 
 /** A personal-message signer that works for BOTH a wallet and a zkLogin session
@@ -182,7 +183,6 @@ export async function startWalletEmail(args: {
   address: string;
   email: string;
   sign: SignPersonalMessage;
-  turnstileToken?: string | null;
 }): Promise<void> {
   const canonicalEmail = canonicalizeEmail(args.email);
   if (!canonicalEmail) throw new Error("Enter a valid email.");
@@ -191,6 +191,11 @@ export async function startWalletEmail(args: {
   const { signature } = await args.sign(
     new TextEncoder().encode(emailBindMessage({ address: args.address, canonicalEmail, nonce, expiryMs })),
   );
+  // Proof-of-browser so the server bot-wall lets the send through. Acquired here
+  // (like lib/sponsor.ts) rather than passed by the caller — a caller forgetting
+  // it silently 403'd /api/email/start as "Bot check failed" (#96). null when
+  // Turnstile is disabled → the server skips the check.
+  const turnstileToken = await getTurnstileToken();
   const r = await fetch("/api/email/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -200,7 +205,7 @@ export async function startWalletEmail(args: {
       signature,
       nonce,
       expiryMs,
-      turnstileToken: args.turnstileToken ?? null,
+      turnstileToken,
     }),
   });
   if (!r.ok) {
