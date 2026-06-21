@@ -85,6 +85,8 @@ export interface TicketStubProps {
   /** connected organizer address, or null. */
   organizer: string | null;
   gasSponsored: boolean;
+  /** uploaded cover image (object URL); shown instead of the generated art. */
+  coverUrl?: string;
   /** true once the event is live — inks the QR and drops the MINTED seal. */
   published?: boolean;
 }
@@ -108,6 +110,7 @@ export function TicketStub({
   capacity,
   organizer,
   gasSponsored,
+  coverUrl,
   published = false,
 }: TicketStubProps) {
   const [p1, p2] = catPalette(category);
@@ -144,10 +147,16 @@ export function TicketStub({
     <div className="tstub" style={{ ["--p1" as string]: p1, ["--p2" as string]: p2 }}>
       {/* art panel — seeded generative cover (no upload needed) */}
       <div className="tstub-art" style={{ ["--p1" as string]: p1, ["--p2" as string]: p2 }}>
+        {coverUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={coverUrl} alt="" className="tstub-cover" />
+        )}
         <div className="poster-noise" />
-        <span className="poster-glyph">
-          <Icon icon={glyph} size={88} />
-        </span>
+        {!coverUrl && (
+          <span className="poster-glyph">
+            <Icon icon={glyph} size={88} />
+          </span>
+        )}
         <div className="tstub-foil">
           <span className="tstub-foil-dot" /> on Sui{gasSponsored ? " · gas sponsored" : ""}
         </div>
