@@ -49,6 +49,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 
 **Implemented on branch `advisor/implement-plans`** (gates green: `sui move test` 103/103, web `tsc` clean + `lint` 0 errors + 109 vitest). **20/20 DONE.** Decision plans resolved by the controller's default (reversible): 009 = Option B (disclose the non-refundable fee, no fund-flow change); 010 = PER-TICKET dedup. The Move plans (007–010) have code+tests landed and passing, but on-chain **deployment (`sui client upgrade`) is gated** and awaits explicit authorization. KV-backed rate limiting (003) is inert until `RATE_LIMIT_KV_REST_*` env vars are provisioned in the deploy environment.
 
+**On-chain deploy (NOT done):** the Move plans (007–011) are not yet deployed — a compatible `sui client upgrade` is blocked because 009/010 change existing structs/signatures (Sui's COMPATIBLE policy rejects that), and several behavior changes are called via `target()` (old bytecode after an upgrade). See **`plans/021-deploy-strategy.md`** for the fresh-publish-vs-rework decision and exact steps. Per the maintainer, other incoming contract branches will be merged first, then the combined set deployed (maintainer-owned, gated).
+
 ## Dependency & sequencing notes
 
 - **001 → everything testable.** It's the prerequisite that turns the new
