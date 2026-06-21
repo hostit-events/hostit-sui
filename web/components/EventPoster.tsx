@@ -237,6 +237,10 @@ export function EventPoster({
           src={coverUrl}
           alt=""
           className="absolute inset-0 w-full h-full object-cover"
+          loading="lazy"
+          decoding="async"
+          width={1200}
+          height={630}
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}

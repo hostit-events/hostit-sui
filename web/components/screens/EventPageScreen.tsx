@@ -35,6 +35,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
+  CoinBalance,
+  GetAllBalancesParams,
   GetObjectParams,
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
@@ -51,6 +53,41 @@ function fmtDate(ms: number): string {
 }
 function fmtTime(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// True when `balance` (smallest units) can cover `required` (smallest units,
+// already fee-inclusive). `balance === undefined` means "not loaded yet" → we do
+// NOT block the button on an unknown balance (avoid a flash-disabled CTA on a slow
+// RPC); we only disable once we've confirmed the wallet is short.
+// Exported for unit testing (see __tests__/EventPageScreen.balance.test.ts).
+export function canAfford(balance: bigint | undefined, required: bigint): boolean {
+  if (balance === undefined) return true;
+  return balance >= required;
+}
+
+// Inline "you can't afford this" hint under a Buy button when the connected
+// wallet's balance of the selected coin can't cover the fee-inclusive total
+// (USDC → Circle faucet; anything else → Sui testnet coins guide).
+function InsufficientCoinHint({ symbol }: { symbol: string }) {
+  const isUsdc = symbol === "USDC";
+  return (
+    <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
+      Not enough {symbol} to buy this ticket.{" "}
+      <a
+        href={
+          isUsdc
+            ? "https://faucet.circle.com/"
+            : "https://docs.sui.io/guides/developer/getting-started/get-coins"
+        }
+        target="_blank"
+        rel="noreferrer"
+        style={{ color: "var(--hi-blue)", textDecoration: "underline" }}
+      >
+        Get testnet {symbol}
+      </a>
+      .
+    </div>
+  );
 }
 
 function GoodToKnow({ icon, title, value }: { icon: string; title: string; value: string }) {
@@ -187,6 +224,15 @@ export function EventPageScreen({ id }: { id: string }) {
     recordRecentlyViewed(id);
   }, [id]);
 
+  // 016 pre-flight: the connected wallet's balances across all coins, so a priced
+  // Buy button can be disabled (with a faucet hint) when the wallet can't cover the
+  // fee-inclusive total. A hook → must run before the early returns below.
+  const balancesQ = useSuiQuery<"getAllBalances", GetAllBalancesParams, CoinBalance[]>(
+    "getAllBalances",
+    { owner: addr ?? "" },
+    { enabled: Boolean(addr), staleTime: 15_000 },
+  );
+
   // ---- loading / error / not-found ----
   if (q.isLoading) {
     return (
@@ -239,6 +285,9 @@ export function EventPageScreen({ id }: { id: string }) {
   const isOrganizer = Boolean(addr) && addr === organizer;
 
   const prices = pricesBySeq.get(eventSeq) ?? [];
+  const balanceByCoin = new Map<string, bigint>(
+    (balancesQ.data ?? []).map((b) => [b.coinType, BigInt(b.totalBalance)]),
+  );
 
   const cat = meta?.category;
   const coverUrl =
@@ -405,7 +454,7 @@ export function EventPageScreen({ id }: { id: string }) {
                 title="Refunds"
                 value={
                   isRefundable
-                    ? `Refundable up to ${Math.round(REFUND_PERIOD_MS / 86_400_000)} days before`
+                    ? `Refundable for ${Math.round(REFUND_PERIOD_MS / 86_400_000)} days after the event ends (3% fee non-refundable)`
                     : "Non-refundable"
                 }
               />
@@ -510,26 +559,34 @@ export function EventPageScreen({ id }: { id: string }) {
                 {prices.map((p) => {
                   const ci = coinInfo(p.coinType);
                   const total = totalWithFee(BigInt(p.price));
+                  // 016: undefined balance (loading / disconnected) is treated as
+                  // affordable so we don't flash-disable; only a confirmed-short
+                  // connected wallet is blocked, with a faucet hint.
+                  const bal = balancesQ.data ? (balanceByCoin.get(p.coinType) ?? 0n) : undefined;
+                  const affordable = canAfford(bal, total);
                   return (
-                    <Tooltip key={p.coinType}>
-                      <TooltipTrigger asChild>
-                        <Button
-                          className="w-full"
-                          disabled={!canPurchase}
-                          onClick={() => openBuy(p.coinType, BigInt(p.price))}
-                        >
-                          <Icon icon="ion:ticket" size={16} />
-                          {!canPurchase
-                            ? statusLabel()
-                            : addr
-                              ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
-                              : "Connect to buy"}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        Total incl. 3% fee: {fmtAmount(total, ci.decimals)} {ci.symbol}
-                      </TooltipContent>
-                    </Tooltip>
+                    <div key={p.coinType} className="space-y-1.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            className="w-full"
+                            disabled={!canPurchase || !affordable}
+                            onClick={() => openBuy(p.coinType, BigInt(p.price))}
+                          >
+                            <Icon icon="ion:ticket" size={16} />
+                            {!canPurchase
+                              ? statusLabel()
+                              : addr
+                                ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
+                                : "Connect to buy"}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Total incl. 3% fee: {fmtAmount(total, ci.decimals)} {ci.symbol}
+                        </TooltipContent>
+                      </Tooltip>
+                      {Boolean(addr) && !affordable && <InsufficientCoinHint symbol={ci.symbol} />}
+                    </div>
                   );
                 })}
                 <div className="text-[11px]" style={{ color: "var(--fg3)" }}>

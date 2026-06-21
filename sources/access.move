@@ -5,10 +5,15 @@
 /// identity = policy-object-id bytes ‖ nonce), the function must not mutate
 /// state, and an abort means access denied.
 ///
-/// - `seal_approve_ticket`   → ticket-holder-gated content (event forum, gated
-///   info): caller owns a Ticket for the event, id namespaced to the event.
+/// - `seal_approve_ticket`   → ticket-holder-gated / SHARED content (event
+///   forum, gated info): caller owns a Ticket for the event; id namespaced to
+///   the BARE event id. Any ticket holder (incl. a free-ticket claimer) passes.
 /// - `seal_approve_organizer`→ organizer-gated data (attendee/KYC list): caller
-///   holds the event's OrganizerCap.
+///   holds the event's OrganizerCap. ORGANIZER-ONLY ciphertext is namespaced
+///   `ORG_NS_TAG ‖ event_id` so `seal_approve_ticket` can NOT decrypt it. (This
+///   policy ALSO accepts the bare event-id namespace so the organizer can read
+///   shared forum content.) The two policies are NOT interchangeable for
+///   organizer-only data.
 /// - `seal_approve_self`     → account-based: id namespaced to the caller's own
 ///   address (a user's own KYC/PII — only they decrypt).
 module hostit_ticket::access;
@@ -18,6 +23,14 @@ use hostit_ticket::event::{Self, Event, OrganizerCap};
 use hostit_ticket::ticket::{Self, Ticket};
 
 const E_NO_ACCESS: u64 = 1;
+
+/// Domain-separation tag prefixed before the event-id bytes to form the
+/// ORGANIZER-ONLY Seal identity namespace. A ticket holder's policy
+/// (`seal_approve_ticket`) checks `is_prefix(event_id, id)` and can never
+/// match an id that begins with this tag, so organizer-only ciphertext is
+/// NOT decryptable by ticket holders. MUST match `ORG_NS_TAG` in
+/// web/lib/seal.ts.
+const ORG_NS_TAG: vector<u8> = b"hostit-org:";
 
 /// True iff `prefix` is a prefix of `id`.
 fun is_prefix(prefix: &vector<u8>, id: &vector<u8>): bool {
@@ -37,10 +50,21 @@ entry fun seal_approve_ticket(id: vector<u8>, ticket: &Ticket, event: &Event) {
     assert!(is_prefix(&object::id_to_bytes(&eid), &id), E_NO_ACCESS);
 }
 
+/// The organizer-only identity prefix: ORG_NS_TAG ‖ event_id bytes.
+fun organizer_ns(eid: &ID): vector<u8> {
+    let mut ns = ORG_NS_TAG;
+    ns.append(object::id_to_bytes(eid));
+    ns
+}
+
 entry fun seal_approve_organizer(id: vector<u8>, cap: &OrganizerCap, event: &Event) {
     event::assert_organizer(cap, event);
     let eid = object::id(event);
-    assert!(is_prefix(&object::id_to_bytes(&eid), &id), E_NO_ACCESS);
+    // Accept the organizer-only namespace (tag ‖ event_id) OR the bare
+    // event-id namespace (shared forum content the organizer also reads).
+    let ok = is_prefix(&organizer_ns(&eid), &id)
+        || is_prefix(&object::id_to_bytes(&eid), &id);
+    assert!(ok, E_NO_ACCESS);
 }
 
 entry fun seal_approve_self(id: vector<u8>, ctx: &TxContext) {

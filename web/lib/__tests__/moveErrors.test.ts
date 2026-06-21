@@ -12,12 +12,36 @@ describe("humanizeError", () => {
     expect(humanizeError(new Error(raw))).toBe("Sold out.");
   });
 
+  it("maps predict code 7 (bad cutoffs) to its human message", () => {
+    const raw =
+      'MoveAbort(MoveLocation { module: ModuleId { address: 0xabc, name: Identifier("predict") }, function: 5, instruction: 1 }, 7) in command 0';
+    expect(humanizeError(new Error(raw))).toBe(
+      "Bucket cutoffs must be non-empty and strictly increasing.",
+    );
+  });
+
+  it("maps predict code 8 (bad bucket) to its human message", () => {
+    const raw =
+      'MoveAbort(MoveLocation { module: ModuleId { address: 0xabc, name: Identifier("predict") }, function: 6, instruction: 3 }, 8) in command 0';
+    expect(humanizeError(new Error(raw))).toBe(
+      "That bucket doesn't exist for this market.",
+    );
+  });
+
   it("maps a different module+code (checkin 8) correctly", () => {
     const raw =
       'MoveAbort(MoveLocation { module: ModuleId { address: 0xabc, name: Identifier("checkin") }, function: 1, instruction: 2 }, 8) in command 0';
     expect(humanizeError(new Error(raw))).toBe(
       "Self check-in isn't enabled for this event — the organizer turns it on under Manage → Self check-in.",
     );
+  });
+
+  it("maps event code 13 (per-ticket once-per-day dedup) to the sharpened message", () => {
+    // E_ALREADY_CHECKED_IN_DAY now fires per-ticket: the same ticket re-presented
+    // the same day. Wording reflects "this ticket", not "this wallet".
+    const raw =
+      'MoveAbort(MoveLocation { module: ModuleId { address: 0xabc, name: Identifier("event") }, function: 0, instruction: 5 }, 13) in command 0';
+    expect(humanizeError(new Error(raw))).toBe("This ticket is already checked in for today.");
   });
 
   it("falls back to a generic on-chain message for an unmapped code in a known module", () => {

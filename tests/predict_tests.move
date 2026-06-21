@@ -19,6 +19,7 @@ const ORG: address = @0x0123;
 const ALICE: address = @0xA11CE; // YES bettor
 const BOB: address = @0xB0B; // YES bettor
 const CAROL: address = @0xCA401; // NO bettor
+const DAVE: address = @0xDA7E; // YES bettor (dust tests)
 
 // Timeline (ms). Mirrors the main test suite so events validate.
 const CREATE_NOW: u64 = 1_000_000;
@@ -319,6 +320,20 @@ fun bet_after_expiry_aborts() {
     sc.end();
 }
 
+// === Zero-value bet aborts (sellout path) ===
+#[test, expected_failure(abort_code = hostit_ticket::predict::E_ZERO_BET)]
+fun zero_bet_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+    open_market(&mut sc, &clock, ALICE);
+    clock.set_for_testing(BET_NOW); // betting open
+    place_yes(&mut sc, &clock, ALICE, 0); // zero stake -> abort
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
 // === Settle before expiry aborts ===
 #[test, expected_failure(abort_code = hostit_ticket::predict::E_NOT_EXPIRED)]
 fun settle_before_expiry_aborts() {
@@ -482,6 +497,105 @@ fun winning_side_empty_refunds() {
     sc.end();
 }
 
+// === Rounding dust folds into the FINAL winner's claim ===
+//
+// YES: ALICE 1, BOB 1, DAVE 1 -> total_yes = 3. NO: CAROL 10 -> total_no = 10.
+// Event sells out -> YES wins. Each non-last winner draws
+// floor(1 * 10 / 3) = 3 from the NO pool; the floored shares sum to 6, so 4
+// tokens of dust would be stranded under the old code. With the fix, the FINAL
+// winner (whose claim empties yes_stakes) drains the whole remaining NO pool:
+//   ALICE: 1 + 3 = 4
+//   BOB:   1 + 3 = 4
+//   DAVE (last): 1 + withdraw_all(no_pool=4) = 5
+// 4 + 4 + 5 = 13 == total pot (3 + 10). Both pools reach exactly 0 (no dust).
+#[test]
+fun dust_folds_to_last_winner() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+
+    open_market(&mut sc, &clock, ALICE);
+
+    clock.set_for_testing(BET_NOW);
+    place_yes(&mut sc, &clock, ALICE, 1);
+    place_yes(&mut sc, &clock, BOB, 1);
+    place_yes(&mut sc, &clock, DAVE, 1);
+    place_no(&mut sc, &clock, CAROL, 10);
+
+    mint_tickets(&mut sc, &mut clock, MAX_TICKETS); // sells out -> YES wins
+
+    clock.set_for_testing(SETTLE_NOW);
+    settle(&mut sc, &clock);
+
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<SelloutMarket<USD>>();
+    assert!(predict::outcome_yes(&mkt), 0);
+    assert!(predict::total_yes(&mkt) == 3, 1);
+    assert!(predict::total_no(&mkt) == 10, 2);
+    ts::return_shared(mkt);
+
+    // First two winners take only their floored pro-rata share (3 each).
+    assert!(claim_amount(&mut sc, ALICE) == 4, 3);
+    assert!(claim_amount(&mut sc, BOB) == 4, 4);
+    // The final winner absorbs own stake + ALL remaining NO pool (1 + 4 = 5),
+    // sweeping the 4-token rounding dust the floored draws left behind.
+    assert!(claim_amount(&mut sc, DAVE) == 5, 5);
+
+    // Both pools reach exactly 0 — nothing locked.
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<SelloutMarket<USD>>();
+    assert!(predict::yes_pool_value(&mkt) == 0, 6);
+    assert!(predict::no_pool_value(&mkt) == 0, 7);
+    ts::return_shared(mkt);
+
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// === One-sided market: last winner's withdraw_all of an EMPTY losing pool is a
+//     no-op (no abort), and the winner gets exactly their own stake back ===
+//
+// Only YES bets (ALICE 50). Event sells out -> YES wins, total_no = 0. ALICE is
+// the sole (and therefore last) winner: her claim empties yes_stakes, so the
+// fold path runs `withdraw_all(no_pool)` on a zero-value balance — yields 0 and
+// must NOT abort. Payout == own stake (50); the (empty) NO pool stays 0.
+#[test]
+fun one_sided_winner_no_dust_abort() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event(&mut sc, &clock, MAX_TICKETS);
+
+    open_market(&mut sc, &clock, ALICE);
+
+    clock.set_for_testing(BET_NOW);
+    place_yes(&mut sc, &clock, ALICE, 50); // no NO bets at all
+
+    mint_tickets(&mut sc, &mut clock, MAX_TICKETS); // YES wins
+
+    clock.set_for_testing(SETTLE_NOW);
+    settle(&mut sc, &clock);
+
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<SelloutMarket<USD>>();
+    assert!(predict::outcome_yes(&mkt), 0);
+    assert!(predict::total_no(&mkt) == 0, 1); // losing side empty
+    ts::return_shared(mkt);
+
+    // Last (sole) winner: withdraw_all of the empty NO pool yields 0, no abort.
+    assert!(claim_amount(&mut sc, ALICE) == 50, 2);
+
+    sc.next_tx(ADMIN);
+    let mkt = sc.take_shared<SelloutMarket<USD>>();
+    assert!(predict::yes_pool_value(&mkt) == 0, 3);
+    assert!(predict::no_pool_value(&mkt) == 0, 4);
+    ts::return_shared(mkt);
+
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
 // A refund can only be taken once (stake removed on first claim).
 #[test, expected_failure(abort_code = hostit_ticket::predict::E_NO_STAKE)]
 fun double_refund_aborts() {
@@ -500,3 +614,4 @@ fun double_refund_aborts() {
     clock.destroy_for_testing();
     sc.end();
 }
+

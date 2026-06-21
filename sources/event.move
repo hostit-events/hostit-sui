@@ -43,6 +43,7 @@ const E_ZERO_PRICE: u64 = 11;
 const E_PRICE_NOT_SET: u64 = 12;
 const E_ALREADY_CHECKED_IN_DAY: u64 = 13;
 const E_INVALID_SIGNER_KEY: u64 = 14;
+const E_SIGNER_NOT_FOUND: u64 = 15;
 
 // === Objects ===
 
@@ -71,7 +72,7 @@ public struct Event has key {
     mint_counts: Table<address, u64>,
     /// ed25519 public keys of authorized check-in staff devices (revocable).
     checkin_signers: VecSet<vector<u8>>,
-    /// `DayKey -> true`; enforces once-per-day check-in.
+    /// `DayKey{day, ticket} -> true`; enforces once-per-day check-in per ticket.
     day_attendees: Table<DayKey, bool>,
     /// `address -> true`; "ever checked in" for this event.
     attendees: Table<address, bool>,
@@ -86,7 +87,7 @@ public struct OrganizerCap has key, store {
 
 public struct DayKey has copy, drop, store {
     day: u64,
-    attendee: address,
+    ticket: ID,
 }
 
 public struct PriceKey<phantom T> has copy, drop, store {}
@@ -362,9 +363,10 @@ public fun add_checkin_signer(cap: &OrganizerCap, event: &mut Event, pubkey: vec
 
 public fun remove_checkin_signer(cap: &OrganizerCap, event: &mut Event, pubkey: vector<u8>) {
     assert_organizer(cap, event);
-    if (vec_set::contains(&event.checkin_signers, &pubkey)) {
-        vec_set::remove(&mut event.checkin_signers, &pubkey);
-    };
+    // Abort on an unregistered key so a typo can't fire a false "key revoked"
+    // signal while a compromised key stays live.
+    assert!(vec_set::contains(&event.checkin_signers, &pubkey), E_SIGNER_NOT_FOUND);
+    vec_set::remove(&mut event.checkin_signers, &pubkey);
     event::emit(CheckinSignerRemoved { event_seq: event.event_seq, pubkey });
 }
 
@@ -379,9 +381,10 @@ public(package) fun is_checkin_signer(event: &Event, pubkey: &vector<u8>): bool 
 
 // === Check-in records — package-internal, driven by `checkin` ===
 
-/// Records a check-in for `who` on `day`; aborts if already checked in that day.
-public(package) fun record_checkin(event: &mut Event, day: u64, who: address) {
-    let k = DayKey { day, attendee: who };
+/// Records a check-in for `ticket_id` on `day`; aborts if that ticket already
+/// checked in that day. `who` is recorded as an ever-attendee of the event.
+public(package) fun record_checkin(event: &mut Event, day: u64, ticket_id: ID, who: address) {
+    let k = DayKey { day, ticket: ticket_id };
     assert!(!table::contains(&event.day_attendees, k), E_ALREADY_CHECKED_IN_DAY);
     table::add(&mut event.day_attendees, k, true);
     if (!table::contains(&event.attendees, who)) {
@@ -419,8 +422,8 @@ public(package) fun uri_clone(event: &Event): String { clone_string(&event.uri) 
 public fun is_checked_in(event: &Event, who: address): bool {
     table::contains(&event.attendees, who)
 }
-public fun is_checked_in_for_day(event: &Event, day: u64, who: address): bool {
-    table::contains(&event.day_attendees, DayKey { day, attendee: who })
+public fun is_checked_in_for_day(event: &Event, day: u64, ticket_id: ID): bool {
+    table::contains(&event.day_attendees, DayKey { day, ticket: ticket_id })
 }
 public fun day_ms(): u64 { DAY_MS }
 

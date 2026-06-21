@@ -14,8 +14,9 @@
 /// Multi-day events: a ticket can be checked in once *per day* across the event
 /// window (the EVM's `useTicket` was idempotent and never blocked re-entry; the
 /// real gate was the per-day owner set). We accept any non-refunded ticket and
-/// rely on the Event's per-(day, attendee) guard; the ticket's CHECKED_IN status
-/// is just an idempotent "has been used" marker for resale purposes.
+/// rely on the Event's per-(day, ticket) guard — a wallet holding several tickets
+/// can check each one in once per day; the ticket's CHECKED_IN status is just an
+/// idempotent "has been used" marker for resale purposes.
 module hostit_ticket::checkin;
 
 use std::bcs;
@@ -101,8 +102,9 @@ public fun self_check_in(
 fun record_and_mark(event: &mut Event, ticket: &mut Ticket, now: u64, ctx: &TxContext) {
     let day = (now - event::start_ms(event)) / event::day_ms();
     let who = ctx.sender();
-    // Aborts if `who` already checked in on `day` (once-per-day, EVM parity).
-    event::record_checkin(event, day, who);
+    let ticket_id = object::id(ticket);
+    // Aborts if THIS TICKET already checked in on `day` (once-per-day-per-ticket).
+    event::record_checkin(event, day, ticket_id, who);
     ticket::set_checked_in(ticket);
     sui_event::emit(CheckedIn {
         event_seq: event::event_seq(event),

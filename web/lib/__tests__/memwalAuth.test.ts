@@ -10,7 +10,11 @@ vi.mock("@mysten/sui/verify", () => ({
   verifyPersonalMessageSignature: vi.fn(async () => ({ toSuiAddress })),
 }));
 
-import { verifyMemoryCaller, isMemoryAuthError } from "../memwalAuth";
+import {
+  verifyMemoryCaller,
+  isMemoryAuthError,
+  __resetNonceStoreForTest,
+} from "../memwalAuth";
 import { buildMemoryChallenge } from "../memwalChallenge";
 
 const OWNER = "0x" + "a".repeat(64);
@@ -18,6 +22,9 @@ const OTHER = "0x" + "b".repeat(64);
 
 beforeEach(() => {
   toSuiAddress.mockReturnValue(OWNER); // signer == owner by default
+  // Clear the per-process one-time-nonce fallback so each test sees a fresh store
+  // (KV is unset in tests → kvEnabled() is false → the in-memory path is used).
+  __resetNonceStoreForTest();
 });
 
 function body(message: string, owner = OWNER) {
@@ -59,5 +66,22 @@ describe("verifyMemoryCaller", () => {
   it("rejects missing fields before any crypto", async () => {
     await expect(verifyMemoryCaller({})).rejects.toSatisfy(isMemoryAuthError);
     await expect(verifyMemoryCaller({ owner: OWNER })).rejects.toSatisfy(isMemoryAuthError);
+  });
+
+  it("rejects an identical resend of a signed challenge (one-time-nonce replay)", async () => {
+    // ONE challenge + envelope; the first use is legitimate, the byte-identical
+    // resend is the replay vector and must be rejected.
+    const msg = buildMemoryChallenge(OWNER, Date.now());
+    await expect(verifyMemoryCaller(body(msg))).resolves.toBe(OWNER);
+    await expect(verifyMemoryCaller(body(msg))).rejects.toSatisfy(isMemoryAuthError);
+  });
+
+  it("accepts two DISTINCT fresh challenges (nonce keys on the message, not the owner)", async () => {
+    // Distinct timestamps → distinct messages → distinct nonce keys, so both the
+    // first uses succeed for the SAME owner.
+    const msg1 = buildMemoryChallenge(OWNER, Date.now());
+    const msg2 = buildMemoryChallenge(OWNER, Date.now() + 1);
+    await expect(verifyMemoryCaller(body(msg1))).resolves.toBe(OWNER);
+    await expect(verifyMemoryCaller(body(msg2))).resolves.toBe(OWNER);
   });
 });
