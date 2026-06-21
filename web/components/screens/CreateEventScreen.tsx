@@ -1065,7 +1065,36 @@ function AdvancedCreate({
         <Card className="space-y-5" style={{ padding: 20 }}>
           {step === 0 && (
             <div className="space-y-4">
-              <span className="section-label">Step 1 — Details</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="section-label">Step 1 — Details</span>
+                {/* Suggest (#93): top-right of the Details card — fills the form with a funny AI event. */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={onSuggestClick}
+                      disabled={suggesting}
+                      aria-label="Suggest a fun event"
+                    >
+                      {suggesting ? (
+                        <>
+                          <Icon icon="svg-spinners:3-dots-fade" size={14} /> Conjuring…
+                        </>
+                      ) : (
+                        <>
+                          <Icon icon="ph:magic-wand-fill" size={14} />{" "}
+                          {suggestedOnce ? "Suggest another" : "Suggest"}
+                        </>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Fill the form with a fun AI-generated event — edit anything before you publish.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="ce-event-name">Event name</Label>
                 <Input
