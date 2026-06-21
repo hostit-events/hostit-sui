@@ -9,6 +9,7 @@ import { EMAIL_ENABLED, ENOKI_ENABLED, PACKAGE_ID, TICKET_TYPE } from "@/lib/con
 import { useAllEvents } from "@/lib/events";
 import { checkInTx, getFields } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
+import { getTurnstileToken } from "@/lib/turnstileClient";
 import {
   clearStaffKeypair,
   extractTicketId,
@@ -498,10 +499,11 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
     if (!em) return;
     setLookupBusy(true);
     try {
+      const turnstileToken = await getTurnstileToken();
       const r = await fetch("/api/identity/lookup-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: em }),
+        body: JSON.stringify({ email: em, turnstileToken }),
       });
       const j = (await r.json()) as { address?: string | null; error?: string };
       if (!r.ok) throw new Error(j.error || "Lookup failed");
