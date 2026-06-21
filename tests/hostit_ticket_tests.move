@@ -14,7 +14,7 @@ use hostit_ticket::event::{Self, Event, OrganizerCap};
 use hostit_ticket::ticket::{Self, Ticket};
 use hostit_ticket::market;
 use hostit_ticket::checkin;
-use hostit_ticket::poap::{Self, Poap, PoapRegistry};
+use hostit_ticket::poap::{Self, Poap};
 use hostit_ticket::access;
 
 const ADMIN: address = @0xA1;
@@ -1441,12 +1441,11 @@ fun poap_claim_after_checkin_ok() {
     ts::return_shared(ev);
 
     sc.next_tx(BUYER);
-    let ev = sc.take_shared<Event>();
-    let mut reg = sc.take_shared<PoapRegistry>();
-    poap::claim_poap(&mut reg, &ev, &t, sc.ctx());
-    assert!(poap::has_claimed(&reg, object::id(&t)), 0);
+    let mut ev = sc.take_shared<Event>();
+    poap::claim_poap(&mut ev, &mut t, sc.ctx());
+    assert!(ticket::poap_claimed(&t), 0);
+    assert!(event::poap_claimed_count(&ev) == 1, 2);
     sc.return_to_sender(t);
-    ts::return_shared(reg);
     ts::return_shared(ev);
 
     sc.next_tx(BUYER);
@@ -1471,12 +1470,10 @@ fun poap_claim_not_checked_in_fails() {
     ts::return_shared(ev);
 
     sc.next_tx(BUYER);
-    let ev = sc.take_shared<Event>();
-    let mut reg = sc.take_shared<PoapRegistry>();
-    let t = sc.take_from_sender<Ticket>();
-    poap::claim_poap(&mut reg, &ev, &t, sc.ctx()); // not checked in -> abort
+    let mut ev = sc.take_shared<Event>();
+    let mut t = sc.take_from_sender<Ticket>();
+    poap::claim_poap(&mut ev, &mut t, sc.ctx()); // not checked in -> abort
     sc.return_to_sender(t);
-    ts::return_shared(reg);
     ts::return_shared(ev);
     destroy(cap);
     clock.destroy_for_testing();

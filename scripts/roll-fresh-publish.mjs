@@ -2,14 +2,16 @@
 // Roll a FRESH publish through the repo. See DEPLOYING.md → "Fresh-publish procedure".
 //
 //   1) prep:    Published.toml [published.testnet] removed + Move.toml [addresses]=0x0
-//   2) publish: sui client publish --gas-budget 2000000000 --json > /tmp/forum-publish.json   (gated)
-//   3) roll:    bun scripts/roll-fresh-publish.mjs /tmp/forum-publish.json
+//   2) publish: sui client publish --gas-budget 2000000000 --json > /tmp/publish.json   (gated)
+//   3) roll:    bun scripts/roll-fresh-publish.mjs /tmp/publish.json
 //
 // Step 3 (this script) reads the publish output, then string-replaces the CURRENT
-// ids in web/lib/config.ts with the newly-published ones (all four package pins
-// share one fallback id, so one replace covers PACKAGE_ID / PACKAGE_ID_LATEST /
-// PREDICT_SELLOUT_PKG / PREDICT_RANGE_PKG) and sets Move.toml [addresses] to the
-// new package id. Published.toml is rewritten by `sui client publish` itself.
+// ids in web/lib/config.ts with the newly-published ones. The package model is a
+// SINGLE id now (fresh-publish, no PACKAGE_ID_LATEST/PREDICT_*_PKG split), so one
+// replace of PACKAGE_ID covers every interpolated type/event/target string. It
+// also rolls HUB_ID, TRANSFER_POLICY_ID, and GOVERNANCE_REGISTRY_ID, and sets
+// Move.toml [addresses]. Published.toml is rewritten by `sui client publish` itself.
+// (There is no PoapRegistry anymore — POAP dedup is a flag on the Ticket.)
 //
 // Pure local file edits — not a chain action. Reversible with `git checkout`.
 
@@ -39,17 +41,20 @@ const published = changes.find((c) => c.type === "published");
 const created = changes.filter((c) => c.type === "created");
 const byTypeSuffix = (suffix) =>
   created.find((c) => typeof c.objectType === "string" && c.objectType.includes(suffix));
+const byTypeBoth = (a, b) =>
+  created.find(
+    (c) => typeof c.objectType === "string" && c.objectType.includes(a) && c.objectType.includes(b),
+  );
 
 const newPkg = published?.packageId;
 const newHub = byTypeSuffix("::hub::Hub")?.objectId;
-const newPoap = byTypeSuffix("::poap::PoapRegistry")?.objectId;
 // TransferPolicy<…::ticket::Ticket> — match the framework type + our Ticket param.
-const newPolicy = created.find(
-  (c) => typeof c.objectType === "string" && c.objectType.includes("::transfer_policy::TransferPolicy<") && c.objectType.includes("::ticket::Ticket"),
-)?.objectId;
+const newPolicy = byTypeBoth("::transfer_policy::TransferPolicy<", "::ticket::Ticket")?.objectId;
+// AccessControl<…::governance::GOVERNANCE> — the protocol RBAC registry.
+const newGov = byTypeBoth("::access_control::AccessControl<", "::governance::GOVERNANCE")?.objectId;
 const newUpgradeCap = byTypeSuffix("::package::UpgradeCap")?.objectId;
 
-const missing = Object.entries({ newPkg, newHub, newPoap, newPolicy }).filter(([, v]) => !v);
+const missing = Object.entries({ newPkg, newHub, newPolicy, newGov }).filter(([, v]) => !v);
 if (missing.length) {
   console.error("Missing from publish JSON:", missing.map(([k]) => k).join(", "));
   console.error("objectChanges types seen:", [...new Set(changes.map((c) => c.type))].join(", "));
@@ -68,8 +73,8 @@ const firstId = (constName) => {
 };
 const oldPkg = firstId("PACKAGE_ID");
 const oldHub = firstId("HUB_ID");
-const oldPoap = firstId("POAP_REGISTRY_ID");
 const oldPolicy = firstId("TRANSFER_POLICY_ID");
+const oldGov = firstId("GOVERNANCE_REGISTRY_ID");
 
 // --- patch config.ts (count replacements as a sanity check) ---
 const replaceAllCount = (hay, from, to) => {
@@ -79,10 +84,10 @@ const replaceAllCount = (hay, from, to) => {
 };
 let n;
 [config, n] = replaceAllCount(config, oldPkg, newPkg);
-console.log(`config.ts: package id ${oldPkg.slice(0, 10)}… → ${newPkg.slice(0, 10)}…  (${n} occurrences — covers all 4 pins)`);
+console.log(`config.ts: PACKAGE_ID ${oldPkg.slice(0, 10)}… → ${newPkg.slice(0, 10)}…  (${n} occurrences)`);
 [config, n] = replaceAllCount(config, oldHub, newHub); console.log(`config.ts: HUB_ID (${n})`);
-[config, n] = replaceAllCount(config, oldPoap, newPoap); console.log(`config.ts: POAP_REGISTRY_ID (${n})`);
 [config, n] = replaceAllCount(config, oldPolicy, newPolicy); console.log(`config.ts: TRANSFER_POLICY_ID (${n})`);
+[config, n] = replaceAllCount(config, oldGov, newGov); console.log(`config.ts: GOVERNANCE_REGISTRY_ID (${n})`);
 writeFileSync(CONFIG, config);
 
 // --- patch Move.toml [addresses] (NOT [dev-addresses], which is 0xCAFE) ---
@@ -93,13 +98,13 @@ console.log(`Move.toml: [addresses] hostit_ticket → ${newPkg.slice(0, 10)}…`
 
 // --- summary + manual follow-ups ---
 console.log("\n=== Rolled to fresh publish ===");
-console.log(`package      ${newPkg}`);
-console.log(`Hub          ${newHub}`);
-console.log(`PoapRegistry ${newPoap}`);
-console.log(`TransferPolicy<Ticket> ${newPolicy}`);
-if (newUpgradeCap) console.log(`UpgradeCap   ${newUpgradeCap}`);
+console.log(`package                 ${newPkg}`);
+console.log(`Hub                     ${newHub}`);
+console.log(`TransferPolicy<Ticket>  ${newPolicy}`);
+console.log(`AccessControl<GOV>      ${newGov}`);
+if (newUpgradeCap) console.log(`UpgradeCap              ${newUpgradeCap}`);
 console.log("\nVercel env (Production) — update if these env overrides are set:");
 console.log(`  NEXT_PUBLIC_HOSTIT_PACKAGE_ID=${newPkg}`);
 console.log(`  NEXT_PUBLIC_HOSTIT_HUB_ID=${newHub}`);
-console.log(`  NEXT_PUBLIC_HOSTIT_POAP_REGISTRY_ID=${newPoap}`);
+console.log(`  NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID=${newGov}`);
 console.log("\nNext: bunx tsc --noEmit (in web/) · update .suiperpower/deploy-context.md · re-attach policy_rules if resale is live · commit + push.");

@@ -3,12 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { fromHex } from "@mysten/sui/utils";
+import { fromHex, toHex, fromBase64 } from "@mysten/sui/utils";
+import { useQuery } from "@tanstack/react-query";
 import {
   COINS,
   ENOKI_ENABLED,
+  NETWORK,
   ORGANIZER_CAP_TYPE,
   PACKAGE_ID,
+  REFUND_PERIOD_MS,
   USDC_COIN_TYPE,
   coinInfo,
   fmtAmount,
@@ -18,13 +21,22 @@ import {
 import {
   addCheckinSignerTx,
   getFields,
+  readEventCoinStats,
+  removeCheckinSignerTx,
+  removePriceTx,
   setAllowSelfCheckinTx,
+  setCancelledTx,
+  setIsFreeTx,
+  setIsRefundableTx,
+  setPoapEnabledTx,
   setPriceTx,
+  updateEndTimeTx,
   updateMaxPerUserTx,
   updateMaxTicketsTx,
   updateMetadataTx,
   updateTimesTx,
   withdrawEventBalanceTx,
+  type CoinStats,
 } from "@/lib/ticketing";
 import {
   bucketLabel,
@@ -33,18 +45,35 @@ import {
   parseMarketFields,
   parseRangeFields,
 } from "@/lib/predict";
+import { encryptForumMessage, forumPostAsOrganizerTx } from "@/lib/forum";
+import { averageRating, listReviews } from "@/lib/reviews";
 import { useAllEvents } from "@/lib/events";
 import { useEventMarkets } from "@/lib/markets";
-import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
+import {
+  useCurrentAccount,
+  useCurrentClient,
+  useSignAndExecute,
+  useSponsorAndExecute,
+  useSuiQuery,
+} from "@/lib/hooks";
 import { humanizeError } from "@/lib/moveErrors";
 import { getEventMetadata, putEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { storeFile } from "@/lib/walrus";
 import { CATEGORIES, catPalette, catGlyph } from "@/lib/data";
+import {
+  STAGE_LABEL,
+  STAGE_ORDER,
+  lifecycleStage,
+  stageIndex,
+  useNow,
+  type LifecycleStage,
+} from "@/lib/lifecycle";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { Copy } from "@/components/animate-ui/icons/copy";
 import { RefreshCw } from "@/components/animate-ui/icons/refresh-cw";
 import { TxLink } from "@/components/TxLink";
+import { CapacityRing } from "@/components/CapacityRing";
 import { CopilotLauncher } from "@/components/screens/CopilotLauncher";
 import { DateTimePicker } from "@/components/DateTimePicker";
 import { Card } from "@/components/ui/card";
@@ -77,6 +106,43 @@ function resolveCoinType(typeName: string): string {
   return COINS.find((c) => matchesCoinType(typeName, c.type))?.type ?? `0x${typeName}`;
 }
 
+/** SuiVision object URL (mainnet has no subdomain). */
+function objectUrl(id: string): string {
+  const sub = NETWORK === "mainnet" ? "" : `${NETWORK}.`;
+  return `https://${sub}suivision.xyz/object/${id}`;
+}
+
+/**
+ * Parse the Event's `checkin_signers` VecSet<vector<u8>> field into normalized
+ * pubkeys. ponytail: the on-chain JSON shape of a populated `vector<u8>` element
+ * isn't observable on testnet today (no event has signers yet), so we accept the
+ * realistic encodings (number[], base64, hex) and normalize to 32 bytes; revoke
+ * passes the same bytes back. Empty sets render fine regardless.
+ */
+function parseSignerPubkeys(field: unknown): { hex: string; bytes: number[] }[] {
+  const f = field as { fields?: { contents?: unknown[] }; contents?: unknown[] } | undefined;
+  const contents = f?.fields?.contents ?? f?.contents;
+  if (!Array.isArray(contents)) return [];
+  const out: { hex: string; bytes: number[] }[] = [];
+  for (const el of contents) {
+    let bytes: number[] | null = null;
+    if (Array.isArray(el)) bytes = el.map(Number);
+    else if (typeof el === "string") {
+      try {
+        bytes = Array.from(fromBase64(el));
+      } catch {
+        try {
+          bytes = Array.from(fromHex(el.replace(/^0x/i, "")));
+        } catch {
+          bytes = null;
+        }
+      }
+    }
+    if (bytes && bytes.length === 32) out.push({ hex: toHex(Uint8Array.from(bytes)), bytes });
+  }
+  return out;
+}
+
 interface TicketMintedJson {
   event_seq: string | number;
   event_id: string;
@@ -96,12 +162,23 @@ interface CheckedInJson {
   serial: string | number;
 }
 
+/** Shared submit + on-chain context passed to deck cards. */
+interface DeckCtx {
+  capId: string;
+  eventId: string;
+  addr: string;
+  isPending: boolean;
+  send: (tx: Transaction, after?: () => void) => Promise<void>;
+  refetch: () => void;
+}
+
 export function EventManageScreen({ id }: { id: string }) {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
   const isPending = regular.isPending || sponsored.isPending;
+  const now = useNow();
 
   // --- The event object ---
   const eventQ = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>("getObject", {
@@ -129,17 +206,32 @@ export function EventManageScreen({ id }: { id: string }) {
     return null;
   }, [capsQ.data, id]);
 
-  // --- Mint log (sales / gross / attendees) for this event ---
-  // FULLY enumerate the global TicketMinted/CheckedIn logs (cursor-followed via
-  // useAllEvents, ~1000-log bound) instead of one capped 50-log page: a single
-  // page is platform-wide newest-first, so once ~50 newer logs exist this event's
-  // own rows fall off and the gross/check-in tallies (which gate withdraw) silently
-  // undercount. `*.data?.truncated` flags when even ~1000 wasn't enough.
+  // --- On-chain activity logs for the telemetry stream (mints + check-ins) ---
   const mintedQ = useAllEvents(`${PACKAGE_ID}::market::TicketMinted`);
-  // --- Check-in log for this event ---
   const checkedQ = useAllEvents(`${PACKAGE_ID}::checkin::CheckedIn`);
 
-  // --- Walrus metadata (category, venue, city, cover, description) ---
+  // --- Per-coin escrow + lifetime accounting (devInspect; dynamic-field reads) ---
+  const client = useCurrentClient() as unknown as Parameters<typeof readEventCoinStats>[0];
+  const statsQ = useQuery<Record<string, CoinStats>, Error>({
+    queryKey: ["eventCoinStats", id, addr],
+    enabled: Boolean(addr),
+    staleTime: 15_000,
+    queryFn: async () => {
+      const out: Record<string, CoinStats> = {};
+      for (const c of COINS) out[c.type] = await readEventCoinStats(client, id, c.type, addr!);
+      return out;
+    },
+  });
+
+  // --- Reviews summary (Wrapped) ---
+  const reviewClient = useCurrentClient() as unknown as Parameters<typeof listReviews>[0];
+  const reviewsQ = useQuery({
+    queryKey: ["manageReviews", id],
+    staleTime: 60_000,
+    queryFn: () => listReviews(reviewClient, id),
+  });
+
+  // --- Walrus metadata (category, venue, city, cover, description, poap) ---
   const uri = f ? String(f.uri ?? "") : "";
   const [meta, setMeta] = useState<EventMetadata | null>(null);
   useEffect(() => {
@@ -150,12 +242,9 @@ export function EventManageScreen({ id }: { id: string }) {
     };
   }, [uri]);
 
-  // Derived rows scoped to this event.
   const eventSeq = f ? String(f.event_seq) : "";
   const mints = useMemo(() => {
     if (!mintedQ.data) return [] as TicketMintedJson[];
-    // mintedQ.data is useAllEvents' { data, truncated } envelope (≅ the old
-    // PaginatedEvents): .data is the SuiEvent[], same hop count as before.
     return mintedQ.data.data
       .map((e) => e.parsedJson as TicketMintedJson)
       .filter((p) => p.event_id === id || String(p.event_seq) === eventSeq);
@@ -166,23 +255,9 @@ export function EventManageScreen({ id }: { id: string }) {
       .map((e) => e.parsedJson as CheckedInJson)
       .filter((p) => p.event_id === id || String(p.event_seq) === eventSeq);
   }, [checkedQ.data, id, eventSeq]);
-
-  // Either log hit the ~1000-log page bound (older sales/check-ins exist but
-  // aren't loaded) — surfaced in the disclaimer below the stat tiles.
   const tallyTruncated = Boolean(mintedQ.data?.truncated || checkedQ.data?.truncated);
 
-  // Gross per coin (sum of total_paid grouped by coin type).
-  const grossByCoin = useMemo(() => {
-    const m = new Map<string, bigint>();
-    for (const p of mints) {
-      const ct = resolveCoinType(p.coin_type);
-      m.set(ct, (m.get(ct) ?? 0n) + BigInt(p.total_paid ?? 0));
-    }
-    return m;
-  }, [mints]);
-
-  // Withdraw + self-check-in toggle are both on the sponsor allowlist, so gas is
-  // sponsored when Enoki is on — organizers never need SUI.
+  // Submit helper: sponsor gas when Enoki is on, else sign directly.
   async function send(tx: Transaction, after?: () => void) {
     try {
       const out =
@@ -193,6 +268,7 @@ export function EventManageScreen({ id }: { id: string }) {
         description: <TxLink digest={out.digest} chars={10} />,
       });
       eventQ.refetch();
+      statsQ.refetch();
       after?.();
     } catch (e: unknown) {
       toast.error(humanizeError(e));
@@ -201,14 +277,14 @@ export function EventManageScreen({ id }: { id: string }) {
 
   const [copied, setCopied] = useState(false);
 
-  // === Gating / loading / error ===
+  // === Gating / loading / error (preserved) ===
   if (!addr) {
     return (
       <div className="space-y-6 screen-in">
         <Card className="p-5">
           <div className="font-semibold">Connect your wallet</div>
           <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
-            The organizer cockpit needs the wallet that holds this event&apos;s OrganizerCap.
+            The command center needs the wallet that holds this event&apos;s OrganizerCap.
           </p>
         </Card>
       </div>
@@ -288,403 +364,1037 @@ export function EventManageScreen({ id }: { id: string }) {
   const isFree = Boolean(f.is_free);
   const isRefundable = Boolean(f.is_refundable);
   const allowSelf = Boolean(f.allow_self_checkin);
+  const isCancelled = Boolean(f.is_cancelled);
+  const poapEnabled = Boolean(f.poap_enabled);
+  const checkedInCount = Number(f.checked_in_count ?? 0);
+  const poapClaimedCount = Number(f.poap_claimed_count ?? 0);
 
-  const now = Date.now();
-  const pct = maxTickets > 0n ? Number((minted * 100n) / maxTickets) : 0;
-  const checkedInCount = checkins.length;
-
-  let status: string;
-  let statusVariant: "default" | "secondary" | "outline";
-  if (now > endMs) {
-    status = "Ended";
-    statusVariant = "outline";
-  } else if (now >= startMs) {
-    status = "Live";
-    statusVariant = "default";
-  } else if (now >= purchaseStartMs) {
-    status = "On sale";
-    statusVariant = "default";
-  } else {
-    status = "Upcoming";
-    statusVariant = "secondary";
-  }
+  const stage = lifecycleStage({ purchaseStartMs, startMs, endMs }, now);
 
   const cat = meta?.category;
   const [p1, p2] = catPalette(cat);
   const glyphIcon = catGlyph(cat);
-  const dateLabel = `${new Date(startMs).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  })} – ${new Date(endMs).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-
-  // Primary gross label for the stat tile + copilot context.
-  const grossEntries = Array.from(grossByCoin.entries());
-  const grossLabel =
-    grossEntries.length === 0
-      ? isFree
-        ? "Free"
-        : "—"
-      : grossEntries
-          .map(([ct, v]) => {
-            const ci = coinInfo(ct);
-            return `${fmtAmount(v, ci.decimals)} ${ci.symbol}`;
-          })
-          .join(" · ");
 
   const publicUrl =
     typeof window !== "undefined" ? `${window.location.origin}/event/${id}` : `/event/${id}`;
 
+  const reviewSummary = averageRating(reviewsQ.data ?? []);
+
+  const ctx: DeckCtx = {
+    capId,
+    eventId: id,
+    addr,
+    isPending,
+    send,
+    refetch: () => {
+      eventQ.refetch();
+      statsQ.refetch();
+    },
+  };
+
   // Context handed to the AI co-pilot (live numbers only).
   const copilotEvent = {
     name,
-    status,
-    date: dateLabel,
+    status: STAGE_LABEL[stage] + (isCancelled ? " · Cancelled" : ""),
+    date: `${new Date(startMs).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })} – ${new Date(endMs).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
     city: meta?.city,
     venue: meta?.venue,
     category: cat,
     sold: Number(minted),
     cap: Number(maxTickets),
-    pct,
-    revenue: grossLabel,
-    priceLabel: grossEntries.length ? grossLabel : isFree ? "Free" : "Not set",
+    pct: maxTickets > 0n ? Number((minted * 100n) / maxTickets) : 0,
+    checkedIn: checkedInCount,
+    stage,
+    cancelled: isCancelled,
   };
 
   return (
-    <div className="space-y-8 screen-in">
-      {/* === Header (gradient poster + identity) === */}
+    <div className="screen-in" style={{ display: "grid", gap: 20 }}>
+      {/* === Identity + provenance header === */}
       <Card className="relative gap-0 p-0 overflow-hidden">
         <div
           className="poster"
-          style={
-            {
-              height: 200,
-              ["--p1" as string]: p1,
-              ["--p2" as string]: p2,
-            } as React.CSSProperties
-          }
+          style={{ height: 120, ["--p1" as string]: p1, ["--p2" as string]: p2 } as React.CSSProperties}
         >
           <div className="poster-noise" />
           <span className="poster-glyph">
-            <Icon icon={glyphIcon} size={96} />
+            <Icon icon={glyphIcon} size={64} />
           </span>
         </div>
-        <div style={{ padding: "18px 22px 22px" }} className="space-y-3">
-          <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-            <Badge variant={statusVariant}>{status}</Badge>
-            {isFree && <Badge variant="secondary">Free</Badge>}
-            {isRefundable && <Badge variant="secondary">Refundable</Badge>}
-            {meta?.tag && <Badge variant="outline">{meta.tag}</Badge>}
-          </div>
-          <h1 className="page-title" style={{ fontSize: 30 }}>
-            {name}
-          </h1>
-          <div className="flex items-center gap-4 text-[13px]" style={{ color: "var(--fg3)", flexWrap: "wrap" }}>
-            <span className="flex items-center gap-1.5">
-              <Icon icon="proicons:calendar" size={14} /> {dateLabel}
-            </span>
-            {(meta?.venue || meta?.city) && (
-              <span className="flex items-center gap-1.5">
-                <Icon icon="carbon:location" size={14} />
-                {[meta?.venue, meta?.city].filter(Boolean).join(" · ")}
-              </span>
-            )}
-            <span className="flex items-center gap-1.5">
-              <Icon icon="solar:user-rounded-bold" size={14} />
-              <AddressDisplay address={String(f.organizer)} suffix={4} />
-            </span>
-          </div>
-          <div className="flex gap-2" style={{ flexWrap: "wrap", marginTop: 4 }}>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/checkin">
-                <Icon icon="zondicons:inbox-check" size={15} /> Check-in
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/door/${id}`}>
-                <Icon icon="material-symbols:door-front-outline" size={15} /> Door view
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/forum/${id}`}>
-                <Icon icon="ion:chatbubbles" size={15} /> Event chat
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/event/${id}`}>
-                <Icon icon="ic:round-explore" size={15} /> View public page
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(publicUrl);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                } catch {
-                  /* clipboard unavailable */
-                }
-              }}
-            >
-              {copied ? (
-                <Icon icon="ic:round-check" size={15} />
-              ) : (
-                <Copy size={15} animateOnHover />
-              )}{" "}
-              {copied ? "Copied!" : "Copy link"}
-            </Button>
+        <div style={{ padding: "16px 20px 18px" }} className="space-y-3">
+          <div className="flex items-center justify-between gap-3" style={{ flexWrap: "wrap" }}>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                <Badge variant={isCancelled ? "destructive" : "default"}>
+                  {isCancelled ? "Cancelled" : STAGE_LABEL[stage]}
+                </Badge>
+                {isFree && <Badge variant="secondary">Free</Badge>}
+                {isRefundable && <Badge variant="secondary">Refundable</Badge>}
+              </div>
+              <h1 className="page-title" style={{ fontSize: 26, marginTop: 8 }}>
+                {name}
+              </h1>
+              <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--fg3)", marginTop: 6, flexWrap: "wrap" }}>
+                <ProvenanceChip label="Event" id={id} />
+                <ProvenanceChip label="Cap" id={capId} />
+              </div>
+            </div>
+            <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/event/${id}`}>
+                  <Icon icon="ic:round-explore" size={15} /> Public page
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(publicUrl);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  } catch {
+                    /* clipboard unavailable */
+                  }
+                }}
+              >
+                {copied ? <Icon icon="ic:round-check" size={15} /> : <Copy size={15} animateOnHover />}{" "}
+                {copied ? "Copied!" : "Share"}
+              </Button>
+            </div>
           </div>
         </div>
       </Card>
 
-      {/* === Stat tiles === */}
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-        <div className="stat-tile fill">
-          <div className="stat-num" style={{ color: "#fff" }}>
-            {String(minted)}
-            <span style={{ fontSize: 18, opacity: 0.7 }}>/{String(maxTickets)}</span>
+      {isCancelled && (
+        <Card className="p-4" style={{ border: "1px solid var(--color-danger)", background: "rgba(239,68,68,.06)" }}>
+          <div className="flex items-center gap-2 font-semibold" style={{ color: "var(--color-danger)" }}>
+            <Icon icon="material-symbols:cancel-outline" size={18} /> This event is cancelled
           </div>
-          <div className="stat-label" style={{ color: "rgba(255,255,255,.78)" }}>
-            Tickets sold
-          </div>
+          <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+            Sales and withdrawals are closed. Every ticket holder can refund their ticket now from
+            their wallet — escrow is reserved for them. You can un-cancel below.
+          </p>
+        </Card>
+      )}
+
+      {/* === Command center: stage rail + deck === */}
+      <div className="grid gap-5 items-start lg:grid-cols-[230px_minmax(0,1fr)]">
+        <div className="lg:sticky lg:top-4">
+          <StageRail current={stage} eventName={name} />
         </div>
-        <div className="stat-tile">
-          <div className="stat-num">{grossEntries.length ? grossLabel : isFree ? "Free" : "—"}</div>
-          <div className="stat-label">Gross sales (recent)</div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-num">{checkedInCount}</div>
-          <div className="stat-label">Checked in (recent)</div>
+        <div style={{ display: "grid", gap: 20 }}>
+          {/* Capacity hero */}
+          <Card className="p-5">
+            <div className="flex items-center gap-5" style={{ flexWrap: "wrap" }}>
+              <CapacityRing
+                minted={Number(minted)}
+                max={Number(maxTickets)}
+                checkedIn={stage === "doorsOpen" || stage === "wrapped" ? checkedInCount : undefined}
+                p1={p1}
+                p2={p2}
+              />
+              <div className="space-y-2.5" style={{ flex: 1, minWidth: 200 }}>
+                <a
+                  href={objectUrl(id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mono"
+                  style={{ fontSize: 11, color: "var(--fg3)" }}
+                >
+                  event.minted() ↗
+                </a>
+                <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))" }}>
+                  <MiniStat label="Minted" value={`${minted}/${maxTickets}`} />
+                  <MiniStat label="Checked in" value={String(checkedInCount)} />
+                  {!isFree && (
+                    <MiniStat
+                      label="Escrow"
+                      value={statsQ.isLoading ? "…" : escrowLabel(statsQ.data)}
+                    />
+                  )}
+                  {poapEnabled && poapClaimedCount > 0 && (
+                    <MiniStat label="POAPs" value={String(poapClaimedCount)} />
+                  )}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Stage-specific deck */}
+          {(stage === "drafting" || stage === "onSale") && (
+            <>
+              {!isFree && <PricePanel ctx={ctx} stats={statsQ.data} />}
+              <EditEventPanel
+                capId={capId}
+                eventId={id}
+                meta={meta}
+                currentName={name}
+                currentSymbol={String(f.symbol ?? "")}
+                currentUri={uri}
+                startMs={startMs}
+                endMs={endMs}
+                purchaseStartMs={purchaseStartMs}
+                maxTickets={maxTickets}
+                minted={minted}
+                maxPerUser={BigInt((f.max_per_user as string) ?? "0")}
+                isFree={isFree}
+                isRefundable={isRefundable}
+                onDone={ctx.refetch}
+              />
+              <FreeRefundablePanel
+                ctx={ctx}
+                isFree={isFree}
+                isRefundable={isRefundable}
+                minted={minted}
+              />
+              <DoorPrepPanel ctx={ctx} signersField={f.checkin_signers} allowSelf={allowSelf} />
+              <PoapPanel
+                ctx={ctx}
+                meta={meta}
+                poapEnabled={poapEnabled}
+                claimed={poapClaimedCount}
+                currentName={name}
+                currentSymbol={String(f.symbol ?? "")}
+              />
+              {stage === "onSale" && (
+                <PredictionMarketsPanel
+                  eventId={id}
+                  eventSeq={eventSeq}
+                  maxTickets={maxTickets}
+                  send={send}
+                  isPending={isPending}
+                />
+              )}
+            </>
+          )}
+
+          {stage === "doorsOpen" && (
+            <>
+              <DoorModeCard eventId={id} />
+              <DoorPrepPanel ctx={ctx} signersField={f.checkin_signers} allowSelf={allowSelf} />
+              <EndTimePanel ctx={ctx} startMs={startMs} endMs={endMs} />
+              <PoapPanel
+                ctx={ctx}
+                meta={meta}
+                poapEnabled={poapEnabled}
+                claimed={poapClaimedCount}
+                currentName={name}
+                currentSymbol={String(f.symbol ?? "")}
+              />
+              <PredictionMarketsPanel
+                eventId={id}
+                eventSeq={eventSeq}
+                maxTickets={maxTickets}
+                send={send}
+                isPending={isPending}
+              />
+            </>
+          )}
+
+          {stage === "wrapped" && (
+            <>
+              {!isFree && (
+                <MoneyPanel
+                  ctx={ctx}
+                  stats={statsQ.data}
+                  loading={statsQ.isLoading}
+                  isError={statsQ.isError}
+                  isRefundable={isRefundable}
+                  isCancelled={isCancelled}
+                  endMs={endMs}
+                  now={now}
+                  withWithdraw
+                />
+              )}
+              <PoapPanel
+                ctx={ctx}
+                meta={meta}
+                poapEnabled={poapEnabled}
+                claimed={poapClaimedCount}
+                currentName={name}
+                currentSymbol={String(f.symbol ?? "")}
+              />
+              <ReviewsSummaryPanel summary={reviewSummary} loading={reviewsQ.isLoading} eventId={id} />
+              <OrganizerRecapPanel ctx={ctx} />
+              <PredictionMarketsPanel
+                eventId={id}
+                eventSeq={eventSeq}
+                maxTickets={maxTickets}
+                send={send}
+                isPending={isPending}
+              />
+            </>
+          )}
+
+          {/* Money peek (read-only) before wrapping */}
+          {!isFree && stage !== "wrapped" && stage !== "drafting" && (
+            <MoneyPanel
+              ctx={ctx}
+              stats={statsQ.data}
+              loading={statsQ.isLoading}
+              isError={statsQ.isError}
+              isRefundable={isRefundable}
+              isCancelled={isCancelled}
+              endMs={endMs}
+              now={now}
+              withWithdraw={false}
+            />
+          )}
+
+          {/* Telemetry stream */}
+          <TelemetryStream
+            mints={mints}
+            checkins={checkins}
+            loading={mintedQ.isLoading}
+            truncated={tallyTruncated}
+            publicUrl={publicUrl}
+          />
+
+          {/* Danger zone */}
+          <CancelZone ctx={ctx} isCancelled={isCancelled} />
         </div>
       </div>
-      <p className="text-[11px]" style={{ color: "var(--fg3)", marginTop: -16 }}>
-        Gross sales and check-ins are tallied from on-chain logs (up to the ~1000 most recent).
-        {tallyTruncated
-          ? " This event has more activity than that — older sales and check-ins aren't all loaded yet, so these figures may undercount."
-          : ""}{" "}
-        On-chain escrow isn&apos;t exposed as a readable field — withdraw to settle.
+
+      <CopilotLauncher event={copilotEvent} />
+    </div>
+  );
+}
+
+// === Small presentational helpers ===
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="font-semibold" style={{ fontSize: 18 }}>
+        {value}
+      </div>
+      <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function ProvenanceChip({ label, id }: { label: string; id: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="flex items-center gap-1">
+      <span style={{ color: "var(--fg3)" }}>{label}</span>
+      <a href={objectUrl(id)} target="_blank" rel="noreferrer" className="mono" style={{ color: "var(--fg2)" }}>
+        {id.slice(0, 6)}…{id.slice(-4)} ↗
+      </a>
+      <button
+        aria-label={`Copy ${label} id`}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(id);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          } catch {
+            /* unavailable */
+          }
+        }}
+        style={{ display: "inline-flex", color: "var(--fg3)" }}
+      >
+        <Icon icon={copied ? "ic:round-check" : "ph:copy"} size={12} />
+      </button>
+    </span>
+  );
+}
+
+function escrowLabel(stats?: Record<string, CoinStats>): string {
+  if (!stats) return "—";
+  const parts = COINS.map((c) => {
+    const v = stats[c.type]?.escrow ?? 0n;
+    return v > 0n ? `${fmtAmount(v, c.decimals)} ${c.symbol}` : null;
+  }).filter(Boolean);
+  return parts.length ? parts.join(" · ") : "0";
+}
+
+// === Stage rail ===
+
+function StageRail({ current, eventName }: { current: LifecycleStage; eventName: string }) {
+  const idx = stageIndex(current);
+  return (
+    <Card className="p-4" aria-label="Event lifecycle">
+      <div className="text-[11px] uppercase tracking-wide" style={{ color: "var(--fg3)", letterSpacing: ".06em" }}>
+        Lifecycle
+      </div>
+      <div className="font-medium" style={{ marginTop: 2, marginBottom: 10 }} title={eventName}>
+        {eventName.length > 26 ? eventName.slice(0, 26) + "…" : eventName}
+      </div>
+      <ol style={{ display: "grid", gap: 2 }}>
+        {STAGE_ORDER.map((s, i) => {
+          const state = i < idx ? "done" : i === idx ? "now" : "future";
+          return (
+            <li key={s} className="flex items-center gap-2.5" style={{ padding: "7px 0", opacity: state === "future" ? 0.45 : 1 }}>
+              <span
+                aria-hidden
+                style={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: 999,
+                  flexShrink: 0,
+                  background:
+                    state === "now" ? "var(--hi-blue, #4f8cff)" : state === "done" ? "var(--fg3)" : "transparent",
+                  border: state === "future" ? "1px solid var(--fg3)" : "none",
+                  boxShadow: state === "now" ? "0 0 0 4px rgba(79,140,255,.18)" : "none",
+                }}
+              />
+              <span className="text-sm" style={{ fontWeight: state === "now" ? 600 : 400 }}>
+                {STAGE_LABEL[s]}
+              </span>
+              {state === "now" && (
+                <Badge variant="secondary" style={{ marginLeft: "auto", fontSize: 10 }}>
+                  now
+                </Badge>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </Card>
+  );
+}
+
+// === Door mode (Doors Open) ===
+
+function DoorModeCard({ eventId }: { eventId: string }) {
+  return (
+    <Card className="space-y-3 p-5">
+      <div className="font-medium">Door mode</div>
+      <p className="text-[13px]" style={{ color: "var(--fg3)" }}>
+        Doors are open. Scan tickets at the entrance or let attendees check themselves in.
       </p>
+      <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+        <Button asChild size="lg">
+          <Link href={`/door/${eventId}`}>
+            <Icon icon="material-symbols:door-front-outline" size={18} /> Open door scanner
+          </Link>
+        </Button>
+        <Button asChild variant="outline" size="lg">
+          <Link href="/checkin">
+            <Icon icon="zondicons:inbox-check" size={16} /> Check-in console
+          </Link>
+        </Button>
+      </div>
+    </Card>
+  );
+}
 
-      {/* === Capacity bar === */}
-      <Card className="space-y-2 p-5">
-        <div className="flex items-center justify-between text-sm">
-          <span className="section-label" style={{ color: "var(--fg2)" }}>
-            Capacity
-          </span>
-          <span className="mono">
-            {String(minted)}/{String(maxTickets)} · {pct}%
-          </span>
-        </div>
-        <div
-          style={{
-            height: 10,
-            borderRadius: 999,
-            background: "rgba(255,255,255,.08)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: `${Math.min(100, pct)}%`,
-              height: "100%",
-              background: `linear-gradient(90deg, ${p1}, ${p2})`,
-              transition: "width .3s ease",
-            }}
-          />
-        </div>
-      </Card>
+// === Door prep: self check-in + signer roster (add + revoke) ===
 
-      {/* === Payout panel === */}
-      <section className="space-y-4">
+function DoorPrepPanel({
+  ctx,
+  signersField,
+  allowSelf,
+}: {
+  ctx: DeckCtx;
+  signersField: unknown;
+  allowSelf: boolean;
+}) {
+  const signers = useMemo(() => parseSignerPubkeys(signersField), [signersField]);
+  const [hex, setHex] = useState("");
+
+  function addSigner() {
+    const clean = hex.trim().replace(/^0x/i, "");
+    if (!/^[0-9a-fA-F]+$/.test(clean)) {
+      toast.error("Enter a hex-encoded ed25519 public key.");
+      return;
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = fromHex(clean);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Invalid hex.");
+      return;
+    }
+    if (bytes.length !== 32) {
+      toast.error(`Public key must be 32 bytes (got ${bytes.length}).`);
+      return;
+    }
+    ctx.send(addCheckinSignerTx({ capId: ctx.capId, eventId: ctx.eventId, pubkey: Array.from(bytes) }), () => {
+      setHex("");
+      ctx.refetch();
+    });
+  }
+
+  return (
+    <Card className="space-y-4 p-5">
+      <div className="flex items-center justify-between gap-2">
         <div>
-          <span className="eyebrow">
-            <Icon icon="solar:wallet-money-bold" size={14} /> Payouts
-          </span>
-          <h2 className="page-title" style={{ marginTop: 12, fontSize: 22 }}>
-            Withdraw revenue
-          </h2>
-          <p className="page-sub">
-            Settle accrued balances to your wallet. Refundable events: only after the post-event
-            refund window.
-          </p>
+          <div className="font-medium">Self check-in</div>
+          <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            Let holders check themselves in within the event window.
+          </div>
         </div>
-        <Card className="space-y-3 p-5">
-          {isFree ? (
-            <div className="text-sm" style={{ color: "var(--fg2)" }}>
-              This is a free event — there are no balances to withdraw.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {COINS.map((c) => {
-                const gross = grossByCoin.get(c.type) ?? 0n;
-                const noGross = gross === 0n;
-                return (
-                  <div
-                    key={c.type}
-                    className="flex items-center justify-between gap-3"
-                    style={{ padding: "10px 0", borderBottom: "1px solid var(--hair)" }}
-                  >
-                    <div>
-                      <div className="font-medium">{c.symbol}</div>
-                      <div className="mono" style={{ fontSize: 12, color: "var(--fg3)" }}>
-                        {fmtAmount(gross, c.decimals)} {c.symbol} grossed
-                      </div>
-                    </div>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
+        <Switch
+          aria-label="Self check-in"
+          checked={allowSelf}
+          disabled={ctx.isPending}
+          onCheckedChange={() => {
+            if (!ctx.isPending)
+              ctx.send(setAllowSelfCheckinTx({ capId: ctx.capId, eventId: ctx.eventId, allow: !allowSelf }));
+          }}
+        />
+      </div>
+
+      <div style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }} className="space-y-3">
+        <div>
+          <div className="font-medium">Door signers</div>
+          <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            ed25519 staff-device keys authorized to issue entry vouchers. Revoke a lost or
+            compromised device immediately.
+          </div>
+        </div>
+
+        {signers.length === 0 ? (
+          <div
+            className="text-[13px]"
+            style={{ color: "var(--fg2)", background: "rgba(245,166,35,.08)", border: "1px solid var(--hi-amber)", borderRadius: 10, padding: 10 }}
+          >
+            No door signer registered — voucher scans at the gate will abort, so attendees can&apos;t
+            be let in. Add a staff device key, or enable self check-in above.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 6 }}>
+            {signers.map((sg) => (
+              <div
+                key={sg.hex}
+                className="flex items-center justify-between gap-2"
+                style={{ padding: "8px 10px", border: "1px solid var(--hair)", borderRadius: 10 }}
+              >
+                <span className="mono" style={{ fontSize: 12, color: "var(--fg2)" }}>
+                  0x{sg.hex.slice(0, 10)}…{sg.hex.slice(-6)}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={ctx.isPending}
+                  onClick={() =>
+                    ctx.send(
+                      removeCheckinSignerTx({ capId: ctx.capId, eventId: ctx.eventId, pubkey: sg.bytes }),
+                      ctx.refetch,
+                    )
+                  }
+                >
+                  Revoke
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
+          <div className="grow" style={{ minWidth: 200 }}>
+            <Input
+              className="mono"
+              placeholder="0x… (64 hex chars)"
+              value={hex}
+              onChange={(e) => setHex(e.target.value)}
+            />
+          </div>
+          <Button disabled={ctx.isPending} onClick={addSigner}>
+            {ctx.isPending ? "Adding…" : "Add signer"}
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// === POAP toggle (arm/disable + claimed count) ===
+
+function PoapPanel({
+  ctx,
+  meta,
+  poapEnabled,
+  claimed,
+  currentName,
+  currentSymbol,
+}: {
+  ctx: DeckCtx;
+  meta: EventMetadata | null;
+  poapEnabled: boolean;
+  claimed: number;
+  currentName: string;
+  currentSymbol: string;
+}) {
+  const advertised = Boolean(meta?.poap);
+  const [busy, setBusy] = useState(false);
+
+  // Advertise = set `poap: true` in the Walrus metadata so the public page shows
+  // it (the on-chain toggle below controls whether claiming actually works).
+  async function advertise() {
+    if (advertised) return;
+    setBusy(true);
+    try {
+      const base: EventMetadata = meta ?? { v: 1, category: "community" };
+      const next: EventMetadata = { ...base, v: 1, poap: true };
+      const newUri = await putEventMetadata(next);
+      const symbol = currentSymbol.trim() || "EVNT";
+      await ctx.send(
+        updateMetadataTx({ capId: ctx.capId, eventId: ctx.eventId, name: currentName, symbol, uri: newUri }),
+      );
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="font-medium">Proof of attendance (POAP)</div>
+          <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            Checked-in holders can claim a POAP from the public page.{" "}
+            {claimed > 0 ? `${claimed} claimed so far.` : "None claimed yet."}
+          </div>
+        </div>
+        <Switch
+          aria-label="POAP claiming enabled"
+          checked={poapEnabled}
+          disabled={ctx.isPending || busy}
+          onCheckedChange={(v) =>
+            ctx.send(setPoapEnabledTx({ capId: ctx.capId, eventId: ctx.eventId, value: Boolean(v) }))
+          }
+        />
+      </div>
+      {!advertised && (
+        <div className="flex items-center justify-between gap-2" style={{ borderTop: "1px solid var(--hair)", paddingTop: 12 }}>
+          <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
+            Not advertised on the public page yet.
+          </div>
+          <Button variant="outline" size="sm" disabled={ctx.isPending || busy} onClick={advertise}>
+            {busy ? "Saving…" : "Advertise POAP"}
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// === Money: escrow withdraw + lifetime accounting ===
+
+function MoneyPanel({
+  ctx,
+  stats,
+  loading,
+  isError,
+  isRefundable,
+  isCancelled,
+  endMs,
+  now,
+  withWithdraw,
+}: {
+  ctx: DeckCtx;
+  stats?: Record<string, CoinStats>;
+  loading: boolean;
+  isError: boolean;
+  isRefundable: boolean;
+  isCancelled: boolean;
+  endMs: number;
+  now: number;
+  withWithdraw: boolean;
+}) {
+  const refundWindowOpen = isRefundable && now < endMs + REFUND_PERIOD_MS;
+  const anyEscrow = COINS.some((c) => (stats?.[c.type]?.escrow ?? 0n) > 0n);
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="font-medium">Money</div>
+          <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            On-chain escrow and lifetime accounting. Buyers paid the price + a 3% protocol fee.
+          </div>
+        </div>
+        <a href={objectUrl(ctx.eventId)} target="_blank" rel="noreferrer" className="mono" style={{ fontSize: 11, color: "var(--fg3)" }}>
+          escrow_value&lt;T&gt; ↗
+        </a>
+      </div>
+
+      {isError && (
+        <div className="text-[13px]" style={{ color: "var(--color-danger)" }}>
+          Couldn&apos;t read on-chain escrow — withdraw is held until the read succeeds.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 8 }}>
+        {COINS.map((c) => {
+          const st = stats?.[c.type];
+          const escrow = st?.escrow ?? 0n;
+          const canWithdraw =
+            withWithdraw && !isError && !isCancelled && escrow > 0n && !refundWindowOpen;
+          return (
+            <div key={c.type} style={{ padding: "10px 0", borderBottom: "1px solid var(--hair)" }}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium">
+                    {loading ? "…" : fmtAmount(escrow, c.decimals)} {c.symbol}
+                    <span className="text-[11px]" style={{ color: "var(--fg3)", marginLeft: 6 }}>
+                      withdrawable
+                    </span>
+                  </div>
+                  <div className="mono text-[11px]" style={{ color: "var(--fg3)", marginTop: 2 }}>
+                    gross {fmtAmount(st?.gross ?? 0n, c.decimals)} · fee {fmtAmount(st?.fee ?? 0n, c.decimals)} ·
+                    refunded {fmtAmount(st?.refunded ?? 0n, c.decimals)}
+                  </div>
+                </div>
+                {withWithdraw && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
                         <Button
                           size="sm"
-                          disabled={isPending || noGross}
+                          disabled={ctx.isPending || !canWithdraw}
                           onClick={() =>
-                            send(
+                            ctx.send(
                               withdrawEventBalanceTx({
-                                capId,
-                                eventId: id,
+                                capId: ctx.capId,
+                                eventId: ctx.eventId,
                                 coinType: c.type,
-                                recipient: addr,
+                                recipient: ctx.addr,
                               }),
                             )
                           }
                         >
-                          <Icon icon="solar:download-minimalistic-bold" size={15} /> Withdraw {c.symbol}
+                          <Icon icon="solar:download-minimalistic-bold" size={15} /> Withdraw
                         </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {noGross
-                          ? `No recent ${c.symbol} sales to withdraw`
-                          : `Withdraw all accrued ${c.symbol} to ${addr}`}
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                );
-              })}
-              <p className="text-[11px]" style={{ color: "var(--fg3)" }}>
-                Grossed figures are tallied from recent on-chain logs; the on-chain balance is the
-                source of truth for what a withdraw settles.
-              </p>
-            </div>
-          )}
-        </Card>
-      </section>
-
-      {/* === Controls: pricing + check-in === */}
-      <section className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-        {!isFree && <PricePanel capId={capId} eventId={id} onDone={() => eventQ.refetch()} />}
-
-        <Card className="space-y-4 p-5">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="font-medium">Self check-in</div>
-              <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
-                Let holders check themselves in within the event window.
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {isCancelled
+                        ? "Cancelled — escrow is reserved for refunders"
+                        : escrow === 0n
+                          ? `No ${c.symbol} escrow to withdraw`
+                          : refundWindowOpen
+                            ? "Refund window still open — withdraw after it closes"
+                            : `Withdraw all ${c.symbol} to your wallet`}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
               </div>
             </div>
-            <Switch
-              aria-label="Self check-in"
-              checked={allowSelf}
-              disabled={isPending}
-              onCheckedChange={() => {
-                if (!isPending) send(setAllowSelfCheckinTx({ capId, eventId: id, allow: !allowSelf }));
-              }}
-            />
-          </div>
+          );
+        })}
+      </div>
+      {withWithdraw && refundWindowOpen && anyEscrow && !isCancelled && (
+        <p className="text-[11px]" style={{ color: "var(--fg3)" }}>
+          This event is refundable — escrow unlocks for withdrawal after the refund window closes.
+        </p>
+      )}
+    </Card>
+  );
+}
 
-          <div style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }}>
-            <SignerPanel capId={capId} eventId={id} />
-          </div>
-        </Card>
-      </section>
+// === Reviews summary (Wrapped) ===
 
-      {/* === Edit event (details / schedule / capacity) === */}
-      <EditEventPanel
-        capId={capId}
-        eventId={id}
-        meta={meta}
-        currentName={name}
-        currentSymbol={String(f.symbol ?? "")}
-        currentUri={uri}
-        startMs={startMs}
-        endMs={endMs}
-        purchaseStartMs={purchaseStartMs}
-        maxTickets={maxTickets}
-        minted={minted}
-        maxPerUser={BigInt((f.max_per_user as string) ?? "0")}
-        isFree={isFree}
-        isRefundable={isRefundable}
-        onDone={() => eventQ.refetch()}
+function ReviewsSummaryPanel({
+  summary,
+  loading,
+  eventId,
+}: {
+  summary: { avg: number; count: number };
+  loading: boolean;
+  eventId: string;
+}) {
+  return (
+    <Card className="space-y-2 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-medium">Attendee reviews</div>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/event/${eventId}`}>View all</Link>
+        </Button>
+      </div>
+      {loading ? (
+        <div className="mono text-sm" style={{ color: "var(--fg2)" }}>
+          Loading…
+        </div>
+      ) : summary.count === 0 ? (
+        <p className="text-[13px]" style={{ color: "var(--fg3)" }}>
+          No reviews yet. Attendees who claimed a POAP can review from the public page.
+        </p>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: 26, fontWeight: 700 }}>{summary.avg.toFixed(1)}</span>
+          <span style={{ color: "var(--hi-amber)" }}>
+            {"★".repeat(Math.round(summary.avg))}
+            <span style={{ color: "var(--fg3)" }}>{"★".repeat(5 - Math.round(summary.avg))}</span>
+          </span>
+          <span className="text-[13px]" style={{ color: "var(--fg3)" }}>
+            ({summary.count})
+          </span>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// === Organizer recap (post to the event chat) ===
+
+function OrganizerRecapPanel({ ctx }: { ctx: DeckCtx }) {
+  const client = useCurrentClient();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function post() {
+    const body = text.trim();
+    if (!body) {
+      toast.error("Write a short wrap-up first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const blobId = await encryptForumMessage(client, ctx.eventId, {
+        text: body,
+        author: ctx.addr,
+        ts: Date.now(),
+      });
+      await ctx.send(forumPostAsOrganizerTx(ctx.eventId, ctx.capId, "general", blobId), () => setText(""));
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div>
+        <div className="font-medium">Post a wrap-up</div>
+        <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+          Thank attendees in the event chat. Encrypted; readable by ticket holders.
+        </div>
+      </div>
+      <Textarea
+        placeholder="Thanks for coming! Photos and the next date are…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
       />
+      <div className="flex justify-end">
+        <Button disabled={ctx.isPending || busy} onClick={post}>
+          {busy ? "Posting…" : "Post to event chat"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
 
-      {/* === Prediction markets (organizer view: open + pool volume) === */}
-      <PredictionMarketsPanel
-        eventId={id}
-        eventSeq={eventSeq}
-        maxTickets={maxTickets}
-        send={send}
-        isPending={isPending}
-      />
+// === Free / refundable flips (guarded; meaningful pre-sale) ===
 
-      {/* === Attendees preview === */}
-      <section className="space-y-4">
-        <div className="flex items-end justify-between gap-2" style={{ flexWrap: "wrap" }}>
-          <div>
-            <span className="eyebrow">
-              <Icon icon="solar:users-group-rounded-bold" size={14} /> Attendees
-            </span>
-            <h2 className="page-title" style={{ marginTop: 12, fontSize: 22 }}>
-              Recent buyers <span style={{ color: "var(--fg3)" }}>({mints.length})</span>
-            </h2>
+function FreeRefundablePanel({
+  ctx,
+  isFree,
+  isRefundable,
+  minted,
+}: {
+  ctx: DeckCtx;
+  isFree: boolean;
+  isRefundable: boolean;
+  minted: bigint;
+}) {
+  const sold = minted > 0n;
+  return (
+    <Card className="space-y-3 p-5">
+      <div className="font-medium">Ticket terms</div>
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-medium">{isFree ? "Free event" : "Paid event"}</div>
+          <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
+            {sold ? "Locked — tickets have already sold." : "Switch before any ticket sells."}
           </div>
         </div>
-        {mintedQ.isLoading ? (
-          <Card className="mono p-5">Loading attendees…</Card>
-        ) : mints.length === 0 ? (
-          <Card className="p-5">
-            <div className="font-semibold">No tickets yet.</div>
-            <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
-              Share your event link to start selling.
-            </p>
-          </Card>
-        ) : (
-          <Card className="gap-0 py-0" style={{ overflow: "hidden" }}>
-            {mints.slice(0, 12).map((m, i) => {
-              const ci = coinInfo(resolveCoinType(m.coin_type));
-              const isCheckedIn = checkins.some((c) => c.ticket_id === m.ticket_id);
-              return (
-                <div
-                  key={`${m.ticket_id}-${i}`}
-                  className="flex items-center justify-between gap-3"
-                  style={{
-                    padding: "12px 18px",
-                    borderBottom: i < Math.min(mints.length, 12) - 1 ? "1px solid var(--hair)" : "none",
-                  }}
-                >
-                  <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-                    <Badge variant="secondary" className="mono">#{String(m.serial)}</Badge>
-                    <AddressDisplay address={m.recipient} suffix={4} />
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    {BigInt(m.total_paid ?? 0) > 0n ? (
-                      <span className="mono" style={{ fontSize: 13, color: "var(--fg2)" }}>
-                        {fmtAmount(BigInt(m.total_paid), ci.decimals)} {ci.symbol}
-                      </span>
-                    ) : (
-                      <Badge variant="outline">Free</Badge>
-                    )}
-                    {isCheckedIn && <Badge variant="default">In</Badge>}
-                  </div>
-                </div>
-              );
-            })}
-          </Card>
-        )}
-      </section>
+        <Switch
+          aria-label="Paid event"
+          checked={!isFree}
+          disabled={ctx.isPending || sold}
+          onCheckedChange={(v) =>
+            ctx.send(setIsFreeTx({ capId: ctx.capId, eventId: ctx.eventId, value: !v }))
+          }
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2" style={{ borderTop: "1px solid var(--hair)", paddingTop: 12 }}>
+        <div>
+          <div className="text-sm font-medium">Refundable</div>
+          <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
+            {sold && isRefundable
+              ? "Can't be revoked after a sale."
+              : "Holders can refund within the post-event window."}
+          </div>
+        </div>
+        <Switch
+          aria-label="Refundable"
+          checked={isRefundable}
+          disabled={ctx.isPending || (sold && isRefundable)}
+          onCheckedChange={(v) =>
+            ctx.send(setIsRefundableTx({ capId: ctx.capId, eventId: ctx.eventId, value: Boolean(v) }))
+          }
+        />
+      </div>
+    </Card>
+  );
+}
 
-      {/* === AI Co-pilot (always-accessible floating launcher) === */}
-      <CopilotLauncher event={copilotEvent} />
-    </div>
+// === End-time extension (Doors Open) ===
+
+function EndTimePanel({ ctx, startMs, endMs }: { ctx: DeckCtx; startMs: number; endMs: number }) {
+  const [end, setEnd] = useState(() => msToLocal(endMs));
+  function save() {
+    const eMs = Date.parse(end);
+    if (!Number.isFinite(eMs)) {
+      toast.error("Pick a valid end time.");
+      return;
+    }
+    if (eMs <= Date.now() || eMs <= startMs) {
+      toast.error("New end must be in the future and after the start.");
+      return;
+    }
+    ctx.send(updateEndTimeTx({ capId: ctx.capId, eventId: ctx.eventId, endMs: BigInt(eMs) }), ctx.refetch);
+  }
+  return (
+    <Card className="space-y-3 p-5">
+      <div>
+        <div className="font-medium">Extend doors</div>
+        <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
+          Push back when the event ends — the one schedule change allowed mid-event.
+        </div>
+      </div>
+      <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
+        <div className="grow" style={{ minWidth: 220 }}>
+          <Label htmlFor="ee-end-extend">New end</Label>
+          <DateTimePicker id="ee-end-extend" value={end} min={msToLocal(Date.now())} onChange={setEnd} />
+        </div>
+        <Button disabled={ctx.isPending} onClick={save}>
+          {ctx.isPending ? "Saving…" : "Extend"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+// === Cancel (danger zone) ===
+
+function CancelZone({ ctx, isCancelled }: { ctx: DeckCtx; isCancelled: boolean }) {
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <Card className="space-y-3 p-5" style={{ border: "1px solid var(--hair)" }}>
+      <div className="font-medium" style={{ color: isCancelled ? "var(--fg)" : "var(--color-danger)" }}>
+        {isCancelled ? "Reactivate event" : "Cancel event"}
+      </div>
+      <p className="text-[13px]" style={{ color: "var(--fg3)" }}>
+        {isCancelled
+          ? "Re-open the event: sales and withdrawals resume."
+          : "Cancelling opens refunds for every holder immediately (even non-refundable) and blocks sales + your withdrawals until reactivated."}
+      </p>
+      {isCancelled ? (
+        <Button
+          variant="outline"
+          disabled={ctx.isPending}
+          onClick={() => ctx.send(setCancelledTx({ capId: ctx.capId, eventId: ctx.eventId, value: false }))}
+        >
+          Reactivate
+        </Button>
+      ) : !confirm ? (
+        <Button variant="outline" onClick={() => setConfirm(true)} style={{ borderColor: "var(--color-danger)", color: "var(--color-danger)" }}>
+          Cancel event…
+        </Button>
+      ) : (
+        <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+          <Button
+            disabled={ctx.isPending}
+            onClick={() => ctx.send(setCancelledTx({ capId: ctx.capId, eventId: ctx.eventId, value: true }), () => setConfirm(false))}
+            style={{ background: "var(--color-danger)" }}
+          >
+            Yes, cancel & open refunds
+          </Button>
+          <Button variant="outline" onClick={() => setConfirm(false)}>
+            Keep event
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// === Telemetry stream (recent on-chain activity) ===
+
+function TelemetryStream({
+  mints,
+  checkins,
+  loading,
+  truncated,
+  publicUrl,
+}: {
+  mints: TicketMintedJson[];
+  checkins: CheckedInJson[];
+  loading: boolean;
+  truncated: boolean;
+  publicUrl: string;
+}) {
+  const checkedSet = useMemo(() => new Set(checkins.map((c) => c.ticket_id)), [checkins]);
+  return (
+    <section className="space-y-3">
+      <div className="flex items-end justify-between gap-2" style={{ flexWrap: "wrap" }}>
+        <h2 className="page-title" style={{ fontSize: 20 }}>
+          Telemetry <span style={{ color: "var(--fg3)" }}>({mints.length})</span>
+        </h2>
+        {truncated && (
+          <Badge variant="outline" style={{ fontSize: 10 }}>
+            partial · ~1000-log cap
+          </Badge>
+        )}
+      </div>
+      {loading ? (
+        <Card className="mono p-5">Loading activity…</Card>
+      ) : mints.length === 0 ? (
+        <Card className="p-5">
+          <div className="font-semibold">No mints yet.</div>
+          <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
+            Share your event link to start selling — <span className="mono">{publicUrl}</span>
+          </p>
+        </Card>
+      ) : (
+        <Card className="gap-0 py-0" style={{ overflow: "hidden" }}>
+          {mints.slice(0, 14).map((m, i) => {
+            const ci = coinInfo(resolveCoinType(m.coin_type));
+            const isIn = checkedSet.has(m.ticket_id);
+            return (
+              <div
+                key={`${m.ticket_id}-${i}`}
+                className="flex items-center justify-between gap-3"
+                style={{ padding: "11px 16px", borderBottom: i < Math.min(mints.length, 14) - 1 ? "1px solid var(--hair)" : "none" }}
+              >
+                <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
+                  <Badge variant="secondary" className="mono">
+                    #{String(m.serial)}
+                  </Badge>
+                  <AddressDisplay address={m.recipient} suffix={4} />
+                </div>
+                <div className="flex items-center gap-2.5">
+                  {BigInt(m.total_paid ?? 0) > 0n ? (
+                    <span className="mono" style={{ fontSize: 13, color: "var(--fg2)" }}>
+                      {fmtAmount(BigInt(m.total_paid), ci.decimals)} {ci.symbol}
+                    </span>
+                  ) : (
+                    <Badge variant="outline">Free</Badge>
+                  )}
+                  {isIn && <Badge variant="default">In</Badge>}
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+    </section>
   );
 }
 
@@ -694,10 +1404,8 @@ export function EventManageScreen({ id }: { id: string }) {
 const usdcInfo = coinInfo(USDC_COIN_TYPE);
 
 // Default cutoffs for a fresh range market: quartiles of maxTickets. N=4 cutoffs
-// -> 5 buckets. Cutoffs must be strictly increasing; with a tiny maxTickets the
-// naive quartiles can collide (e.g. max=2 -> [0,1,1,2]), so we dedup+sort and
-// fall back to a single midpoint cutoff if everything collapses. (Mirrors the
-// defaultCutoffs in EventMarketsScreen; kept local since it isn't exported.)
+// -> 5 buckets. Cutoffs must be strictly increasing; dedup+sort and fall back to
+// a single midpoint cutoff if everything collapses.
 function defaultCutoffs(maxTickets: bigint): bigint[] {
   if (maxTickets <= 0n) return [1n];
   const raw = [maxTickets / 4n, maxTickets / 2n, (3n * maxTickets) / 4n, maxTickets];
@@ -709,15 +1417,6 @@ function defaultCutoffs(maxTickets: bigint): bigint[] {
   return uniqueSorted;
 }
 
-/**
- * Organizer-facing prediction-markets section: surfaces the two parimutuel
- * markets attached to this event (the binary "Sellout Clock" and the N+1 bucket
- * "Final tickets sold" range market). If a kind has no market yet, the organizer
- * can open one (permissionless on-chain, but offered here as a convenience);
- * once a market exists we read its live pool volume via getObject -> parse.
- * Full betting/settle/claim lives on the public event page (EventMarketsScreen);
- * this panel is read + open only. Submits through the screen's sponsored `send`.
- */
 function PredictionMarketsPanel({
   eventId,
   eventSeq,
@@ -734,7 +1433,6 @@ function PredictionMarketsPanel({
   const { selloutMarketId, rangeMarketId, loading, refetch } = useEventMarkets(eventSeq);
   const cutoffs = useMemo(() => defaultCutoffs(maxTickets), [maxTickets]);
 
-  // Live pool reads (only when a market of that kind exists).
   const selloutQ = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>(
     "getObject",
     { id: selloutMarketId ?? "", options: { showContent: true } },
@@ -746,34 +1444,22 @@ function PredictionMarketsPanel({
     { enabled: Boolean(rangeMarketId), staleTime: 15_000 },
   );
 
-  const sellout = useMemo(
-    () => (selloutQ.data ? parseMarketFields(selloutQ.data) : null),
-    [selloutQ.data],
-  );
-  const range = useMemo(
-    () => (rangeQ.data ? parseRangeFields(rangeQ.data) : null),
-    [rangeQ.data],
-  );
+  const sellout = useMemo(() => (selloutQ.data ? parseMarketFields(selloutQ.data) : null), [selloutQ.data]);
+  const range = useMemo(() => (rangeQ.data ? parseRangeFields(rangeQ.data) : null), [rangeQ.data]);
 
   const selloutPool = sellout ? sellout.totalYes + sellout.totalNo : 0n;
   const rangePool = range ? range.totals.reduce((a, b) => a + b, 0n) : 0n;
-
-  // Refetch the discovery logs + the relevant object after a create succeeds.
   const afterCreate = () => refetch();
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div>
-        <span className="eyebrow">
-          <Icon icon="mdi:chart-line" size={14} /> Prediction markets
-        </span>
-        <h2 className="page-title" style={{ marginTop: 12, fontSize: 22 }}>
-          Sellout & final-sales markets
+        <h2 className="page-title" style={{ fontSize: 20 }}>
+          Prediction markets
         </h2>
         <p className="page-sub">
-          Open parimutuel markets on your event&apos;s sales so attendees can bet on the outcome.
-          These pools settle on-chain from the minted count — they don&apos;t touch your revenue.
-          Betting, settling and claiming live on the{" "}
+          Parimutuel pools on your sales, settled on-chain from the minted count. Anyone can open one
+          (permissionless); betting and claiming live on the{" "}
           <Link href={`/event/${eventId}`} style={{ color: "var(--hi-blue)" }}>
             public event page
           </Link>
@@ -781,11 +1467,7 @@ function PredictionMarketsPanel({
         </p>
       </div>
 
-      <div
-        className="grid gap-4"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}
-      >
-        {/* --- Sellout Clock --- */}
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
         <Card className="space-y-3 p-5">
           <div className="flex items-center gap-2">
             <Icon icon="mdi:timer-sand" size={16} style={{ color: "var(--fg2)" }} />
@@ -819,19 +1501,13 @@ function PredictionMarketsPanel({
                 <Badge variant="default">YES {fmtAmount(sellout?.totalYes ?? 0n, usdcInfo.decimals)}</Badge>
                 <Badge variant="outline">NO {fmtAmount(sellout?.totalNo ?? 0n, usdcInfo.decimals)}</Badge>
                 {sellout?.settled && (
-                  <Badge variant="secondary">
-                    {sellout.outcomeYes ? "Sold out" : "Did not sell out"}
-                  </Badge>
+                  <Badge variant="secondary">{sellout.outcomeYes ? "Sold out" : "Did not sell out"}</Badge>
                 )}
               </div>
             </div>
           ) : (
             <>
-              <Button
-                size="sm"
-                disabled={isPending}
-                onClick={() => send(createSelloutMarketTx(eventId, USDC_COIN_TYPE), afterCreate)}
-              >
+              <Button size="sm" disabled={isPending} onClick={() => send(createSelloutMarketTx(eventId, USDC_COIN_TYPE), afterCreate)}>
                 <Icon icon="mdi:timer-sand" size={15} />
                 {isPending ? "Opening…" : "Open Sellout Clock"}
               </Button>
@@ -842,7 +1518,6 @@ function PredictionMarketsPanel({
           )}
         </Card>
 
-        {/* --- Final tickets sold (range) --- */}
         <Card className="space-y-3 p-5">
           <div className="flex items-center gap-2">
             <Icon icon="mdi:chart-bar" size={16} style={{ color: "var(--fg2)" }} />
@@ -898,13 +1573,7 @@ function PredictionMarketsPanel({
                   </Badge>
                 ))}
               </div>
-              <Button
-                size="sm"
-                disabled={isPending}
-                onClick={() =>
-                  send(createRangeMarketTx(eventId, USDC_COIN_TYPE, cutoffs), afterCreate)
-                }
-              >
+              <Button size="sm" disabled={isPending} onClick={() => send(createRangeMarketTx(eventId, USDC_COIN_TYPE, cutoffs), afterCreate)}>
                 <Icon icon="mdi:chart-bar" size={15} />
                 {isPending ? "Opening…" : "Open final-sales market"}
               </Button>
@@ -919,47 +1588,22 @@ function PredictionMarketsPanel({
   );
 }
 
-// === Edit event (issue #69) ===
+// === Edit event (details / schedule / capacity) — #69 forms, reused ===
 
-// CATEGORIES[0] is the "all" discovery filter, not a real event category.
 const EDIT_CATEGORIES = CATEGORIES.filter((c) => c.id !== "all");
-
-// Sane upper bound for ticket counts (mirrors CreateEventScreen's MAX_TICKET_LIMIT).
 const EDIT_MAX_TICKET_LIMIT = 10_000_000;
 
-// epoch ms -> the "YYYY-MM-DDTHH:mm" local string DateTimePicker round-trips.
 function msToLocal(ms: number): string {
   if (!Number.isFinite(ms)) return "";
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// "now" as a local datetime-picker string. Wrapped in a plain function (like
-// CreateEventScreen's isoLocal) so the impure Date.now() never sits in a render
-// body — the picker's `min` floor is computed at call time, not during render.
 function nowLocal(): string {
   return msToLocal(Date.now());
 }
 
-/**
- * Organizer "Edit event" panel (#69). Four cap-gated, self-contained sub-forms
- * pre-filled from the live on-chain Event + its Walrus metadata:
- *  - Details  → update_metadata: re-uploads a Walrus metadata blob (PRESERVING
- *               every existing field; only edited ones change) + an optional new
- *               cover, then writes the new blob id on-chain.
- *  - Schedule → update_times: start / end / purchase_start. Disabled once the
- *               event has started (Move asserts start_ms >= now), so the tx can
- *               never abort on a stale start.
- *  - Max per user → update_max_per_user (> 0).
- *  - Max tickets  → update_max_tickets, clamped to the live minted count
- *               (Move asserts max_tickets >= minted).
- * Each form submits via the same sponsored/direct pattern as PricePanel and
- * refetches the event on success via `onDone`. Flipping is_free / is_refundable
- * and multi-coin pricing are intentionally out of scope (see notes in the UI).
- */
 function EditEventPanel({
   capId,
   eventId,
@@ -973,8 +1617,6 @@ function EditEventPanel({
   maxTickets,
   minted,
   maxPerUser,
-  isFree,
-  isRefundable,
   onDone,
 }: {
   capId: string;
@@ -998,11 +1640,8 @@ function EditEventPanel({
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
   const isPending = regular.isPending || sponsored.isPending;
-
   const [open, setOpen] = useState(false);
 
-  // Submit helper mirroring PricePanel: sponsor gas when Enoki is on (all four
-  // update_* targets are on SPONSORED_TARGETS), else sign directly.
   async function submit(tx: Transaction, successMsg: string): Promise<boolean> {
     if (!addr) {
       toast.error("Connect a wallet to edit this event.");
@@ -1025,16 +1664,10 @@ function EditEventPanel({
     <section className="space-y-4">
       <div className="flex items-end justify-between gap-2" style={{ flexWrap: "wrap" }}>
         <div>
-          <span className="eyebrow">
-            <Icon icon="ph:note-pencil-fill" size={14} /> Edit event
-          </span>
-          <h2 className="page-title" style={{ marginTop: 12, fontSize: 22 }}>
-            Update details, schedule &amp; capacity
+          <h2 className="page-title" style={{ fontSize: 20 }}>
+            Details, schedule &amp; capacity
           </h2>
-          <p className="page-sub">
-            Change the on-chain Event and its Walrus metadata. Each save is a separate cap-gated
-            transaction.
-          </p>
+          <p className="page-sub">Each save is a separate cap-gated transaction.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)}>
           <Icon icon={open ? "ph:caret-up-bold" : "ph:caret-down-bold"} size={15} />
@@ -1044,10 +1677,6 @@ function EditEventPanel({
 
       {open && (
         <div className="space-y-4">
-          {/* Details editor seeds its fields from the loaded metadata, so only
-              mount it once `meta` has resolved — otherwise a save could overwrite
-              description/venue/city with empty defaults. Schedule + capacity below
-              don't depend on metadata and always render. */}
           {meta === null ? (
             <Card className="p-4 text-sm text-muted-foreground">Loading event details…</Card>
           ) : (
@@ -1062,10 +1691,7 @@ function EditEventPanel({
               submit={submit}
             />
           )}
-          <div
-            className="grid gap-4"
-            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}
-          >
+          <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
             <EditSchedulePanel
               capId={capId}
               eventId={eventId}
@@ -1085,30 +1711,12 @@ function EditEventPanel({
               submit={submit}
             />
           </div>
-
-          {/* Out-of-scope flags: read-only, no Move setter exists for these. */}
-          <Card className="space-y-2 p-5">
-            <div className="font-medium">Fixed at creation</div>
-            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <Badge variant={isFree ? "secondary" : "outline"}>
-                {isFree ? "Free event" : "Paid event"}
-              </Badge>
-              <Badge variant={isRefundable ? "secondary" : "outline"}>
-                {isRefundable ? "Refundable" : "Non-refundable"}
-              </Badge>
-            </div>
-            <p className="text-[12px]" style={{ color: "var(--fg3)" }}>
-              Free/paid and refundability are immutable after creation. Ticket pricing is edited in
-              the <span className="font-medium">Set price</span> panel above.
-            </p>
-          </Card>
         </div>
       )}
     </section>
   );
 }
 
-// --- Details → update_metadata (preserve-and-merge Walrus round-trip) ---
 function EditDetailsPanel({
   meta,
   currentName,
@@ -1143,22 +1751,13 @@ function EditDetailsPanel({
       return;
     }
     try {
-      // 1) Optional NEW cover → Walrus (only when the organizer picked a file).
       let coverBlobId = meta?.coverBlobId;
       if (coverFile) {
         setBusy("Uploading cover to Walrus…");
         coverBlobId = await storeFile(coverFile);
       }
-
-      // 2) Rebuild metadata by SPREADING the existing blob first (preserving
-      // tiers, poap, web3, refundable and any future fields), then overriding
-      // ONLY the edited fields. Empty optional strings are dropped (key removed).
       const base: EventMetadata = meta ?? { v: 1, category: category.trim() || "community" };
-      const next: EventMetadata = {
-        ...base,
-        v: 1,
-        category: category.trim() || base.category,
-      };
+      const next: EventMetadata = { ...base, v: 1, category: category.trim() || base.category };
       const setOrDrop = (key: "tag" | "venue" | "city", value: string) => {
         const v = value.trim();
         if (v) next[key] = v;
@@ -1173,17 +1772,11 @@ function EditDetailsPanel({
       if (coverBlobId) next.coverBlobId = coverBlobId;
       else delete next.coverBlobId;
 
-      // 3) Upload the merged metadata → new blob id (only if it actually changed
-      // or a new cover bumped it; otherwise reuse the current uri to skip a write).
       setBusy("Storing metadata on Walrus…");
-      const sameAsBefore =
-        meta !== null && JSON.stringify(next) === JSON.stringify(meta) && !coverFile;
+      const sameAsBefore = meta !== null && JSON.stringify(next) === JSON.stringify(meta) && !coverFile;
       const newUri = sameAsBefore ? currentUri : await putEventMetadata(next);
 
-      // 4) update_metadata on-chain. Symbol stays the current one, or is derived
-      // from the (possibly changed) category like create does when none is set.
-      const symbol =
-        currentSymbol.trim() || (category.trim().slice(0, 4).toUpperCase() || "EVNT");
+      const symbol = currentSymbol.trim() || (category.trim().slice(0, 4).toUpperCase() || "EVNT");
       setBusy("Saving on-chain…");
       const ok = await submit(
         updateMetadataTx({ capId, eventId, name: name.trim(), symbol, uri: newUri }),
@@ -1239,12 +1832,7 @@ function EditDetailsPanel({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ee-tag">Tag (optional)</Label>
-          <Input
-            id="ee-tag"
-            placeholder="e.g. Conference, Festival"
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-          />
+          <Input id="ee-tag" placeholder="e.g. Conference, Festival" value={tag} onChange={(e) => setTag(e.target.value)} />
         </div>
       </div>
 
@@ -1261,12 +1849,7 @@ function EditDetailsPanel({
 
       <div className="space-y-1.5">
         <Label htmlFor="ee-cover">Cover image (upload to replace)</Label>
-        <Input
-          id="ee-cover"
-          type="file"
-          accept="image/*"
-          onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
-        />
+        <Input id="ee-cover" type="file" accept="image/*" onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)} />
         <p className="text-[12px]" style={{ color: "var(--fg3)" }}>
           {coverFile ? (
             <>
@@ -1295,7 +1878,6 @@ function EditDetailsPanel({
   );
 }
 
-// --- Schedule → update_times (time-gated: disabled once the event has started) ---
 function EditSchedulePanel({
   capId,
   eventId,
@@ -1313,16 +1895,9 @@ function EditSchedulePanel({
   isPending: boolean;
   submit: (tx: Transaction, successMsg: string) => Promise<boolean>;
 }) {
-  // The Move contract asserts start_ms >= now, so a started/elapsed event can
-  // never have its schedule changed — lock the form rather than let the tx abort.
-  // Captured once at mount (lazy initializer) so the impure read stays out of the
-  // render body; the schedule is fixed for the lifetime of this panel anyway.
   const [locked] = useState(() => startMs < Date.now());
-
   const [start, setStart] = useState(() => msToLocal(startMs));
   const [end, setEnd] = useState(() => msToLocal(endMs));
-  // Whether sales open immediately (purchase_start = now, clamped <= start) or at
-  // a custom instant. Default reflects the live value: "now" when it's at/before now.
   const [saleOpensNow, setSaleOpensNow] = useState(() => purchaseStartMs <= Date.now());
   const [purchaseStart, setPurchaseStart] = useState(() => msToLocal(purchaseStartMs));
 
@@ -1339,7 +1914,6 @@ function EditSchedulePanel({
     if (locked) return;
     const sMs = Date.parse(start);
     const eMs = Date.parse(end);
-    // Sales-open-now clamps to start so on-chain purchase_start_ms <= start_ms.
     const pMs = saleOpensNow ? Math.min(Date.now(), sMs) : Date.parse(purchaseStart);
     const err = validate(sMs, eMs, pMs);
     if (err) {
@@ -1347,13 +1921,7 @@ function EditSchedulePanel({
       return;
     }
     await submit(
-      updateTimesTx({
-        capId,
-        eventId,
-        startMs: BigInt(sMs),
-        endMs: BigInt(eMs),
-        purchaseStartMs: BigInt(pMs),
-      }),
+      updateTimesTx({ capId, eventId, startMs: BigInt(sMs), endMs: BigInt(eMs), purchaseStartMs: BigInt(pMs) }),
       "Schedule updated",
     );
   }
@@ -1370,16 +1938,10 @@ function EditSchedulePanel({
       {locked ? (
         <div
           className="text-sm"
-          style={{
-            color: "var(--fg2)",
-            background: "rgba(245,166,35,.08)",
-            border: "1px solid var(--hi-amber)",
-            borderRadius: 10,
-            padding: 12,
-          }}
+          style={{ color: "var(--fg2)", background: "rgba(245,166,35,.08)", border: "1px solid var(--hi-amber)", borderRadius: 10, padding: 12 }}
         >
           <Icon icon="ph:lock-fill" size={14} style={{ color: "var(--hi-amber)" }} /> This event has
-          already started, so its schedule is locked on-chain (a new start must be in the future).
+          already started, so its schedule is locked (use “Extend doors” to push back the end).
         </div>
       ) : (
         <>
@@ -1401,21 +1963,12 @@ function EditSchedulePanel({
                 Otherwise pick when purchases open.
               </div>
             </div>
-            <Switch
-              aria-label="Sales open immediately"
-              checked={saleOpensNow}
-              onCheckedChange={(v) => setSaleOpensNow(Boolean(v))}
-            />
+            <Switch aria-label="Sales open immediately" checked={saleOpensNow} onCheckedChange={(v) => setSaleOpensNow(Boolean(v))} />
           </div>
           {!saleOpensNow && (
             <div className="space-y-1.5">
               <Label htmlFor="ee-purchase-start">Sales open</Label>
-              <DateTimePicker
-                id="ee-purchase-start"
-                value={purchaseStart}
-                min={nowLocal()}
-                onChange={setPurchaseStart}
-              />
+              <DateTimePicker id="ee-purchase-start" value={purchaseStart} min={nowLocal()} onChange={setPurchaseStart} />
             </div>
           )}
 
@@ -1430,7 +1983,6 @@ function EditSchedulePanel({
   );
 }
 
-// --- Capacity → update_max_tickets (clamped to minted) + update_max_per_user ---
 function EditCapacityPanel({
   capId,
   eventId,
@@ -1461,15 +2013,11 @@ function EditCapacityPanel({
       toast.error(`Max tickets can't exceed ${EDIT_MAX_TICKET_LIMIT.toLocaleString()}.`);
       return;
     }
-    // Move asserts max_tickets >= minted; block locally so the tx never aborts.
     if (BigInt(n) < minted) {
       toast.error(`Max tickets can't be below the ${String(minted)} already sold.`);
       return;
     }
-    await submit(
-      updateMaxTicketsTx({ capId, eventId, maxTickets: BigInt(n) }),
-      "Max tickets updated",
-    );
+    await submit(updateMaxTicketsTx({ capId, eventId, maxTickets: BigInt(n) }), "Max tickets updated");
   }
 
   async function saveMaxPerUser() {
@@ -1478,13 +2026,9 @@ function EditCapacityPanel({
       toast.error("Max per attendee must be a whole number greater than 0.");
       return;
     }
-    await submit(
-      updateMaxPerUserTx({ capId, eventId, maxPerUser: BigInt(n) }),
-      "Max per attendee updated",
-    );
+    await submit(updateMaxPerUserTx({ capId, eventId, maxPerUser: BigInt(n) }), "Max per attendee updated");
   }
 
-  // Live clamp: the input's floor is whichever is larger, 1 or the sold count.
   const ticketFloor = minted > 0n ? Number(minted) : 1;
 
   return (
@@ -1499,14 +2043,7 @@ function EditCapacityPanel({
       <div className="space-y-1.5">
         <Label htmlFor="ee-max-tickets">Max tickets</Label>
         <div className="flex items-end gap-2">
-          <Input
-            id="ee-max-tickets"
-            type="number"
-            min={ticketFloor}
-            step="1"
-            value={maxTicketsStr}
-            onChange={(e) => setMaxTicketsStr(e.target.value)}
-          />
+          <Input id="ee-max-tickets" type="number" min={ticketFloor} step="1" value={maxTicketsStr} onChange={(e) => setMaxTicketsStr(e.target.value)} />
           <Button variant="outline" disabled={isPending} onClick={saveMaxTickets}>
             {isPending ? "Saving…" : "Save"}
           </Button>
@@ -1519,14 +2056,7 @@ function EditCapacityPanel({
       <div className="space-y-1.5" style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }}>
         <Label htmlFor="ee-max-per-user">Max per attendee</Label>
         <div className="flex items-end gap-2">
-          <Input
-            id="ee-max-per-user"
-            type="number"
-            min={1}
-            step="1"
-            value={maxPerUserStr}
-            onChange={(e) => setMaxPerUserStr(e.target.value)}
-          />
+          <Input id="ee-max-per-user" type="number" min={1} step="1" value={maxPerUserStr} onChange={(e) => setMaxPerUserStr(e.target.value)} />
           <Button variant="outline" disabled={isPending} onClick={saveMaxPerUser}>
             {isPending ? "Saving…" : "Save"}
           </Button>
@@ -1539,32 +2069,15 @@ function EditCapacityPanel({
   );
 }
 
-// === Price control (per-coin) ===
-function PricePanel({
-  capId,
-  eventId,
-  onDone,
-}: {
-  capId: string;
-  eventId: string;
-  onDone: () => void;
-}) {
-  const account = useCurrentAccount();
-  const regular = useSignAndExecute();
-  const sponsored = useSponsorAndExecute();
-  const isPending = regular.isPending || sponsored.isPending;
+// === Price control (per-coin) + remove price ===
+
+function PricePanel({ ctx, stats }: { ctx: DeckCtx; stats?: Record<string, CoinStats> }) {
   const [coin, setCoin] = useState(COINS[0].type);
   const [priceStr, setPriceStr] = useState("1");
 
-  // Parse the decimal string into smallest-unit bigint without float rounding.
-  // Returns null on malformed input or excess fractional digits.
-  function priceUnits(): bigint | null {
-    return toUnits(priceStr, coinInfo(coin).decimals);
-  }
-
-  async function submit() {
+  async function setPrice() {
     const dec = coinInfo(coin).decimals;
-    const units = priceUnits();
+    const units = toUnits(priceStr, dec);
     if (units === null) {
       toast.error(`Enter a valid price with at most ${dec} decimal places.`);
       return;
@@ -1573,44 +2086,21 @@ function PricePanel({
       toast.error("Enter a price greater than zero.");
       return;
     }
-    const addr = account?.address;
-    if (!addr) {
-      toast.error("Connect a wallet to set a price.");
-      return;
-    }
-    try {
-      const tx = setPriceTx({ capId, eventId, coinType: coin, price: units });
-      // set_price is on the sponsor allowlist — sponsor gas so organizers
-      // without SUI can price events (mirrors create_event).
-      const out = ENOKI_ENABLED
-        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
-        : await regular.mutateAsync({ transaction: tx });
-      toast.success("Price updated", {
-        description: <TxLink digest={out.digest} chars={10} />,
-      });
-      onDone();
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-    }
+    await ctx.send(setPriceTx({ capId: ctx.capId, eventId: ctx.eventId, coinType: coin, price: units }), ctx.refetch);
   }
 
   return (
     <Card className="space-y-3 p-5">
       <div>
-        <div className="font-medium">Set price</div>
+        <div className="font-medium">Pricing</div>
         <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
-          Buyers pay this plus a 3% platform fee.
+          Buyers pay this plus a 3% platform fee. Price per coin type.
         </div>
       </div>
       <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
         <div className="space-y-1.5">
           <Label>Coin</Label>
-          <Select
-            value={coin}
-            onValueChange={(v) => {
-              setCoin(v);
-            }}
-          >
+          <Select value={coin} onValueChange={(v) => setCoin(v)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -1630,84 +2120,26 @@ function PricePanel({
             min={0}
             step={(10 ** -coinInfo(coin).decimals).toFixed(coinInfo(coin).decimals)}
             value={priceStr}
-            onChange={(e) => {
-              setPriceStr(e.target.value);
-            }}
+            onChange={(e) => setPriceStr(e.target.value)}
           />
         </div>
-        <Button disabled={isPending} onClick={submit}>
-          {isPending ? "Setting…" : "Set price"}
+        <Button disabled={ctx.isPending} onClick={setPrice}>
+          {ctx.isPending ? "Setting…" : "Set price"}
+        </Button>
+      </div>
+      <div className="flex items-center justify-between gap-2" style={{ borderTop: "1px solid var(--hair)", paddingTop: 10 }}>
+        <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
+          Delist a coin (only when its escrow is empty).
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={ctx.isPending || (stats?.[coin]?.escrow ?? 0n) > 0n}
+          onClick={() => ctx.send(removePriceTx({ capId: ctx.capId, eventId: ctx.eventId, coinType: coin }), ctx.refetch)}
+        >
+          Remove {coinInfo(coin).symbol} price
         </Button>
       </div>
     </Card>
-  );
-}
-
-// === Add check-in signer (ed25519 pubkey, hex) ===
-function SignerPanel({ capId, eventId }: { capId: string; eventId: string }) {
-  const account = useCurrentAccount();
-  const regular = useSignAndExecute();
-  const sponsored = useSponsorAndExecute();
-  const isPending = regular.isPending || sponsored.isPending;
-  const [hex, setHex] = useState("");
-
-  async function add() {
-    const clean = hex.trim().replace(/^0x/i, "");
-    if (!/^[0-9a-fA-F]*$/.test(clean) || clean.length === 0) {
-      toast.error("Enter a hex-encoded ed25519 public key.");
-      return;
-    }
-    let bytes: Uint8Array;
-    try {
-      bytes = fromHex(clean);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Invalid hex.");
-      return;
-    }
-    if (bytes.length !== 32) {
-      toast.error(`Public key must be 32 bytes (got ${bytes.length}).`);
-      return;
-    }
-    const addr = account?.address;
-    if (!addr) {
-      toast.error("Connect a wallet to add a signer.");
-      return;
-    }
-    try {
-      const tx = addCheckinSignerTx({ capId, eventId, pubkey: Array.from(bytes) });
-      const out = ENOKI_ENABLED
-        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
-        : await regular.mutateAsync({ transaction: tx });
-      toast.success("Signer added", {
-        description: <TxLink digest={out.digest} chars={10} />,
-      });
-      setHex("");
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="font-medium">Add check-in signer</div>
-      <div className="text-[13px]" style={{ color: "var(--fg3)" }}>
-        Authorize a staff device&apos;s ed25519 public key (32 bytes, hex) to issue entry vouchers.
-      </div>
-      <div className="flex items-end gap-2" style={{ flexWrap: "wrap" }}>
-        <div className="grow" style={{ minWidth: 200 }}>
-          <Input
-            className="mono"
-            placeholder="0x… (64 hex chars)"
-            value={hex}
-            onChange={(e) => {
-              setHex(e.target.value);
-            }}
-          />
-        </div>
-        <Button disabled={isPending} onClick={add}>
-          {isPending ? "Adding…" : "Add signer"}
-        </Button>
-      </div>
-    </div>
   );
 }

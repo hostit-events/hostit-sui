@@ -30,6 +30,7 @@ const MAP: Record<string, Record<number, string>> = {
     14: "Revenue can't be withdrawn until the refund window closes.",
     15: "No balance to withdraw.",
     16: "This ticket price is too high to process (would overflow). Set a lower price.",
+    17: "This event is cancelled — sales and withdrawals are closed.",
   },
   event: {
     1: "Name is required.",
@@ -47,11 +48,14 @@ const MAP: Record<string, Record<number, string>> = {
     13: "This ticket is already checked in for today.",
     14: "Invalid signer key — must be a 32-byte ed25519 public key.",
     15: "That key isn't a registered check-in signer — nothing to remove.",
+    16: "Tickets have already been sold — this can't be changed now.",
+    17: "This coin still holds escrow — withdraw it before removing the price.",
   },
   poap: {
     1: "This ticket isn't for this event.",
     2: "You can only claim a POAP after checking in.",
     3: "You've already claimed this POAP.",
+    4: "POAP claiming is turned off for this event.",
   },
   forum: {
     1: "This ticket isn't for this event.",
@@ -60,6 +64,7 @@ const MAP: Record<string, Record<number, string>> = {
   reviews: {
     1: "This POAP isn't for this event — you can only review events you attended.",
     2: "Rating must be between 1 and 5 stars.",
+    3: "You've already reviewed this event.",
   },
   hub: { 1: "Insufficient balance.", 2: "No balance to withdraw.", 3: "Value too high." },
   predict: {

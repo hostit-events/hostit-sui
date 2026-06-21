@@ -47,7 +47,7 @@ One package, multiple modules under `hostit_ticket` (`sources/`):
 - `market` — `buy`/`buy_with_sui`/`claim_free`/`refund`/`withdraw_event_balance`. Generic `Coin<T>` payments; fee split into Hub + event escrow.
 - `checkin` — attendee-signed check-in gated by an **ed25519 voucher** over `event_id(32)||ticket_id(32)||expiry_ms(8 LE)` against a registered signer set on the Event; `self_check_in` fallback gated by `allow_self_checkin`.
 - `access` — Seal `seal_approve_ticket` / `seal_approve_organizer` / `seal_approve_self` policies (decryption gating).
-- `poap` — proof-of-attendance NFT, claimable after check-in via a shared `PoapRegistry` (one per ticket).
+- `poap` — proof-of-attendance NFT, claimable after check-in; one-per-ticket dedup is a `poap_claimed` flag on the `Ticket` (no shared registry), gated by the event's `poap_enabled` toggle, counted by `Event.poap_claimed_count`.
 - `forum` — ticket-gated on-chain anchor (`PostCreated`) for Walrus+Seal messages.
 - `predict` — native parimutuel prediction markets: `SelloutMarket<T>` (binary "will it sell out?") and `RangeMarket<T>` (final-tickets-sold buckets). Settles **trustlessly on-chain by reading `event::minted()`** at/after expiry. No oracle, no fee. See "Prediction markets" below.
 
@@ -71,20 +71,17 @@ Standard write flow in a screen: build a tx with a `lib/*Tx` constructor → sub
 
 `humanizeError(e)` (`lib/moveErrors.ts`) maps `MoveAbort` module+code (and gas/cancel errors) to human text. When adding Move error codes, add the mapping here too.
 
-## Package versioning (Sui upgrades — easy to get wrong)
+## Package versioning (single id — fresh-publish model)
 
-The package has been upgraded in place (not fresh-deployed) to add `predict`. **Sui anchors a struct's type identity to the package version that *introduced* it, while function calls target the latest version.** `config.ts` encodes this:
-- `PACKAGE_ID` — original package. Type/event constants for the original modules (`TICKET_TYPE`, `EVENT_TYPE`, `EV_*`) use it; `target(mod, fn)` calls original modules through it.
-- `PACKAGE_ID_LATEST` — newest upgrade. **All `predict` call targets** use `targetLatest(mod, fn)`; `RangeMarket`'s type/event constants use it (Range was introduced in the latest upgrade).
-- `PREDICT_SELLOUT_PKG` — the upgrade that introduced `SelloutMarket`; its type/event constants stay pinned here even as `PACKAGE_ID_LATEST` rolls forward.
+**Deploy model: every Move change ships as a FRESH PUBLISH, not an in-place upgrade.** So there is exactly ONE package id — all type origins and all call targets resolve to `PACKAGE_ID`. `config.ts` has a single `PACKAGE_ID` + a single `target(mod, fn)` helper; the old `PACKAGE_ID_LATEST` / `PREDICT_SELLOUT_PKG` / `PREDICT_RANGE_PKG` / `targetLatest` split (which existed only to survive Sui's "type identity pinned to the introducing version" upgrade rule — the historical "#1 footgun") has been collapsed away. Every `*_TYPE`, `EV_*`, and `SPONSORED_TARGETS` entry interpolates `PACKAGE_ID`.
 
-Rule of thumb: a predict *call* → `targetLatest`/`PACKAGE_ID_LATEST`; a predict struct/event *type string* → the constant pinned to the upgrade that introduced that struct. **Each new predict struct in a future upgrade needs its own type-origin pin.** When in doubt, create the object on-chain and read its reported `objectType` — don't assume.
+When in doubt about a type string after a publish, create the object on-chain and read its reported `objectType` — don't assume. (If in-place upgrades are ever reintroduced — e.g. for **mainnet**, to preserve user state/funds — the version-origin split would need to come back.)
 
-## Deploys are package upgrades (gated)
+## Deploys are fresh publishes (gated)
 
-Deploying Move changes = `sui client upgrade` (not fresh publish) using the existing `UpgradeCap` (see `.suiperpower/deploy-context.md` for the cap + active address). Before upgrading, set `Move.toml` `published-at` to the **current latest** version id and keep `[addresses] hostit_ticket` at the original id. After upgrading: roll `PACKAGE_ID_LATEST` in `config.ts` to the new version, then re-`tsc` and smoke-test by creating an object on-chain.
+Deploying Move changes = `sui client publish` (a brand-new package + re-run of every `init`), **not** `sui client upgrade`. See DEPLOYING.md + `scripts/roll-fresh-publish.mjs`. Prep: remove `[published.testnet]` from `Published.toml` and set `Move.toml` `[addresses] hostit_ticket = "0x0"` so a new id is assigned; keep the `openzeppelin_access` MVR dep + both `override = true` framework pins. After publishing: `bun scripts/roll-fresh-publish.mjs <publish.json>` rolls `PACKAGE_ID`/`HUB_ID`/`TRANSFER_POLICY_ID`/`GOVERNANCE_REGISTRY_ID` + `Move.toml [addresses]`, then re-`tsc` and smoke-test by creating an object on-chain. A fresh publish **orphans all prior on-chain state** — fine on testnet, never on mainnet. Use `~/.local/bin/sui` (1.73.1+) on a gRPC env.
 
-**On-chain upgrades require explicit, per-deploy user authorization** — the permission layer blocks them, and a general "continue/finish" instruction is *not* sufficient. Ask for an explicit go-ahead each time before running `sui client upgrade` or `sui client publish`.
+**On-chain publishes require explicit, per-deploy user authorization** — the permission layer blocks them, and a general "continue/finish" instruction is *not* sufficient. Ask for an explicit go-ahead each time before running `sui client publish`.
 
 `.suiperpower/deploy-context.md` is the append-only record of all deploys (package ids, object ids, costs). `learnings.md` and `build-context.md` hold session history and decisions.
 
@@ -92,7 +89,7 @@ Deploying Move changes = `sui client upgrade` (not fresh publish) using the exis
 
 Sponsorship is **server-side**: `app/api/sponsor` (create) + `app/api/sponsor/execute` (execute) hold `ENOKI_PRIVATE_API_KEY` (server-only — never `NEXT_PUBLIC_`-prefixed; likewise `GOOGLE_CLIENT_SECRET`). `ENOKI_ENABLED` (true when `NEXT_PUBLIC_ENOKI_API_KEY` is set) decides sponsored vs direct signing per call.
 
-The sponsorable move-call allowlist is a single exported `SPONSORED_TARGETS` in `web/lib/config.ts`, imported by `app/api/sponsor/route.ts` and passed to Enoki. **Add new sponsored entry functions there (one place)** — predict targets use `PACKAGE_ID_LATEST`, others `PACKAGE_ID`. `web/lib/__tests__/sponsoredTargets.test.ts` pins the version-origin invariant.
+The sponsorable move-call allowlist is a single exported `SPONSORED_TARGETS` in `web/lib/config.ts`, imported by `app/api/sponsor/route.ts` and passed to Enoki. **Add new sponsored entry functions there (one place)** — every entry is `${PACKAGE_ID}::…` (single id). `web/lib/__tests__/sponsoredTargets.test.ts` pins the single-id invariant.
 
 ## Prediction markets (native, not DeepBook Predict)
 
