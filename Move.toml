@@ -18,7 +18,7 @@ openzeppelin_access = { r.mvr = "@openzeppelin-move/access" }
 # Fresh-publish prep: 0x0 so Sui assigns a NEW package id on publish. The
 # post-publish roll sets this to the new original-id (for future upgrades).
 [addresses]
-hostit_ticket = "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd"
+hostit_ticket = "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c"
 
 [dev-addresses]
 hostit_ticket = "0xCAFE"

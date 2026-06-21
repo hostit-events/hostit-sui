@@ -7,7 +7,13 @@ import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ENOKI_ENABLED, EV_TICKET_MINTED, coinInfo, fmtAmount } from "@/lib/config";
 import { buyManyTx, claimFreeManyTx, totalWithFee } from "@/lib/ticketing";
-import { useCurrentAccount, useSignAndExecute, useSponsorAndExecute } from "@/lib/hooks";
+import {
+  useCurrentAccount,
+  useSignAndExecute,
+  useSponsorAndExecute,
+  useSuiQuery,
+} from "@/lib/hooks";
+import type { CoinBalance, GetBalanceParams } from "@mysten/sui/jsonRpc";
 import { humanizeError } from "@/lib/moveErrors";
 import { Button } from "@/components/ui/button";
 import {
@@ -128,6 +134,18 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
 
+  // Buyer's balance of the payment coin — for an airtight, coin-aware
+  // affordability check. Only gas is sponsored, not the ticket price, so a
+  // paid ticket still requires the buyer to HOLD that coin (e.g. SUI buys fail
+  // for a USDC-funded gasless wallet). Block the buy with a clear message
+  // instead of letting `coinWithBalance` throw a raw "no valid coins" error.
+  const payCoinType = payload?.kind === "paid" ? payload.coinType : null;
+  const balanceQ = useSuiQuery<"getBalance", GetBalanceParams, CoinBalance>(
+    "getBalance",
+    { owner: addr ?? "", coinType: payCoinType ?? "0x2::sui::SUI" },
+    { enabled: Boolean(addr) && Boolean(payCoinType) },
+  );
+
   const [step, setStep] = React.useState<Step>("connect");
   const [qty, setQty] = React.useState(1);
   const [digest, setDigest] = React.useState<string>("");
@@ -175,6 +193,11 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
     ? "Free"
     : `${fmtAmount(grandTotal, ci!.decimals)} ${ci!.symbol}`;
 
+  // Once the balance loads, an under-funded paid buy is blocked (optimistic
+  // while loading to avoid flash-disable). Free tickets are always affordable.
+  const payBalance = balanceQ.data ? BigInt(balanceQ.data.totalBalance) : undefined;
+  const affordable = isFree || payBalance === undefined || payBalance >= grandTotal;
+
   const titleByStep =
     step === "connect"
       ? "Connect to buy"
@@ -193,6 +216,14 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
 
   async function handleConfirm() {
     if (!payload || !addr) return;
+    if (payload.kind === "paid" && !affordable) {
+      setError(
+        `You need ${fmtAmount(grandTotal, ci!.decimals)} ${ci!.symbol} to buy ${
+          safeQty === 1 ? "this ticket" : "these tickets"
+        } — add testnet ${ci!.symbol} to your wallet and try again.`,
+      );
+      return;
+    }
     setError(null);
     setStep("minting");
     try {
@@ -368,6 +399,21 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
                   </div>
                 )}
 
+                {!isFree && ci && !affordable && (
+                  <p
+                    role="alert"
+                    className="flex items-start gap-1.5 rounded-lg border px-3 py-2 text-[11px]"
+                    style={{ color: "var(--color-danger)", borderColor: "var(--color-danger)" }}
+                  >
+                    <Icon icon="ph:warning-fill" size={13} className="mt-px shrink-0" />
+                    <span>
+                      You need {fmtAmount(grandTotal, ci.decimals)} {ci.symbol} but have{" "}
+                      {fmtAmount(payBalance ?? 0n, ci.decimals)} {ci.symbol}. Add testnet {ci.symbol}{" "}
+                      to your wallet to buy with {ci.symbol}.
+                    </span>
+                  </p>
+                )}
+
                 <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <Icon icon="ph:sparkle-fill" size={12} />
                   You’ll receive {safeQty} {ticketWord(safeQty)}, minted on-chain to your address.
@@ -452,11 +498,13 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button className="flex-1" onClick={handleConfirm}>
+              <Button className="flex-1" onClick={handleConfirm} disabled={!affordable}>
                 <Icon icon="ion:ticket" size={15} />
-                {isFree
-                  ? `Claim ${safeQty} ${ticketWord(safeQty)}`
-                  : `Mint ${safeQty} ${ticketWord(safeQty)} · ${totalLabel}`}
+                {!affordable
+                  ? `Not enough ${ci!.symbol}`
+                  : isFree
+                    ? `Claim ${safeQty} ${ticketWord(safeQty)}`
+                    : `Mint ${safeQty} ${ticketWord(safeQty)} · ${totalLabel}`}
               </Button>
             </>
           )}

@@ -16,11 +16,11 @@ The frontend encodes this in `web/lib/config.ts`:
 
 | Constant | Value (testnet) | Use |
 |---|---|---|
-| `PACKAGE_ID` | `0x6a41303d…671fcd` (fresh v1) | type identity for core modules |
-| `PREDICT_SELLOUT_PKG` | `0x6a41303d…671fcd` (= v1) | `SelloutMarket` type/events |
-| `PACKAGE_ID_LATEST` | `0x6a41303d…671fcd` (= v1) | **all `predict` calls** + `RangeMarket` type/events |
+| `PACKAGE_ID` | `0x7816f65c…cefcd314c` (fresh v1) | type identity for core modules |
+| `PREDICT_SELLOUT_PKG` | `0x7816f65c…cefcd314c` (= v1) | `SelloutMarket` type/events |
+| `PACKAGE_ID_LATEST` | `0x7816f65c…cefcd314c` (= v1) | **all `predict` calls** + `RangeMarket` type/events |
 
-> Fresh publish (2026-06-20): all pins equal `0x6a41303d…671fcd` until the first in-place upgrade, which re-splits them (latest rolls forward, type origins stay).
+> Fresh publish (2026-06-21, adopting OZ access_control RBAC #51 + atomic create+price #68): all pins equal `0x7816f65c…cefcd314c` until the first in-place upgrade, which re-splits them (latest rolls forward, type origins stay). Shared `AccessControl<GOVERNANCE>` = `0xdda50d95…b25dfd27`; deployer `0xc8567c14…` is the default admin.
 
 `Published.toml` (Sui automated address management) is the **single source of truth** for `published-at` / `original-id` / `version` and the `UpgradeCap`. `Move.toml` no longer pins `published-at`.
 

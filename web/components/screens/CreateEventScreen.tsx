@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ENOKI_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
-import { createEventTx, setPriceTx } from "@/lib/ticketing";
+import { createEventTx, createEventWithPriceTx } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
 import { minimalEventMetadata, putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
 import { storeFile } from "@/lib/walrus";
@@ -68,6 +68,69 @@ import {
 
 // ── inline helpers ──────────────────────────────────────────────────────────
 // datetime-local needs a "YYYY-MM-DDTHH:mm" string in the user's local zone.
+/**
+ * Build the create-event tx: a PAID event (isFree=false with a positive base
+ * price) uses the ATOMIC `create_event_with_price` (#68) so it can never be left
+ * priced-less/un-buyable; everything else uses plain `create_event`. `price` is
+ * the base price in `coinType` smallest units.
+ */
+function buildCreateEventTx(
+  args: {
+    name: string;
+    symbol: string;
+    uri: string;
+    startMs: bigint;
+    endMs: bigint;
+    purchaseStartMs: bigint;
+    maxTickets: bigint;
+    maxPerUser: bigint;
+    isFree: boolean;
+    isRefundable: boolean;
+    coinType: string;
+    price: bigint;
+  },
+  sender: string,
+): ReturnType<typeof createEventTx> {
+  if (!args.isFree) {
+    // A paid event MUST be priced in the same tx (#68). A non-positive price here
+    // means validation let a sub-unit price through (toUnits → null → 0n); fail
+    // loudly rather than silently fall through to a priced-less, un-buyable event.
+    if (args.price <= 0n)
+      throw new Error("A paid event needs a price greater than zero (too small for this coin's precision).");
+    return createEventWithPriceTx(
+      {
+        name: args.name,
+        symbol: args.symbol,
+        uri: args.uri,
+        startMs: args.startMs,
+        endMs: args.endMs,
+        purchaseStartMs: args.purchaseStartMs,
+        maxTickets: args.maxTickets,
+        maxPerUser: args.maxPerUser,
+        isRefundable: args.isRefundable,
+        coinType: args.coinType,
+        price: args.price,
+      },
+      sender,
+    );
+  }
+  return createEventTx(
+    {
+      name: args.name,
+      symbol: args.symbol,
+      uri: args.uri,
+      startMs: args.startMs,
+      endMs: args.endMs,
+      purchaseStartMs: args.purchaseStartMs,
+      maxTickets: args.maxTickets,
+      maxPerUser: args.maxPerUser,
+      isFree: args.isFree,
+      isRefundable: args.isRefundable,
+    },
+    sender,
+  );
+}
+
 function isoLocal(addMinutes = 0): string {
   const d = new Date(Date.now() + addMinutes * 60_000);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -371,11 +434,11 @@ function AdvancedCreate({
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [digest, setDigest] = useState<string | null>(null);
-  // Set on success once we resolve the new Event id from the create tx — powers
-  // the "Set your ticket price" deep-link so paid pricing is never silently lost.
+  // Set on success once we resolve the new Event id from the create tx — used for
+  // the post-create "Manage event" link.
   const [createdEventId, setCreatedEventId] = useState<string | null>(null);
-  // True once the follow-up set_price call landed automatically; null = not
-  // attempted (free event / no price), false = attempted but couldn't complete.
+  // true once a PAID event is created (price is set atomically in the same tx,
+  // #68); null for a free event. Drives the success card.
   const [priceSet, setPriceSet] = useState<boolean | null>(null);
   // Walrus upload caches — on a retry (e.g. the create tx failed after upload)
   // we skip re-uploading blobs whose inputs haven't changed. Keyed on the cover
@@ -665,9 +728,20 @@ function AdvancedCreate({
         setMetaCache({ key: metaKey, blobId });
       }
 
-      // 3) Create the event on-chain (uri = metadata blobId).
+      // 3) Create the event on-chain (uri = metadata blobId). Paid events use the
+      // ATOMIC create_event_with_price (#68) — create + price in ONE tx, so a
+      // paid event can never be left priced-less. Free events use create_event.
+      const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
+      const priceUnits = wantsPrice ? toUnits(basePrice, coinInfo(coinType).decimals) : 0n;
+      // A paid event must resolve to a positive on-chain price; reject sub-unit
+      // precision (toUnits → null) HERE so we never build a priced-less event (#68).
+      if (wantsPrice && (priceUnits === null || priceUnits <= 0n)) {
+        setBusy(null);
+        toast.error("That price is too small for this coin's precision — use a larger amount.");
+        return;
+      }
       setBusy("Creating event on Sui…");
-      const tx = createEventTx(
+      const tx = buildCreateEventTx(
         {
           name: name.trim(),
           symbol: category.slice(0, 4).toUpperCase(),
@@ -679,13 +753,14 @@ function AdvancedCreate({
           maxPerUser: BigInt(Math.trunc(Number(maxPerUser))),
           isFree,
           isRefundable: refundable,
+          coinType,
+          price: priceUnits ?? 0n,
         },
         addr,
       );
       const out = ENOKI_ENABLED
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
-      // Event is live regardless of what happens with pricing below.
       setDigest(out.digest);
       toast.success("Your event is live", {
         description: <TxLink digest={out.digest} chars={10} />,
@@ -697,44 +772,11 @@ function AdvancedCreate({
         setDraftId(null);
       }
 
-      // 4) CREATE-PRICE-DROPPED fix: pricing is a separate cap-gated call (the
-      // Event is shared on creation), so the Step-2 price must be applied with a
-      // follow-up `set_price`. The sponsored path returns only { digest }, so we
-      // resolve the new Event id + OrganizerCap id authoritatively from the chain
-      // by reading the create tx's object changes (works for both paths).
-      const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
+      // Resolve the new Event id for navigation. Price is set atomically for paid
+      // events now, so there's no follow-up set_price to recover from.
       const ids = await resolveCreatedIds(client, out.digest).catch(() => null);
       if (ids?.eventId) setCreatedEventId(ids.eventId);
-
-      if (wantsPrice) {
-        const dec = coinInfo(coinType).decimals;
-        const priceUnits = toUnits(basePrice, dec);
-        if (ids?.eventId && ids?.capId && priceUnits && priceUnits > 0n) {
-          try {
-            setBusy("Setting price…");
-            const priceTx = setPriceTx({
-              capId: ids.capId,
-              eventId: ids.eventId,
-              coinType,
-              price: priceUnits,
-            });
-            // set_price is on the sponsor allowlist (mirrors create_event).
-            if (ENOKI_ENABLED) {
-              await sponsored.mutateAsync({ transaction: priceTx, sender: addr });
-            } else {
-              await regular.mutateAsync({ transaction: priceTx });
-            }
-            setPriceSet(true);
-          } catch {
-            // Don't surface as a publish error — the event is already live.
-            // The success screen's "Set your ticket price" CTA recovers it.
-            setPriceSet(false);
-          }
-        } else {
-          // Couldn't derive ids (or no resolvable price) — fall back to the CTA.
-          setPriceSet(false);
-        }
-      }
+      setPriceSet(wantsPrice ? true : null);
 
       // 5) EXPLICIT opt-in memory write (GH#19). Only when the user ticked the
       // "Remember these details" box AND memory is on. Best-effort and strictly
@@ -888,32 +930,6 @@ function AdvancedCreate({
                 </Link>
                 .
               </p>
-            </Card>
-          )}
-          {!isFree && priceSet !== true && (
-            <Card
-              style={{
-                marginTop: 18,
-                textAlign: "left",
-                padding: 16,
-                background: "rgba(245,166,35,.08)",
-                borderColor: "var(--hi-amber)",
-              }}
-            >
-              <div className="flex items-center gap-2" style={{ color: "var(--hi-amber)" }}>
-                <Icon icon="ph:warning-fill" size={16} />
-                <span className="text-sm font-semibold">Set your ticket price</span>
-              </div>
-              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
-                The Event is shared on creation, so pricing is a separate cap-gated call. Set your
-                price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} before the sale opens —
-                buyers can&apos;t purchase until a price is set.
-              </p>
-              <Button asChild style={{ marginTop: 10 }}>
-                <Link href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}>
-                  <Icon icon="ph:tag-fill" size={16} /> Set your ticket price
-                </Link>
-              </Button>
             </Card>
           )}
           <div className="flex gap-2 justify-center" style={{ marginTop: 22, flexWrap: "wrap" }}>
@@ -1592,9 +1608,9 @@ function AdvancedCreate({
 // ── Quick (instant) create ────────────────────────────────────────────────────
 // A single compact form. Hardcodes max_per_user = 1, no tiers, no cover. Stores a
 // minimal sentinel metadata blob ({ v:1, category }) on Walrus, creates the event
-// (uri = blobId), then — if paid — applies the price via the same cap-gated
-// two-tx flow as the wizard (CREATE-PRICE-DROPPED safe). Rich metadata (cover,
-// description, tiers) is added later from the manage screen.
+// (uri = blobId) — if paid, atomically via create_event_with_price (#68) so the
+// price is set in the same tx. Rich metadata (cover, description, tiers) is added
+// later from the manage screen.
 const QUICK_DEFAULT_DURATION_MIN = 3 * 60; // default end = start + 3h
 
 function QuickCreate({
@@ -1712,8 +1728,19 @@ function QuickCreate({
       }
 
       // 2) Create the event on-chain (uri = metadata blobId, max_per_user = 1).
+      // Paid events use the ATOMIC create_event_with_price (#68); free events use
+      // create_event. No follow-up set_price — price is set in the same tx.
+      const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
+      const priceUnits = wantsPrice ? toUnits(basePrice, coinInfo(coinType).decimals) : 0n;
+      // A paid event must resolve to a positive on-chain price; reject sub-unit
+      // precision (toUnits → null) HERE so we never build a priced-less event (#68).
+      if (wantsPrice && (priceUnits === null || priceUnits <= 0n)) {
+        setBusy(null);
+        toast.error("That price is too small for this coin's precision — use a larger amount.");
+        return;
+      }
       setBusy("Creating event on Sui…");
-      const tx = createEventTx(
+      const tx = buildCreateEventTx(
         {
           name: name.trim(),
           symbol: category.slice(0, 4).toUpperCase(),
@@ -1725,6 +1752,8 @@ function QuickCreate({
           maxPerUser: 1n,
           isFree,
           isRefundable: false,
+          coinType,
+          price: priceUnits ?? 0n,
         },
         addr,
       );
@@ -1742,37 +1771,9 @@ function QuickCreate({
         setDraftId(null);
       }
 
-      // 3) CREATE-PRICE-DROPPED: pricing is a separate cap-gated call. Resolve the
-      // new Event + OrganizerCap ids from the create tx, then apply set_price.
-      const wantsPrice = !isFree && basePrice.trim() !== "" && Number(basePrice) > 0;
       const ids = await resolveCreatedIds(client, out.digest).catch(() => null);
       if (ids?.eventId) setCreatedEventId(ids.eventId);
-
-      if (wantsPrice) {
-        const dec = coinInfo(coinType).decimals;
-        const priceUnits = toUnits(basePrice, dec);
-        if (ids?.eventId && ids?.capId && priceUnits && priceUnits > 0n) {
-          try {
-            setBusy("Setting price…");
-            const priceTx = setPriceTx({
-              capId: ids.capId,
-              eventId: ids.eventId,
-              coinType,
-              price: priceUnits,
-            });
-            if (ENOKI_ENABLED) {
-              await sponsored.mutateAsync({ transaction: priceTx, sender: addr });
-            } else {
-              await regular.mutateAsync({ transaction: priceTx });
-            }
-            setPriceSet(true);
-          } catch {
-            setPriceSet(false);
-          }
-        } else {
-          setPriceSet(false);
-        }
-      }
+      setPriceSet(wantsPrice ? true : null);
     } catch (e: unknown) {
       toast.error(humanizeError(e));
     } finally {
@@ -1880,32 +1881,6 @@ function QuickCreate({
                 </Link>
                 .
               </p>
-            </Card>
-          )}
-          {!isFree && priceSet !== true && (
-            <Card
-              style={{
-                marginTop: 18,
-                textAlign: "left",
-                padding: 16,
-                background: "rgba(245,166,35,.08)",
-                borderColor: "var(--hi-amber)",
-              }}
-            >
-              <div className="flex items-center gap-2" style={{ color: "var(--hi-amber)" }}>
-                <Icon icon="ph:warning-fill" size={16} />
-                <span className="text-sm font-semibold">Set your ticket price</span>
-              </div>
-              <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
-                The Event is shared on creation, so pricing is a separate cap-gated call. Set your
-                price{basePrice.trim() ? ` (${basePrice} ${ci.symbol})` : ""} before the sale opens —
-                buyers can&apos;t purchase until a price is set.
-              </p>
-              <Button asChild style={{ marginTop: 10 }}>
-                <Link href={createdEventId ? `/manage/${createdEventId}` : "/dashboard"}>
-                  <Icon icon="ph:tag-fill" size={16} /> Set your ticket price
-                </Link>
-              </Button>
             </Card>
           )}
           <div className="flex gap-2 justify-center" style={{ marginTop: 22, flexWrap: "wrap" }}>

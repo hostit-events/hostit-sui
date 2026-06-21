@@ -80,6 +80,36 @@ fun create_event(
     cap
 }
 
+/// Atomically create a PAID event priced in SUI as ORG (issue #68).
+fun create_event_priced(
+    sc: &mut Scenario,
+    clock: &Clock,
+    max_tickets: u64,
+    max_per_user: u64,
+    is_refundable: bool,
+    price: u64,
+): OrganizerCap {
+    sc.next_tx(ORG);
+    let mut hub = sc.take_shared<Hub>();
+    let cap = event::create_event_with_price<SUI>(
+        &mut hub,
+        s(b"Sui Overflow"),
+        s(b"SUIO"),
+        s(b"https://img/ticket.png"),
+        START,
+        END,
+        PSTART,
+        max_tickets,
+        max_per_user,
+        is_refundable,
+        price,
+        clock,
+        sc.ctx(),
+    );
+    ts::return_shared(hub);
+    cap
+}
+
 fun mint(amount: u64, sc: &mut Scenario): Coin<SUI> {
     coin::mint_for_testing<SUI>(amount, sc.ctx())
 }
@@ -226,6 +256,57 @@ fun set_price_and_buy() {
     sc.return_to_sender(t);
 
     destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+// === create_event_with_price (atomic create+price, #68) ===
+
+#[test]
+fun create_with_price_is_atomic() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event_priced(&mut sc, &clock, 100, 5, true, PRICE);
+    sc.next_tx(ORG);
+    let ev = sc.take_shared<Event>();
+    // Priced + paid in the single create call — no separate set_price.
+    assert!(event::has_price<SUI>(&ev), 0);
+    assert!(event::get_price<SUI>(&ev) == PRICE, 1);
+    assert!(!event::is_free(&ev), 2);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test]
+fun create_with_price_then_buy() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    // The bug this closes: an event that exists but is un-buyable ("Price not
+    // set"). Here it's immediately buyable with no second tx.
+    let cap = create_event_priced(&mut sc, &clock, 100, 5, false, PRICE);
+    clock.set_for_testing(BUY_NOW);
+    sc.next_tx(BUYER);
+    let mut hub = sc.take_shared<Hub>();
+    let mut ev = sc.take_shared<Event>();
+    let pay = mint(PRICE + HOSTIT_FEE, &mut sc);
+    market::buy<SUI>(&mut ev, &mut hub, pay, BUYER, &clock, sc.ctx());
+    assert!(event::minted(&ev) == 1, 0);
+    assert!(event::escrow_value<SUI>(&ev) == PRICE, 1);
+    ts::return_shared(hub);
+    ts::return_shared(ev);
+    destroy(cap);
+    clock.destroy_for_testing();
+    sc.end();
+}
+
+#[test, expected_failure(abort_code = hostit_ticket::event::E_ZERO_PRICE)]
+fun create_with_price_zero_aborts() {
+    let (mut sc, mut clock) = begin();
+    clock.set_for_testing(CREATE_NOW);
+    let cap = create_event_priced(&mut sc, &clock, 100, 5, false, 0);
+    destroy(cap); // unreachable
     clock.destroy_for_testing();
     sc.end();
 }
