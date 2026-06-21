@@ -31,6 +31,22 @@ describe("Content-Security-Policy", () => {
     expect(prod).not.toContain("api.groq.com");
   });
 
+  it("allows Cloudflare Turnstile (bot-wall) in script-src AND frame-src (#81)", () => {
+    const directive = (name: string) =>
+      prod
+        .split(";")
+        .map((s) => s.trim())
+        .find((s) => s.startsWith(`${name} `));
+    const scriptSrc = directive("script-src");
+    const frameSrc = directive("frame-src");
+    // The Turnstile api.js loads under script-src; its challenge iframe needs a
+    // frame-src (distinct from frame-ancestors, which stays 'none').
+    expect(scriptSrc).toContain("https://challenges.cloudflare.com");
+    expect(frameSrc).toBeDefined();
+    expect(frameSrc).toContain("https://challenges.cloudflare.com");
+    expect(prod).toContain("frame-ancestors 'none'");
+  });
+
   it("is strict in production but loosened for HMR in dev", () => {
     expect(prod).not.toContain("'unsafe-eval'");
     expect(dev).toContain("'unsafe-eval'");

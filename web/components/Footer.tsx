@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { NETWORK, PACKAGE_ID, ENOKI_ENABLED } from "@/lib/config";
+import { NETWORK, PACKAGE_ID, ENOKI_ENABLED, TURNSTILE_ENABLED } from "@/lib/config";
 import { Icon } from "./Icon";
 import { Logo } from "./Logo";
 
@@ -127,6 +127,16 @@ export function Footer() {
           <p>© {new Date().getFullYear()} HostIt. Built on Sui.</p>
           <p className="text-muted-foreground/80">Permissionless ticketing — anyone can host.</p>
         </div>
+
+        {/* Bot-check disclosure (#81). Only shown when Turnstile is configured;
+            it guards the gasless-sponsor + AI helpers, collects no personal data,
+            and is never linked to a wallet. */}
+        {TURNSTILE_ENABLED && (
+          <p className="mt-3 text-center text-[11px] text-muted-foreground/70">
+            Gasless actions and AI helpers are protected by a Cloudflare bot-check
+            — no personal data, never linked to your wallet.
+          </p>
+        )}
       </div>
     </footer>
   );

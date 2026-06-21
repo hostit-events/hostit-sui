@@ -1,5 +1,10 @@
 // Server-only route. Forwards the user-signed sponsored tx to Enoki for
 // execution. Returns the final on-chain digest.
+//
+// Intentionally NOT behind the Turnstile bot-wall (#81): this leg can only act
+// on a { digest, signature } from a prior /api/sponsor CREATE — which IS gated
+// (per-IP + per-wallet + Turnstile) and is where the sponsor gas is committed —
+// plus a valid user signature. One challenge per sponsored tx, at create.
 
 import { EnokiClient } from "@mysten/enoki";
 import { rateLimit, clientIpFromHeaders } from "@/lib/rateLimit";

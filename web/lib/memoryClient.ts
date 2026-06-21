@@ -28,6 +28,7 @@ import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
 import { useEnokiFlow, useZkLogin } from "@mysten/enoki/react";
 import { buildMemoryChallenge } from "@/lib/memwalChallenge";
 import { ENOKI_NETWORK } from "@/lib/auth";
+import { getTurnstileToken } from "@/lib/turnstileClient";
 
 /** A single recalled organizer memory (mirrors the relayer's RecallMemory). */
 export interface RecalledMemory {
@@ -236,10 +237,13 @@ export function useOrganizerMemory() {
           body = { ctx };
         }
       }
+      // Proof-of-browser so the server drafts via Groq rather than the free
+      // local fallback; null when Turnstile is disabled. (#81)
+      const turnstileToken = await getTurnstileToken();
       const res = await fetch("/api/create-assist", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, turnstileToken }),
       });
       const j = (await res.json().catch(() => ({}))) as
         | DraftResponse
