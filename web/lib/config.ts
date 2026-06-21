@@ -305,6 +305,18 @@ export const TURNSTILE_SITE_KEY =
 export const TURNSTILE_ENABLED = TURNSTILE_SITE_KEY.length > 0;
 
 /**
+ * Account email layer (GH#96). The CLIENT shows the email-binding UI only when
+ * this is on; binding also needs the on-chain `EmailRegistry` (EMAIL_REGISTRY_ID).
+ * The SERVER secrets that actually power it — `RESEND_API_KEY`, `EMAIL_HASH_PEPPER`
+ * (≥32B), optional `EMAIL_FROM` — are read via process.env ONLY inside the
+ * /api/email/* routes and are NEVER exported here (same rule as ENOKI/Turnstile).
+ * Set NEXT_PUBLIC_EMAIL_ENABLED="true" once the registry is published + the
+ * server secrets are configured.
+ */
+export const EMAIL_ENABLED =
+  (process.env.NEXT_PUBLIC_EMAIL_ENABLED ?? "") === "true" && EMAIL_REGISTRY_ID.length > 0;
+
+/**
  * How long a Google (Enoki zkLogin) session stays valid, expressed in epochs.
  *
  * zkLogin caps the lifetime of an ephemeral key at the `maxEpoch` baked into
