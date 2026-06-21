@@ -22,11 +22,20 @@ import { Redis } from "@upstash/redis";
 
 // KV env vars are server-only secrets — read via process.env here, NEVER export
 // them from lib/config.ts and NEVER NEXT_PUBLIC_-prefix them (see
-// .env.local.example). Provider-agnostic: for Upstash these are the database's
-// REST URL + REST token; for Vercel KV set them to KV_REST_API_URL /
-// KV_REST_API_TOKEN.
-const url = process.env.RATE_LIMIT_KV_REST_URL;
-const token = process.env.RATE_LIMIT_KV_REST_TOKEN;
+// .env.local.example). Provider-agnostic, checked in priority order so a Vercel
+// Marketplace integration auto-wires with NO manual aliasing:
+//   1. RATE_LIMIT_KV_REST_URL/TOKEN — explicit override (custom name)
+//   2. KV_REST_API_URL/TOKEN        — Vercel KV / Vercel-Marketplace Upstash
+//   3. UPSTASH_REDIS_REST_URL/TOKEN — Upstash native integration
+// Use the WRITE token (we SET/INCR), never KV_REST_API_READ_ONLY_TOKEN.
+const url =
+  process.env.RATE_LIMIT_KV_REST_URL ??
+  process.env.KV_REST_API_URL ??
+  process.env.UPSTASH_REDIS_REST_URL;
+const token =
+  process.env.RATE_LIMIT_KV_REST_TOKEN ??
+  process.env.KV_REST_API_TOKEN ??
+  process.env.UPSTASH_REDIS_REST_TOKEN;
 
 /** True when a real shared KV is configured; false → per-process fallback. */
 export function kvEnabled(): boolean {
