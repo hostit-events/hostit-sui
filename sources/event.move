@@ -44,6 +44,11 @@ const E_PRICE_NOT_SET: u64 = 12;
 const E_ALREADY_CHECKED_IN_DAY: u64 = 13;
 const E_INVALID_SIGNER_KEY: u64 = 14;
 const E_SIGNER_NOT_FOUND: u64 = 15;
+/// A payment-model change (free/paid, or revoking refundability) was attempted
+/// after at least one ticket was sold.
+const E_HAS_SALES: u64 = 16;
+/// A coin's price was removed while that coin still holds escrow.
+const E_HAS_ESCROW: u64 = 17;
 
 // === Objects ===
 
@@ -76,7 +81,23 @@ public struct Event has key {
     day_attendees: Table<DayKey, bool>,
     /// `address -> true`; "ever checked in" for this event.
     attendees: Table<address, bool>,
-    // dynamic fields: PriceKey<T> -> u64, EscrowKey<T> -> Balance<T>
+    /// Count of DISTINCT tickets checked in at least once (bumped on a ticket's
+    /// FIRST check-in). O(1) "X / Y in" dashboard read — no log replay.
+    checked_in_count: u64,
+    /// Count of POAPs claimed for this event (one per ticket).
+    poap_claimed_count: u64,
+    /// Organizer-cancelled. While true: sales + escrow withdrawal are blocked and
+    /// EVERY holder may refund at any time, regardless of `is_refundable`/window
+    /// (see `market::refund`). Funds stay escrowed for refunders.
+    is_cancelled: bool,
+    /// Whether POAP claiming is enabled for checked-in holders. Defaults true
+    /// (preserves the historical always-claimable behavior); organizer can flip.
+    poap_enabled: bool,
+    /// `address -> true`; enforces one review per wallet (see `reviews`).
+    reviewed: Table<address, bool>,
+    // dynamic fields: PriceKey<T> -> u64, EscrowKey<T> -> Balance<T>,
+    //   GrossKey<T>/FeeKey<T>/RefundedKey<T> -> u64 (cumulative lifetime
+    //   accounting that survives withdrawal, unlike the live escrow Balance<T>).
 }
 
 /// Per-event owner authority (EVM main admin). Returned by `create_event`.
@@ -93,6 +114,13 @@ public struct DayKey has copy, drop, store {
 public struct PriceKey<phantom T> has copy, drop, store {}
 
 public struct EscrowKey<phantom T> has copy, drop, store {}
+
+/// Cumulative lifetime accounting keys (per coin type). Unlike `EscrowKey<T>`'s
+/// live `Balance<T>` (drained to 0 on withdrawal), these `u64` totals only ever
+/// grow, so the dashboard can show true gross/fee/refunded after a withdrawal.
+public struct GrossKey<phantom T> has copy, drop, store {}
+public struct FeeKey<phantom T> has copy, drop, store {}
+public struct RefundedKey<phantom T> has copy, drop, store {}
 
 // === Events ===
 
@@ -293,6 +321,11 @@ fun build_event(
         checkin_signers: vec_set::empty(),
         day_attendees: table::new(ctx),
         attendees: table::new(ctx),
+        checked_in_count: 0,
+        poap_claimed_count: 0,
+        is_cancelled: false,
+        poap_enabled: true,
+        reviewed: table::new(ctx),
     };
 
     (event, OrganizerCap { id: object::new(ctx), event_id })
@@ -355,6 +388,55 @@ public fun update_metadata(
     emit_updated(event);
 }
 
+/// Extend (or change) ONLY the end time — the one schedule edit safe to make
+/// mid-event (`update_times` is locked once `start_ms` passes). New end must be
+/// in the future and after start. Useful to push back doors-close on the day.
+public fun update_end_time(cap: &OrganizerCap, event: &mut Event, end_ms: u64, clock: &Clock) {
+    assert_organizer(cap, event);
+    let now = clock::timestamp_ms(clock);
+    assert!(end_ms > now, E_END_TOO_EARLY);
+    assert!(end_ms > event.start_ms, E_END_TOO_EARLY);
+    event.end_ms = end_ms;
+    event.updated_at_ms = now;
+    emit_updated(event);
+}
+
+/// Cancel (or un-cancel) the event. While cancelled `market` blocks new sales
+/// and organizer withdrawal, and opens refunds for every holder regardless of
+/// `is_refundable`/window. The escrow stays put so refunders can be made whole.
+public fun set_cancelled(cap: &OrganizerCap, event: &mut Event, cancelled: bool) {
+    assert_organizer(cap, event);
+    event.is_cancelled = cancelled;
+    emit_updated(event);
+}
+
+/// Enable/disable POAP claiming for checked-in holders (`poap::claim_poap`
+/// aborts when disabled). Mirrors `set_allow_self_checkin`.
+public fun set_poap_enabled(cap: &OrganizerCap, event: &mut Event, enabled: bool) {
+    assert_organizer(cap, event);
+    event.poap_enabled = enabled;
+    emit_updated(event);
+}
+
+/// Flip free/paid. Only before any ticket is sold — changing the payment model
+/// after sales would strand escrow and break buyers' expectations.
+public fun set_is_free(cap: &OrganizerCap, event: &mut Event, is_free: bool) {
+    assert_organizer(cap, event);
+    assert!(event.minted == 0, E_HAS_SALES);
+    event.is_free = is_free;
+    emit_updated(event);
+}
+
+/// Set refundability. Becoming refundable is allowed any time (buyer-friendly);
+/// revoking refundability is only allowed before any sale — a buyer's refund
+/// right can't be taken away after they bought.
+public fun set_is_refundable(cap: &OrganizerCap, event: &mut Event, is_refundable: bool) {
+    assert_organizer(cap, event);
+    if (!is_refundable) assert!(event.minted == 0, E_HAS_SALES);
+    event.is_refundable = is_refundable;
+    emit_updated(event);
+}
+
 // === Pricing (per coin type) ===
 
 /// Enable/replace the price for coin type `T` (EVM `setTicketFees`). Paid events
@@ -386,6 +468,16 @@ public(package) fun get_price<T>(event: &Event): u64 {
     *df::borrow<PriceKey<T>, u64>(&event.id, key)
 }
 
+/// Delist coin `T` (remove its price). Only when that coin's escrow is empty, so
+/// no buyer's refundable balance is stranded behind a removed price.
+public fun remove_price<T>(cap: &OrganizerCap, event: &mut Event) {
+    assert_organizer(cap, event);
+    let key = PriceKey<T> {};
+    assert!(df::exists_with_type<PriceKey<T>, u64>(&event.id, key), E_PRICE_NOT_SET);
+    assert!(escrow_value<T>(event) == 0, E_HAS_ESCROW);
+    let _removed: u64 = df::remove<PriceKey<T>, u64>(&mut event.id, key);
+}
+
 // === Escrow (per coin type) — package-internal, driven by `market` ===
 
 public(package) fun escrow_deposit<T>(event: &mut Event, b: Balance<T>) {
@@ -408,6 +500,42 @@ public fun escrow_value<T>(event: &Event): u64 {
         balance::value(df::borrow<EscrowKey<T>, Balance<T>>(&event.id, key))
     } else { 0 }
 }
+
+// === Cumulative revenue accounting (per coin type) — driven by `market` ===
+// Lifetime totals stored as `u64` dynamic fields so they survive a withdrawal
+// (which zeroes the live escrow Balance). Each only ever increases.
+
+fun add_u64_df<K: copy + drop + store>(event: &mut Event, key: K, amount: u64) {
+    if (df::exists_with_type<K, u64>(&event.id, key)) {
+        let v = df::borrow_mut<K, u64>(&mut event.id, key);
+        *v = *v + amount;
+    } else {
+        df::add(&mut event.id, key, amount);
+    }
+}
+
+fun read_u64_df<K: copy + drop + store>(event: &Event, key: K): u64 {
+    if (df::exists_with_type<K, u64>(&event.id, key)) {
+        *df::borrow<K, u64>(&event.id, key)
+    } else { 0 }
+}
+
+public(package) fun add_gross<T>(event: &mut Event, amount: u64) {
+    add_u64_df(event, GrossKey<T> {}, amount);
+}
+public(package) fun add_fee<T>(event: &mut Event, amount: u64) {
+    add_u64_df(event, FeeKey<T> {}, amount);
+}
+public(package) fun add_refunded<T>(event: &mut Event, amount: u64) {
+    add_u64_df(event, RefundedKey<T> {}, amount);
+}
+
+/// Lifetime gross (sum of ticket prices, pre-fee) taken in coin `T`.
+public fun gross_value<T>(event: &Event): u64 { read_u64_df(event, GrossKey<T> {}) }
+/// Lifetime platform fee paid by buyers in coin `T` (3% on top of price).
+public fun fee_value<T>(event: &Event): u64 { read_u64_df(event, FeeKey<T> {}) }
+/// Lifetime amount refunded to holders in coin `T`.
+public fun refunded_value<T>(event: &Event): u64 { read_u64_df(event, RefundedKey<T> {}) }
 
 // === Mint accounting — package-internal ===
 
@@ -476,6 +604,29 @@ public(package) fun record_checkin(event: &mut Event, day: u64, ticket_id: ID, w
     }
 }
 
+/// Bump the distinct-tickets-checked-in counter. `checkin` calls this only on a
+/// ticket's FIRST check-in, so the count tracks unique tickets, not day-entries.
+public(package) fun inc_checked_in_count(event: &mut Event) {
+    event.checked_in_count = event.checked_in_count + 1;
+}
+
+/// Bump the POAP-claimed counter (one per ticket). Driven by `poap::claim_poap`.
+public(package) fun inc_poap_claimed_count(event: &mut Event) {
+    event.poap_claimed_count = event.poap_claimed_count + 1;
+}
+
+// === Review dedup (one per wallet per event) — driven by `reviews` ===
+
+public fun has_reviewed(event: &Event, who: address): bool {
+    table::contains(&event.reviewed, who)
+}
+
+public(package) fun mark_reviewed(event: &mut Event, who: address) {
+    if (!table::contains(&event.reviewed, who)) {
+        table::add(&mut event.reviewed, who, true);
+    }
+}
+
 // === Authority ===
 
 public(package) fun assert_organizer(cap: &OrganizerCap, event: &Event) {
@@ -497,6 +648,10 @@ public fun max_per_user(event: &Event): u64 { event.max_per_user }
 public fun is_free(event: &Event): bool { event.is_free }
 public fun is_refundable(event: &Event): bool { event.is_refundable }
 public fun allow_self_checkin(event: &Event): bool { event.allow_self_checkin }
+public fun checked_in_count(event: &Event): u64 { event.checked_in_count }
+public fun poap_claimed_count(event: &Event): u64 { event.poap_claimed_count }
+public fun is_cancelled(event: &Event): bool { event.is_cancelled }
+public fun poap_enabled(event: &Event): bool { event.poap_enabled }
 public fun name(event: &Event): &String { &event.name }
 public fun symbol(event: &Event): &String { &event.symbol }
 public fun uri(event: &Event): &String { &event.uri }

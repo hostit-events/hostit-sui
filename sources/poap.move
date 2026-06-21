@@ -1,7 +1,9 @@
 /// Proof-of-attendance collectibles (POAP). A `Poap` NFT is claimable once per
 /// ticket, only after that ticket has been checked in — so it genuinely proves
-/// the holder attended. Dedup is tracked in a shared `PoapRegistry` so no change
-/// to the `Event`/`Ticket` structs is needed. Renders via its own `Display<Poap>`.
+/// the holder attended. One-per-ticket dedup lives on the (owned) `Ticket` via
+/// its `poap_claimed` flag — a local write with no shared-object contention (the
+/// old design used a single shared `PoapRegistry`, which serialized every claim
+/// across all events). Renders via its own `Display<Poap>`.
 #[allow(lint(self_transfer))]
 module hostit_ticket::poap;
 
@@ -9,13 +11,14 @@ use std::string::{Self, String};
 use sui::display;
 use sui::event as sui_event;
 use sui::package;
-use sui::table::{Self, Table};
 use hostit_ticket::event::{Self, Event};
 use hostit_ticket::ticket::{Self, Ticket};
 
 const E_WRONG_EVENT: u64 = 1;
 const E_NOT_CHECKED_IN: u64 = 2;
 const E_ALREADY_CLAIMED: u64 = 3;
+/// POAP claiming has been disabled for this event by the organizer.
+const E_POAP_DISABLED: u64 = 4;
 
 public struct POAP has drop {} // one-time witness
 
@@ -25,12 +28,6 @@ public struct Poap has key, store {
     event_seq: u64,
     name: String,
     image_url: String,
-}
-
-/// Shared dedup registry: one POAP per ticket.
-public struct PoapRegistry has key {
-    id: UID,
-    claimed: Table<ID, bool>,
 }
 
 public struct PoapClaimed has copy, drop {
@@ -59,23 +56,23 @@ fun init(otw: POAP, ctx: &mut TxContext) {
     display::update_version(&mut d);
     transfer::public_transfer(d, ctx.sender());
     transfer::public_transfer(publisher, ctx.sender());
-
-    transfer::share_object(PoapRegistry { id: object::new(ctx), claimed: table::new(ctx) });
 }
 
-/// Claim a POAP for a checked-in ticket. The caller must own the ticket (passed
-/// by ref → must be a valid owned input). One claim per ticket.
+/// Claim a POAP for a checked-in ticket. The caller owns the ticket (passed by
+/// `&mut` → a valid owned input they control), so the one-per-ticket guard is a
+/// local flag on the ticket — no shared registry. Aborts if the event has POAP
+/// claiming disabled, the ticket isn't checked in, or it already claimed.
 public fun claim_poap(
-    reg: &mut PoapRegistry,
-    event: &Event,
-    ticket: &Ticket,
+    event: &mut Event,
+    ticket: &mut Ticket,
     ctx: &mut TxContext,
 ) {
     assert!(ticket::event_id(ticket) == object::id(event), E_WRONG_EVENT);
+    assert!(event::poap_enabled(event), E_POAP_DISABLED);
     assert!(ticket::is_checked_in(ticket), E_NOT_CHECKED_IN);
-    let tid = object::id(ticket);
-    assert!(!table::contains(&reg.claimed, tid), E_ALREADY_CLAIMED);
-    table::add(&mut reg.claimed, tid, true);
+    assert!(!ticket::poap_claimed(ticket), E_ALREADY_CLAIMED);
+    ticket::set_poap_claimed(ticket);
+    event::inc_poap_claimed_count(event);
 
     let poap = Poap {
         id: object::new(ctx),
@@ -87,15 +84,11 @@ public fun claim_poap(
     sui_event::emit(PoapClaimed {
         event_seq: event::event_seq(event),
         event_id: object::id(event),
-        ticket_id: tid,
+        ticket_id: object::id(ticket),
         poap_id: object::id(&poap),
         recipient: ctx.sender(),
     });
     transfer::public_transfer(poap, ctx.sender());
-}
-
-public fun has_claimed(reg: &PoapRegistry, ticket_id: ID): bool {
-    table::contains(&reg.claimed, ticket_id)
 }
 
 public fun poap_event_seq(p: &Poap): u64 { p.event_seq }

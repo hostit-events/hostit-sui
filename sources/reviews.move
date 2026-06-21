@@ -8,11 +8,9 @@
 /// only gate is attendance — a caller must pass `&Poap` for THIS event, which
 /// proves they own a proof-of-attendance NFT (claimable only after check-in).
 ///
-/// One-review-per-wallet is NOT enforced on-chain in v1: a `&Poap` is borrowed
-/// (not consumed) so it could authorize many anchors. Clients dedupe by author
-/// (keep the latest per author over the event log). On-chain enforcement (a
-/// shared dedup registry, like `PoapRegistry`) is a deliberate v2 nicety — kept
-/// out of v1 so the module stays a thin anchor with no shared state to manage.
+/// One-review-per-wallet IS enforced on-chain: the `Event` keeps a `reviewed`
+/// set (a struct field, not a separate shared object), so a second review from
+/// the same wallet aborts. Clients may still dedupe defensively over the log.
 module hostit_ticket::reviews;
 
 use std::string::String;
@@ -25,6 +23,8 @@ use hostit_ticket::poap::{Self, Poap};
 const E_WRONG_EVENT: u64 = 1;
 /// `rating` is outside the valid 1..=5 star range.
 const E_BAD_RATING: u64 = 2;
+/// This wallet has already reviewed this event (one review per wallet).
+const E_ALREADY_REVIEWED: u64 = 3;
 
 const MIN_RATING: u8 = 1;
 const MAX_RATING: u8 = 5;
@@ -47,7 +47,7 @@ public struct ReviewPosted has copy, drop {
 /// they attended and claimed it). `rating` must be 1..=5. Emits `ReviewPosted`;
 /// nothing is stored on-chain (the body is the public Walrus blob).
 public fun post_review(
-    event: &Event,
+    event: &mut Event,
     poap: &Poap,
     rating: u8,
     blob_id: String,
@@ -56,10 +56,13 @@ public fun post_review(
 ) {
     assert!(poap::event_id(poap) == object::id(event), E_WRONG_EVENT);
     assert!(rating >= MIN_RATING && rating <= MAX_RATING, E_BAD_RATING);
+    let author = ctx.sender();
+    assert!(!event::has_reviewed(event, author), E_ALREADY_REVIEWED);
+    event::mark_reviewed(event, author);
     sui_event::emit(ReviewPosted {
         event_id: object::id(event),
         event_seq: event::event_seq(event),
-        author: ctx.sender(),
+        author,
         rating,
         blob_id,
         ts_ms: clock::timestamp_ms(clock),

@@ -43,6 +43,8 @@ const E_REFUND_WINDOW_EXPIRED: u64 = 13;
 const E_WITHDRAW_PERIOD_NOT_REACHED: u64 = 14;
 const E_NO_BALANCE: u64 = 15;
 const E_PRICE_OVERFLOW: u64 = 16;
+/// The event is cancelled: sales and organizer withdrawal are blocked.
+const E_CANCELLED: u64 = 17;
 
 // === Events ===
 
@@ -87,6 +89,7 @@ public fun buy<T>(
     ctx: &mut TxContext,
 ) {
     assert!(!event::is_free(event), E_IS_FREE_EVENT);
+    assert!(!event::is_cancelled(event), E_CANCELLED);
     let now = clock::timestamp_ms(clock);
     assert!(
         now >= event::purchase_start_ms(event) && now <= event::end_ms(event),
@@ -118,7 +121,11 @@ public fun buy<T>(
     hub::deposit_fee(hub, hostit_bal);
     event::escrow_deposit(event, total_bal);
 
-    mint_and_send(event, price, type_name::with_defining_ids<T>().into_string(), recipient, ctx);
+    // Cumulative lifetime accounting (survives withdrawal; for the dashboard).
+    event::add_gross<T>(event, price);
+    event::add_fee<T>(event, hostit);
+
+    mint_and_send(event, price, hostit, type_name::with_defining_ids<T>().into_string(), recipient, ctx);
 }
 
 /// Ergonomic SUI wrapper so PTBs/CLI need no type argument.
@@ -141,6 +148,7 @@ public fun claim_free(
     ctx: &mut TxContext,
 ) {
     assert!(event::is_free(event), E_NOT_FREE_EVENT);
+    assert!(!event::is_cancelled(event), E_CANCELLED);
     let now = clock::timestamp_ms(clock);
     assert!(
         now >= event::purchase_start_ms(event) && now <= event::end_ms(event),
@@ -149,7 +157,7 @@ public fun claim_free(
     assert!(event::minted(event) < event::max_tickets(event), E_SOLD_OUT);
     assert!(event::mint_count(event, recipient) < event::max_per_user(event), E_MAX_TICKETS_HELD);
 
-    mint_and_send(event, 0, ascii::string(b""), recipient, ctx);
+    mint_and_send(event, 0, 0, ascii::string(b""), recipient, ctx);
 }
 
 // === Refund ===
@@ -164,25 +172,32 @@ public fun refund<T>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): Coin<T> {
-    assert!(event::is_refundable(event), E_NOT_REFUNDABLE);
     assert!(ticket::event_id(&ticket) == object::id(event), E_WRONG_EVENT);
     assert!(ticket::is_issued(&ticket), E_NOT_ISSUED);
     let coin_type = type_name::with_defining_ids<T>().into_string();
     assert!(ticket::paid_type(&ticket) == coin_type, E_WRONG_COIN);
 
-    let now = clock::timestamp_ms(clock);
-    let end = event::end_ms(event);
-    assert!(now >= end, E_REFUND_WINDOW_NOT_STARTED);
-    assert!(now <= end + hub::refund_period_ms(hub), E_REFUND_WINDOW_EXPIRED);
+    // A CANCELLED event opens refunds for everyone, any time, regardless of
+    // `is_refundable` or the post-event refund window. Otherwise the normal gate
+    // applies: refundable event, within [end, end + refund_period].
+    if (!event::is_cancelled(event)) {
+        assert!(event::is_refundable(event), E_NOT_REFUNDABLE);
+        let now = clock::timestamp_ms(clock);
+        let end = event::end_ms(event);
+        assert!(now >= end, E_REFUND_WINDOW_NOT_STARTED);
+        assert!(now <= end + hub::refund_period_ms(hub), E_REFUND_WINDOW_EXPIRED);
+    };
 
     let amount = ticket::paid(&ticket);
     // The 3% platform fee paid at purchase is intentionally NON-REFUNDABLE: it
     // stays in the Hub (parity with the EVM Diamond). Only `price` (= amount) is
     // returned from escrow; we do NOT pull the fee back. We surface the retained
     // amount in TicketRefunded.fee_forfeited so the forfeit is visible on-chain.
-    // Formula mirrors buy<T>'s fee split: price * fee_bps / 1e4.
-    let fee_forfeited = (((amount as u128) * (hub::fee_bps(hub) as u128)) / BPS_DENOM) as u64;
+    // We read the EXACT fee stored on the ticket at purchase — immune to a later
+    // `hub::set_fee_bps` change (recomputing from the live rate would drift).
+    let fee_forfeited = ticket::fee_paid(&ticket);
     let refund_coin = coin::from_balance(event::escrow_take<T>(event, amount), ctx);
+    event::add_refunded<T>(event, amount);
 
     let mut t = ticket;
     ticket::set_refunded(&mut t);
@@ -213,6 +228,8 @@ public fun withdraw_event_balance<T>(
     ctx: &mut TxContext,
 ): Coin<T> {
     event::assert_organizer(cap, event);
+    // A cancelled event reserves its escrow for refunders — no organizer payout.
+    assert!(!event::is_cancelled(event), E_CANCELLED);
     if (event::is_refundable(event)) {
         let now = clock::timestamp_ms(clock);
         assert!(
@@ -237,6 +254,7 @@ public fun withdraw_event_balance<T>(
 fun mint_and_send(
     event: &mut Event,
     paid: u64,
+    fee_paid: u64,
     coin_type: ascii::String,
     recipient: address,
     ctx: &mut TxContext,
@@ -249,6 +267,7 @@ fun mint_and_send(
         event_id,
         serial,
         paid,
+        fee_paid,
         coin_type,
         event::name_clone(event),
         event::uri_clone(event),

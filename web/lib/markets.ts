@@ -9,8 +9,7 @@
 // is permissionless so anyone can open many markets for one event; v1 surfaces
 // just one of each kind). Enumerating past the first page means a market opened
 // on an OLDER event is still found (GH#32). The sellout constants are pinned at
-// PREDICT_SELLOUT_PKG; the range constants live at PACKAGE_ID_LATEST (Phase-2
-// upgrade) — both already resolved in config.ts.
+// the single PACKAGE_ID (fresh-publish model) — both resolved in config.ts.
 //
 // These hooks don't surface useAllEvents' `truncated` flag: a market beyond the
 // ~1000-log page bound being missed is theoretical at v1 testnet volume (and is

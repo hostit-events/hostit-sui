@@ -20,7 +20,7 @@
 // functions swapped from device-local localStorage to on-chain + Walrus.
 
 import { Transaction } from "@mysten/sui/transactions";
-import { PACKAGE_ID_LATEST, CLOCK_ID, EV_REVIEW_POSTED, targetLatest } from "./config";
+import { PACKAGE_ID, CLOCK_ID, EV_REVIEW_POSTED, target } from "./config";
 import { readJson } from "./walrus";
 
 export interface Review {
@@ -91,10 +91,10 @@ export function dedupeByAuthor(reviews: Review[]): Review[] {
 // ── Transaction constructor (mirror forumPostTx, no Seal) ────────────────────
 
 /**
- * Build the `reviews::post_review` transaction. New module from the reviews
- * upgrade → PACKAGE_ID_LATEST target (see config.ts versioning rules). Args:
- * the Event object, the caller's Poap object (proves attendance), the rating
- * (u8), the public Walrus blob id (String), and the Clock.
+ * Build the `reviews::post_review` transaction. Args: the (mutable) Event
+ * object, the caller's Poap object (proves attendance), the rating (u8), the
+ * public Walrus blob id (String), and the Clock. One review per wallet is
+ * enforced on-chain (a second post from the same wallet aborts).
  */
 export function reviewPostTx(input: {
   eventId: string;
@@ -105,7 +105,7 @@ export function reviewPostTx(input: {
   const { eventId, poapId, rating, blobId } = input;
   const tx = new Transaction();
   tx.moveCall({
-    target: targetLatest("reviews", "post_review"),
+    target: target("reviews", "post_review"),
     arguments: [
       tx.object(eventId),
       tx.object(poapId),
@@ -211,4 +211,4 @@ export function hasReviewed(reviews: Review[], author: string): boolean {
 }
 
 /** Fully-qualified ReviewPosted log type (for callers wiring queryEvents hooks). */
-export const REVIEW_POSTED_TYPE = `${PACKAGE_ID_LATEST}::reviews::ReviewPosted`;
+export const REVIEW_POSTED_TYPE = `${PACKAGE_ID}::reviews::ReviewPosted`;

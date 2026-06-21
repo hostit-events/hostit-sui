@@ -8,14 +8,13 @@
 import { Transaction } from "@mysten/sui/transactions";
 import { fromBase64, toBase64 } from "@mysten/sui/utils";
 import type { SessionKey } from "@mysten/seal";
-import { PACKAGE_ID, PACKAGE_ID_LATEST, CLOCK_ID } from "./config";
+import { PACKAGE_ID, CLOCK_ID } from "./config";
 import { storeBlob, readBlob } from "./walrus";
 import { sealEncrypt, sealDecrypt, approveTicket, approveOrganizer } from "./seal";
 
 export const EV_FORUM_POST = `${PACKAGE_ID}::forum::PostCreated`;
-// PostModerated is introduced in the organizer-admin UPGRADE, so its type origin
-// is PACKAGE_ID_LATEST (like predict structs). See config.ts versioning rules.
-export const EV_FORUM_MODERATED = `${PACKAGE_ID_LATEST}::forum::PostModerated`;
+// PostModerated lives in the single package (fresh-publish model).
+export const EV_FORUM_MODERATED = `${PACKAGE_ID}::forum::PostModerated`;
 
 export const FORUM_CHANNELS = [
   { id: "general", label: "general", icon: "ic:round-tag" },
@@ -77,8 +76,7 @@ export function forumPostTx(
   return tx;
 }
 
-/** Post as the organizer (OrganizerCap-gated, no ticket). New in the upgrade →
- *  PACKAGE_ID_LATEST target. */
+/** Post as the organizer (OrganizerCap-gated, no ticket). */
 export function forumPostAsOrganizerTx(
   eventId: string,
   capId: string,
@@ -87,7 +85,7 @@ export function forumPostAsOrganizerTx(
 ): Transaction {
   const tx = new Transaction();
   tx.moveCall({
-    target: `${PACKAGE_ID_LATEST}::forum::post_as_organizer`,
+    target: `${PACKAGE_ID}::forum::post_as_organizer`,
     arguments: [
       tx.object(eventId),
       tx.object(capId),
@@ -99,8 +97,7 @@ export function forumPostAsOrganizerTx(
   return tx;
 }
 
-/** Moderate a post by its Walrus blob id (hide/unhide/pin/unpin). New in the
- *  upgrade → PACKAGE_ID_LATEST target. */
+/** Moderate a post by its Walrus blob id (hide/unhide/pin/unpin). */
 export function forumModerateTx(
   eventId: string,
   capId: string,
@@ -109,7 +106,7 @@ export function forumModerateTx(
 ): Transaction {
   const tx = new Transaction();
   tx.moveCall({
-    target: `${PACKAGE_ID_LATEST}::forum::moderate`,
+    target: `${PACKAGE_ID}::forum::moderate`,
     arguments: [
       tx.object(eventId),
       tx.object(capId),

@@ -41,6 +41,15 @@ public struct Ticket has key, store {
     /// Fully-qualified coin type the ticket was paid in (e.g. `0x2::sui::SUI`).
     /// `refund<T>` asserts `T` matches this.
     paid_type: ascii::String,
+    /// Exact platform fee paid at mint, in the coin's smallest unit (0 for free).
+    /// Stored so a refund forfeits the EXACT fee paid — immune to a later
+    /// `hub::set_fee_bps` change (the old code recomputed it from the live rate,
+    /// which drifts). `refund<T>` reads this; never recomputed.
+    fee_paid: u64,
+    /// True once a POAP has been claimed for this ticket. Replaces the old shared
+    /// `PoapRegistry` dedup — a local write on the owned ticket, so claims have
+    /// zero global shared-object contention.
+    poap_claimed: bool,
     name: String,
     image_url: String,
 }
@@ -74,6 +83,7 @@ public(package) fun mint(
     event_id: ID,
     serial: u64,
     paid: u64,
+    fee_paid: u64,
     paid_type: ascii::String,
     name: String,
     image_url: String,
@@ -87,6 +97,8 @@ public(package) fun mint(
         status: STATUS_ISSUED,
         paid,
         paid_type,
+        fee_paid,
+        poap_claimed: false,
         name,
         image_url,
     }
@@ -102,6 +114,11 @@ public(package) fun set_refunded(t: &mut Ticket) {
     t.status = STATUS_REFUNDED;
 }
 
+/// Mark this ticket's POAP as claimed (one POAP per ticket). Driven by `poap`.
+public(package) fun set_poap_claimed(t: &mut Ticket) {
+    t.poap_claimed = true;
+}
+
 // === Reads ===
 
 public fun event_id(t: &Ticket): ID { t.event_id }
@@ -109,7 +126,9 @@ public fun event_seq(t: &Ticket): u64 { t.event_seq }
 public fun serial(t: &Ticket): u64 { t.serial }
 public fun status(t: &Ticket): u8 { t.status }
 public fun paid(t: &Ticket): u64 { t.paid }
+public fun fee_paid(t: &Ticket): u64 { t.fee_paid }
 public fun paid_type(t: &Ticket): ascii::String { t.paid_type }
+public fun poap_claimed(t: &Ticket): bool { t.poap_claimed }
 public fun is_issued(t: &Ticket): bool { t.status == STATUS_ISSUED }
 public fun is_checked_in(t: &Ticket): bool { t.status == STATUS_CHECKED_IN }
 public fun is_refunded(t: &Ticket): bool { t.status == STATUS_REFUNDED }

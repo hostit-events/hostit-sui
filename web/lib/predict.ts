@@ -36,7 +36,7 @@
 // -----------------------------------------------------------------------------
 
 import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
-import { CLOCK_ID, targetLatest } from "./config";
+import { CLOCK_ID, target } from "./config";
 
 // === Create market ===
 
@@ -50,7 +50,7 @@ import { CLOCK_ID, targetLatest } from "./config";
 export function createSelloutMarketTx(eventId: string, coinType: string): Transaction {
   const tx = new Transaction();
   tx.moveCall({
-    target: targetLatest("predict", "create_sellout_market"),
+    target: target("predict", "create_sellout_market"),
     typeArguments: [coinType],
     arguments: [tx.object(eventId), tx.object(CLOCK_ID)],
   });
@@ -93,7 +93,7 @@ function betTx(fn: "bet_yes" | "bet_no", args: BetArgs): Transaction {
     useGasCoin: false,
   })(tx);
   tx.moveCall({
-    target: targetLatest("predict", fn),
+    target: target("predict", fn),
     typeArguments: [args.coinType],
     arguments: [tx.object(args.marketId), stake, tx.object(CLOCK_ID)],
   });
@@ -117,7 +117,7 @@ export interface SettleArgs {
 export function settleTx(args: SettleArgs): Transaction {
   const tx = new Transaction();
   tx.moveCall({
-    target: targetLatest("predict", "settle"),
+    target: target("predict", "settle"),
     typeArguments: [args.coinType],
     arguments: [tx.object(args.marketId), tx.object(args.eventId), tx.object(CLOCK_ID)],
   });
@@ -142,7 +142,7 @@ export interface ClaimArgs {
 export function claimTx(args: ClaimArgs): Transaction {
   const tx = new Transaction();
   const coin = tx.moveCall({
-    target: targetLatest("predict", "claim"),
+    target: target("predict", "claim"),
     typeArguments: [args.coinType],
     arguments: [tx.object(args.marketId)],
   });
@@ -235,7 +235,7 @@ export function computeOdds(
 // bucket then `claim_range` for their stake + pro-rata share of the losing
 // pools. If the winning bucket has no stake, everyone refunds their own bets.
 //
-// Type/event origin + call targets all use PACKAGE_ID_LATEST (Phase-2 upgrade),
+// Type/event origin + call targets all use the single PACKAGE_ID (fresh-publish model),
 // NOT the SelloutMarket pin — see config.ts RANGE_MARKET_TYPE / EV_RANGE_*.
 // All four mutating entry points are on the Enoki sponsor allowlist.
 
@@ -256,7 +256,7 @@ export function createRangeMarketTx(
 ): Transaction {
   const tx = new Transaction();
   tx.moveCall({
-    target: targetLatest("predict", "create_range_market"),
+    target: target("predict", "create_range_market"),
     typeArguments: [coinType],
     arguments: [
       tx.object(eventId),
@@ -294,7 +294,7 @@ export function betBucketTx(args: BetBucketArgs): Transaction {
     useGasCoin: false,
   })(tx);
   tx.moveCall({
-    target: targetLatest("predict", "bet_bucket"),
+    target: target("predict", "bet_bucket"),
     typeArguments: [args.coinType],
     arguments: [
       tx.object(args.marketId),
@@ -322,7 +322,7 @@ export interface SettleRangeArgs {
 export function settleRangeTx(args: SettleRangeArgs): Transaction {
   const tx = new Transaction();
   tx.moveCall({
-    target: targetLatest("predict", "settle_range"),
+    target: target("predict", "settle_range"),
     typeArguments: [args.coinType],
     arguments: [
       tx.object(args.marketId),
@@ -353,7 +353,7 @@ export interface ClaimRangeArgs {
 export function claimRangeTx(args: ClaimRangeArgs): Transaction {
   const tx = new Transaction();
   const coin = tx.moveCall({
-    target: targetLatest("predict", "claim_range"),
+    target: target("predict", "claim_range"),
     typeArguments: [args.coinType],
     arguments: [tx.object(args.marketId)],
   });

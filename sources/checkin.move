@@ -105,7 +105,11 @@ fun record_and_mark(event: &mut Event, ticket: &mut Ticket, now: u64, ctx: &TxCo
     let ticket_id = object::id(ticket);
     // Aborts if THIS TICKET already checked in on `day` (once-per-day-per-ticket).
     event::record_checkin(event, day, ticket_id, who);
+    // Count distinct tickets, not day-entries: only bump on the FIRST check-in of
+    // this ticket (status is still ISSUED before we mark it).
+    let first_checkin = !ticket::is_checked_in(ticket);
     ticket::set_checked_in(ticket);
+    if (first_checkin) event::inc_checked_in_count(event);
     sui_event::emit(CheckedIn {
         event_seq: event::event_seq(event),
         event_id: object::id(event),

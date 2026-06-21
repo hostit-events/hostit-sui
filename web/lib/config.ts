@@ -1,15 +1,16 @@
 // Sui network + hostit_ticket package config for the frontend.
 // v3 (2026-05-31): faithful Sui port of the HostIt EVM Diamond. Multi-module
-// package (hub/event/ticket/market/checkin); shared Hub; one shared Event per
-// event; generic Coin<T> payments.
-// 2026-06-21: FRESH publish (single package, version 1) adopting OZ access_control
-// RBAC (#51) + atomic create_event_with_price (#68). A fresh publish was REQUIRED
-// — OZ access_control mints its registry from an OTW in `init`, which only runs at
-// first publish, so it can't be added via `sui client upgrade` (see DEPLOYING.md).
-// Because there are no upgrades on this id yet, ALL package-id pins below
-// (PACKAGE_ID / PACKAGE_ID_LATEST / PREDICT_SELLOUT_PKG / PREDICT_RANGE_PKG) equal
-// the same new id. The separate constants are kept because a FUTURE upgrade
-// re-splits them (see comments).
+// package (hub/event/ticket/market/checkin/poap/forum/reviews/predict/governance);
+// shared Hub; one shared Event per event; generic Coin<T> payments.
+//
+// DEPLOY MODEL: every Move change ships as a FRESH PUBLISH (not an in-place
+// upgrade). One consequence: there is a SINGLE package id — all type origins and
+// all call targets resolve to `PACKAGE_ID`. The old PACKAGE_ID_LATEST /
+// PREDICT_SELLOUT_PKG / PREDICT_RANGE_PKG / targetLatest split (which existed only
+// to survive in-place upgrades, Sui's "type origin pinned to the introducing
+// version" rule) has been collapsed away. On each fresh publish, roll the object
+// ids below (PACKAGE_ID, HUB_ID, TRANSFER_POLICY_ID, GOVERNANCE_REGISTRY_ID) via
+// scripts/roll-fresh-publish.mjs + a manual GOVERNANCE_REGISTRY_ID edit.
 
 export const NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK ?? "testnet") as
   | "testnet"
@@ -25,51 +26,17 @@ export function explorerTxUrl(digest: string): string {
 
 export const PACKAGE_ID =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_ID ??
-  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
-
-/**
- * Latest package version for Move-CALL targets (`targetLatest`). On a fresh
- * publish this equals PACKAGE_ID (version 1, no upgrades yet). Sui anchors a
- * type's identity to the version that INTRODUCED it, so when the package is next
- * UPGRADED this rolls forward to the new version while the type-origin pins
- * (PACKAGE_ID for the original modules, PREDICT_*_PKG for the predict structs)
- * stay put. Until then, all four are the same id.
- */
-export const PACKAGE_ID_LATEST =
-  process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_LATEST_ID ??
-  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
-
-/**
- * Type-origin pin for `predict::SelloutMarket` (+ its events). SelloutMarket is
- * defined in the current package (introduced at v1 of this fresh publish), so it
- * equals PACKAGE_ID today. Kept as its own constant so it stays pinned here if a
- * future upgrade rolls PACKAGE_ID_LATEST forward.
- */
-export const PREDICT_SELLOUT_PKG =
-  process.env.NEXT_PUBLIC_HOSTIT_PREDICT_SELLOUT_PKG ??
-  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
-
-/**
- * Type-origin pin for `predict::RangeMarket` (+ its events). Also defined in the
- * current fresh-publish package (v1), so it equals PACKAGE_ID today; kept
- * separate so it stays pinned if a future upgrade rolls the latest forward.
- */
-export const PREDICT_RANGE_PKG =
-  process.env.NEXT_PUBLIC_HOSTIT_PREDICT_RANGE_PKG ??
-  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
+  "0x4529d4479b506910b40bdb5c47074b2fd7bd5f2e6cd4f52a5380d3a7b2e2c054";
 
 /** Shared protocol Hub (config + 3% fee treasury). Every paid sale needs it. */
 export const HUB_ID =
   process.env.NEXT_PUBLIC_HOSTIT_HUB_ID ??
-  "0x9468930839c11fdad73e739a4052d1fe9367bd8ea98dd3f7198bade074138514";
+  "0xf30ce9e7c2d30c767a086ce6dc50bc9a24585e134ea1e658d7d376eeaebf47d8";
 
-/** Shared POAP dedup registry (one proof-of-attendance NFT per ticket). */
-export const POAP_REGISTRY_ID =
-  process.env.NEXT_PUBLIC_HOSTIT_POAP_REGISTRY_ID ??
-  "0x5f234a6fbf1a3cb46595f51a437b45328c3f574255b70fab70029a4c6eaa5001";
+// (POAP dedup is now a flag on the Ticket — no shared PoapRegistry object.)
 
 export const TRANSFER_POLICY_ID =
-  "0xb6e6f12c669175ded687cbccb559ec32ac555229f832abd6cb13331d858a7c85";
+  "0xf026a4112518fec5f2aff912e5f04c6f36297e1249babce6e67992ab2a88454a";
 
 // === Protocol governance (OpenZeppelin access_control RBAC — GH#51) ===
 // Replaces the single PlatformCap with revocable, role-scoped authority
@@ -89,11 +56,12 @@ export const OZ_ACCESS_PKG =
 
 /**
  * Shared `AccessControl<governance::GOVERNANCE>` registry — created by
- * `governance::init` at the GH#51 fresh publish (2026-06-21). Deployer
- * 0xc8567c14… is the default admin holding TreasuryRole + ConfigAdminRole.
+ * `governance::init` at publish (re-minted on every fresh publish; last rolled at
+ * the GH#87 publish, 2026-06-21). Deployer 0xc8567c14… is the default admin
+ * holding TreasuryRole + ConfigAdminRole.
  */
 export const GOVERNANCE_REGISTRY_ID =
-  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "0xdda50d958747715c464a9d098d7b84fabb6037bcfd477b3909767659b25dfd27";
+  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "0x43933dca58136b34866f9e80af36fa712b7ff533fff3c47d20e875f5134fe01c";
 
 /** Target a function in the OZ `access_control` module (root-admin flow). */
 export const ozAccessTarget = (fn: string) =>
@@ -140,18 +108,13 @@ export const SEAL_POLICY_PACKAGE_ID = PACKAGE_ID;
 export const target = (mod: string, fn: string) =>
   `${PACKAGE_ID}::${mod}::${fn}` as const;
 
-/** Like `target`, but against the latest upgraded package — required for modules
- *  added in an upgrade (e.g. `predict`, which doesn't exist in the original id). */
-export const targetLatest = (mod: string, fn: string) =>
-  `${PACKAGE_ID_LATEST}::${mod}::${fn}` as const;
-
 /**
  * Move-call targets HostIt will gas-sponsor via /api/sponsor (the Enoki
  * allowlist). SINGLE SOURCE OF TRUTH — imported by app/api/sponsor/route.ts.
- * Upgrade-introduced targets (predict::*, forum::post_as_organizer,
- * forum::moderate) use PACKAGE_ID_LATEST; original-package targets use
- * PACKAGE_ID; 0x2 framework calls are emitted by the SDK's coinWithBalance
- * intent. Add new sponsored entry functions HERE (one place).
+ * One package id (fresh-publish model), so every entry is `${PACKAGE_ID}::…`;
+ * 0x2 framework calls are emitted by the SDK's coinWithBalance intent. Add new
+ * sponsored entry functions HERE (one place). Governance admin fns are
+ * intentionally NOT sponsored.
  */
 export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::event::create_event`,
@@ -159,11 +122,19 @@ export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::event::set_price`,
   `${PACKAGE_ID}::event::set_allow_self_checkin`,
   `${PACKAGE_ID}::event::add_checkin_signer`,
+  `${PACKAGE_ID}::event::remove_checkin_signer`,
   // Organizer edits (#69) — wire the existing update_* fns into Manage, gasless.
   `${PACKAGE_ID}::event::update_metadata`,
   `${PACKAGE_ID}::event::update_times`,
+  `${PACKAGE_ID}::event::update_end_time`,
   `${PACKAGE_ID}::event::update_max_tickets`,
   `${PACKAGE_ID}::event::update_max_per_user`,
+  `${PACKAGE_ID}::event::remove_price`,
+  // Manage v2 (#87) organizer lifecycle controls.
+  `${PACKAGE_ID}::event::set_cancelled`,
+  `${PACKAGE_ID}::event::set_poap_enabled`,
+  `${PACKAGE_ID}::event::set_is_free`,
+  `${PACKAGE_ID}::event::set_is_refundable`,
   `${PACKAGE_ID}::market::withdraw_event_balance`,
   `${PACKAGE_ID}::market::buy`,
   `${PACKAGE_ID}::market::buy_with_sui`,
@@ -173,22 +144,18 @@ export const SPONSORED_TARGETS: readonly string[] = [
   `${PACKAGE_ID}::checkin::check_in`,
   `${PACKAGE_ID}::poap::claim_poap`,
   `${PACKAGE_ID}::forum::post`,
-  // Organizer admin — introduced in the organizer-admin upgrade (PACKAGE_ID_LATEST).
-  `${PACKAGE_ID_LATEST}::forum::post_as_organizer`,
-  `${PACKAGE_ID_LATEST}::forum::moderate`,
-  // Event reviews (GH#58) — `reviews` is introduced in the reviews UPGRADE, so
-  // its call target is PACKAGE_ID_LATEST. After that upgrade deploys, roll
-  // PACKAGE_ID_LATEST to the new version so this (and EV_REVIEW_POSTED) resolve.
-  `${PACKAGE_ID_LATEST}::reviews::post_review`,
-  `${PACKAGE_ID_LATEST}::predict::create_sellout_market`,
-  `${PACKAGE_ID_LATEST}::predict::bet_yes`,
-  `${PACKAGE_ID_LATEST}::predict::bet_no`,
-  `${PACKAGE_ID_LATEST}::predict::settle`,
-  `${PACKAGE_ID_LATEST}::predict::claim`,
-  `${PACKAGE_ID_LATEST}::predict::create_range_market`,
-  `${PACKAGE_ID_LATEST}::predict::bet_bucket`,
-  `${PACKAGE_ID_LATEST}::predict::settle_range`,
-  `${PACKAGE_ID_LATEST}::predict::claim_range`,
+  `${PACKAGE_ID}::forum::post_as_organizer`,
+  `${PACKAGE_ID}::forum::moderate`,
+  `${PACKAGE_ID}::reviews::post_review`,
+  `${PACKAGE_ID}::predict::create_sellout_market`,
+  `${PACKAGE_ID}::predict::bet_yes`,
+  `${PACKAGE_ID}::predict::bet_no`,
+  `${PACKAGE_ID}::predict::settle`,
+  `${PACKAGE_ID}::predict::claim`,
+  `${PACKAGE_ID}::predict::create_range_market`,
+  `${PACKAGE_ID}::predict::bet_bucket`,
+  `${PACKAGE_ID}::predict::settle_range`,
+  `${PACKAGE_ID}::predict::claim_range`,
   "0x2::coin::zero",
   "0x2::coin::redeem_funds",
   "0x2::coin::into_balance",
@@ -356,13 +323,9 @@ export const GOVERNANCE_TYPE = `${PACKAGE_ID}::governance::GOVERNANCE`;
 export const TREASURY_ROLE_TYPE = `${PACKAGE_ID}::governance::TreasuryRole`;
 export const CONFIG_ADMIN_ROLE_TYPE = `${PACKAGE_ID}::governance::ConfigAdminRole`;
 /** Generic struct head (no type arg) for filtering parimutuel sellout markets. */
-export const SELLOUT_MARKET_TYPE = `${PREDICT_SELLOUT_PKG}::predict::SelloutMarket`;
-/**
- * Generic struct head (no type arg) for filtering parimutuel RANGE markets.
- * Type origin pinned to PREDICT_RANGE_PKG (= PACKAGE_ID on this fresh v1; stays
- * pinned if a future upgrade rolls PACKAGE_ID_LATEST forward).
- */
-export const RANGE_MARKET_TYPE = `${PREDICT_RANGE_PKG}::predict::RangeMarket`;
+export const SELLOUT_MARKET_TYPE = `${PACKAGE_ID}::predict::SelloutMarket`;
+/** Generic struct head (no type arg) for filtering parimutuel RANGE markets. */
+export const RANGE_MARKET_TYPE = `${PACKAGE_ID}::predict::RangeMarket`;
 
 // Event (log) type strings for queryEvents
 export const EV_EVENT_CREATED = `${PACKAGE_ID}::event::EventCreated`;
@@ -372,18 +335,14 @@ export const EV_TICKET_MINTED = `${PACKAGE_ID}::market::TicketMinted`;
 // `poap`, per the package-versioning rule). Emitted from poap::claim_poap with
 // fields { event_seq, event_id, ticket_id, poap_id, recipient }.
 export const EV_POAP_CLAIMED = `${PACKAGE_ID}::poap::PoapClaimed`;
-// reviews::ReviewPosted (GH#58) — the `reviews` module is introduced in the
-// reviews UPGRADE, so this struct's type origin is PACKAGE_ID_LATEST (like the
-// predict structs / forum::PostModerated). AFTER the reviews upgrade deploys,
-// roll PACKAGE_ID_LATEST in config.ts to the new version so this resolves.
-// Fields: { event_id, event_seq, author, rating, blob_id, ts_ms }.
-export const EV_REVIEW_POSTED = `${PACKAGE_ID_LATEST}::reviews::ReviewPosted`;
+// reviews::ReviewPosted (GH#58). Fields: { event_id, event_seq, author, rating,
+// blob_id, ts_ms }.
+export const EV_REVIEW_POSTED = `${PACKAGE_ID}::reviews::ReviewPosted`;
 // predict (parimutuel sellout market) log type strings for queryEvents
-export const EV_MARKET_CREATED = `${PREDICT_SELLOUT_PKG}::predict::MarketCreated`;
-export const EV_BET = `${PREDICT_SELLOUT_PKG}::predict::Bet`;
-export const EV_SETTLED = `${PREDICT_SELLOUT_PKG}::predict::Settled`;
+export const EV_MARKET_CREATED = `${PACKAGE_ID}::predict::MarketCreated`;
+export const EV_BET = `${PACKAGE_ID}::predict::Bet`;
+export const EV_SETTLED = `${PACKAGE_ID}::predict::Settled`;
 // predict (parimutuel RANGE market) log type strings for queryEvents.
-// Type origin pinned to PREDICT_RANGE_PKG (= PACKAGE_ID on this fresh v1).
-export const EV_RANGE_MARKET_CREATED = `${PREDICT_RANGE_PKG}::predict::RangeMarketCreated`;
-export const EV_RANGE_BET = `${PREDICT_RANGE_PKG}::predict::RangeBet`;
-export const EV_RANGE_SETTLED = `${PREDICT_RANGE_PKG}::predict::RangeSettled`;
+export const EV_RANGE_MARKET_CREATED = `${PACKAGE_ID}::predict::RangeMarketCreated`;
+export const EV_RANGE_BET = `${PACKAGE_ID}::predict::RangeBet`;
+export const EV_RANGE_SETTLED = `${PACKAGE_ID}::predict::RangeSettled`;
