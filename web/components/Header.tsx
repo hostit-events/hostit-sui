@@ -43,7 +43,7 @@ export function Header({
   const pathname = usePathname() || "/";
   return (
     <header className="sticky top-0 z-50 hidden border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:block">
-      <div className="relative mx-auto flex h-14 max-w-[1340px] items-center gap-2 px-4 sm:px-6">
+      <div className="relative flex h-14 w-full items-center gap-2 px-4 sm:px-6 lg:px-8">
         {/* Left: logo + primary nav */}
         <div className="flex items-center gap-1">
           <Link href="/" className="mr-1 flex flex-none items-center" aria-label="HostIt home">
