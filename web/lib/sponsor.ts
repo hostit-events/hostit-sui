@@ -3,6 +3,7 @@
 import { Transaction } from "@mysten/sui/transactions";
 import type { ClientWithCoreApi } from "@mysten/sui/client";
 import { fromBase64, toBase64 } from "@mysten/sui/utils";
+import { getTurnstileToken } from "./turnstileClient";
 
 export interface SponsorAndExecuteArgs {
   transaction: Transaction;
@@ -41,9 +42,15 @@ export async function sponsorAndExecute(
     onlyTransactionKind: true,
   });
 
+  // Attach a Turnstile token (proof-of-browser) so the server bot-wall lets the
+  // sponsor wallet pay gas. null when Turnstile is disabled — the server then
+  // skips the check. The chain itself stays reachable: a denied sponsorship
+  // never blocks self-signed, self-paid on-chain calls. (#81)
+  const turnstileToken = await getTurnstileToken();
+
   const sponsored = await postJson<{ bytes: string; digest: string }>(
     "/api/sponsor",
-    { transactionKindBytes: toBase64(kindBytes), sender: args.sender },
+    { transactionKindBytes: toBase64(kindBytes), sender: args.sender, turnstileToken },
   );
 
   const { signature } = await args.signTransactionBytes(fromBase64(sponsored.bytes));

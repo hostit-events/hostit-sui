@@ -8,6 +8,7 @@ import { getDAppKit } from "@/lib/dapp-kit";
 import { ENOKI_API_KEY, ENOKI_SESSION_EPOCHS } from "@/lib/config";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { TurnstileGate } from "@/components/TurnstileGate";
 
 export function ClientProviders({ children }: { children: React.ReactNode }) {
   const [qc] = useState(
@@ -44,6 +45,9 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
         <DAppKitProvider dAppKit={dAppKit}>
           <TooltipProvider delayDuration={150}>{children}</TooltipProvider>
           <Toaster />
+          {/* Anti-bot bot-wall for the gasless-sponsor + AI routes (#81). Renders
+              nothing unless a Turnstile site key is configured. */}
+          <TurnstileGate />
         </DAppKitProvider>
       </EnokiFlowProvider>
     </QueryClientProvider>

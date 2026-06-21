@@ -312,6 +312,17 @@ export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 export const ENOKI_ENABLED = ENOKI_API_KEY.length > 0;
 
 /**
+ * Cloudflare Turnstile (anti-bot) PUBLIC site key. When set, the app mounts an
+ * invisible Turnstile widget (components/TurnstileGate.tsx) and attaches a
+ * single-use token to the gasless-sponsor + AI requests. The server enforces it
+ * ONLY when TURNSTILE_SECRET_KEY (server-only, NOT in this file) is also set —
+ * set BOTH or NEITHER. See issue #81 and lib/turnstile.ts.
+ */
+export const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+export const TURNSTILE_ENABLED = TURNSTILE_SITE_KEY.length > 0;
+
+/**
  * How long a Google (Enoki zkLogin) session stays valid, expressed in epochs.
  *
  * zkLogin caps the lifetime of an ephemeral key at the `maxEpoch` baked into

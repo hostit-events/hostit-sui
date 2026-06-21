@@ -27,6 +27,7 @@ import {
 } from "@/lib/memwal";
 import { verifyMemoryCaller } from "@/lib/memwalAuth";
 import { rateLimit, clientIpFromHeaders } from "@/lib/rateLimit";
+import { verifyTurnstile, blockedByTurnstile } from "@/lib/turnstile";
 
 export const dynamic = "force-dynamic";
 
@@ -177,6 +178,7 @@ export async function POST(req: Request) {
     owner?: string;
     message?: string;
     signature?: string;
+    turnstileToken?: string;
   };
   try {
     body = JSON.parse(rawBody);
@@ -196,6 +198,13 @@ export async function POST(req: Request) {
 
   // Whitelist/sanitize ctx into a fresh object before it reaches the prompt.
   const ctx = sanitizeCtx(body.ctx);
+
+  // Bot-wall: a failed Turnstile challenge gets the FREE local fallback (and
+  // skips the memory recall below), never the paid Groq model. CF outage fails
+  // OPEN to Groq. Enforced only when a secret is set. (#81)
+  if (blockedByTurnstile(await verifyTurnstile(body.turnstileToken, ip))) {
+    return Response.json({ description: fallback(ctx, []), sourced: "fallback" });
+  }
 
   // OPTIONAL memory enrichment. Only attempt when a full signed envelope is
   // present AND the layer is on. ANY failure (auth, recall, relayer) is swallowed

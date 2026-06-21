@@ -39,6 +39,18 @@ describe("sponsor route rate-limit guards", () => {
     expect(rateLimit(b, 1, 60_000).ok).toBe(true);
   });
 
+  it("keys the per-wallet sponsor bucket independently of the per-IP bucket (#81)", () => {
+    const suffix = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const walletKey = `sponsor:wallet:0xabc:${suffix}`;
+    const ipKey = `sponsor:ip:1.2.3.4:${suffix}`;
+    // Exhaust the per-wallet bucket.
+    expect(rateLimit(walletKey, 1, 60_000).ok).toBe(true);
+    expect(rateLimit(walletKey, 1, 60_000).ok).toBe(false);
+    // The per-IP bucket (different prefix) is unaffected — a wallet throttled for
+    // farming gas does not consume the IP budget, and vice-versa. Both apply.
+    expect(rateLimit(ipKey, 1, 60_000).ok).toBe(true);
+  });
+
   it("keys the two sponsor routes into separate buckets (sponsor:ip vs execute:ip)", () => {
     const suffix = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
     const createKey = `sponsor:ip:${suffix}`;

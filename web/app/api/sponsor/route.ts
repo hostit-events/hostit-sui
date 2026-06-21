@@ -6,6 +6,7 @@
 import { EnokiClient } from "@mysten/enoki";
 import { NETWORK, SPONSORED_TARGETS } from "@/lib/config";
 import { rateLimit, clientIpFromHeaders } from "@/lib/rateLimit";
+import { verifyTurnstile, blockedByTurnstile } from "@/lib/turnstile";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +15,25 @@ export const dynamic = "force-dynamic";
 // /api/copilot limiter. NOTE: per-process only — see plan 003 for a durable
 // KV-backed limiter across serverless instances.
 const RL_LIMIT = 20;
+// Per-WALLET budget: a single wallet farming sponsored gas is throttled
+// independently of its IP (which rotates cheaply behind NAT/VPN). Tighter than
+// the per-IP cap because one human rarely fires >10 sponsored txs/min. (#81)
+const RL_WALLET_LIMIT = 10;
 const RL_WINDOW_MS = 60_000;
 // transactionKindBytes is base64 of a tx kind; 128 KB is generous and bounds
 // junk-payload cost before we call Enoki.
 const MAX_BODY_BYTES = 128 * 1024;
+
+/**
+ * Canonicalize a client-supplied Sui address (lowercase, zero-padded to 32
+ * bytes) or return null if it isn't a valid hex address. Used to key the
+ * per-wallet rate bucket so cosmetic variants (casing, leading-zero forms) can't
+ * mint fresh buckets, and junk senders are rejected before we ever call Enoki.
+ */
+function normalizeSuiAddress(a: string): string | null {
+  const m = /^0x([0-9a-fA-F]{1,64})$/.exec(a.trim());
+  return m ? `0x${m[1].toLowerCase().padStart(64, "0")}` : null;
+}
 
 export async function POST(req: Request) {
   const apiKey = process.env.ENOKI_PRIVATE_API_KEY;
@@ -64,7 +80,11 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { transactionKindBytes?: string; sender?: string };
+  let body: {
+    transactionKindBytes?: string;
+    sender?: string;
+    turnstileToken?: string;
+  };
   try {
     body = JSON.parse(rawBody);
   } catch {
@@ -75,6 +95,36 @@ export async function POST(req: Request) {
     return Response.json(
       { error: "Missing transactionKindBytes or sender" },
       { status: 400 },
+    );
+  }
+
+  // Reject a malformed sender BEFORE any Enoki work, and canonicalize it so the
+  // per-wallet bucket can't be evaded with cosmetic address variants. (#81)
+  const wallet = normalizeSuiAddress(sender);
+  if (!wallet) {
+    return Response.json({ error: "Invalid sender address" }, { status: 400 });
+  }
+
+  // Per-wallet rate limit (in addition to the per-IP one above): bounds a single
+  // wallet draining the sponsor budget even as it rotates IPs. The per-IP cap is
+  // the real backstop — a fresh keypair still mints a fresh bucket (inherent). (#81)
+  const rlWallet = rateLimit(`sponsor:wallet:${wallet}`, RL_WALLET_LIMIT, RL_WINDOW_MS);
+  if (!rlWallet.ok) {
+    return Response.json(
+      { error: "Rate limit exceeded" },
+      { status: 429, headers: { "Retry-After": String(rlWallet.retryAfterSec) } },
+    );
+  }
+
+  // Bot-wall: require a valid Cloudflare Turnstile token before the sponsor
+  // wallet pays gas. Enforced only when TURNSTILE_SECRET_KEY is set; a CF outage
+  // fails OPEN (proceeds) so a Cloudflare blip never blocks sponsorship. A 403
+  // here denies the FREE gas only — the user can still self-sign and pay their
+  // own gas on-chain (the chain is never gated). (#81)
+  if (blockedByTurnstile(await verifyTurnstile(body.turnstileToken, ip))) {
+    return Response.json(
+      { error: "Bot check failed. Refresh the page and try again." },
+      { status: 403 },
     );
   }
 
