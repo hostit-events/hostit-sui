@@ -9,7 +9,7 @@
 
 **Permissionless event ticketing on [Sui](https://sui.io).** Any wallet can host. Tickets sell in any coin, gasless. Payouts withdraw straight from on-chain escrow — no platform skim, no takedowns. Then a parimutuel market settles itself on the final count: no oracle, no house.
 
-[**▶ Live demo — hostit-sui.vercel.app**](https://hostit-sui.vercel.app) · [Move package](#deploy) · [Why this wins the Walrus track](#walrus)
+[**▶ Live demo — hostit-sui.vercel.app**](https://hostit-sui.vercel.app) · [Move package](#deploy) · [Built for the Walrus track](#walrus)
 
 [![Sui testnet](https://img.shields.io/badge/Sui-testnet-4DA2FF)](https://hostit-sui.vercel.app)
 [![Walrus](https://img.shields.io/badge/Walrus-content%20layer-00C2A8)](#walrus)
@@ -97,7 +97,7 @@ graph TB
 | 7 | **Event drafts** | full in-progress create form, 30-epoch TTL | 🔒 **Seal (self)** | localStorage index; no backend |
 | 8 | **AI organizer memory** | embedded "memories" grounding AI drafts | 🔒 **Seal (TEE relayer)** | MemWal account |
 
-### Why judges should score this highest
+### What sets this integration apart
 
 - **Load-bearing, not decorative** — the contract `assert`s a non-empty Walrus `uri` (`event.move`). No Walrus, no event.
 - **Breadth few can match** — 8 genuinely different uses (public metadata, media, NFT art, reviews, encrypted forum, encrypted KYC, encrypted drafts, TEE-relayed AI memory) on one 49-line client.
