@@ -174,14 +174,14 @@ export function NotificationsBell({
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-medium leading-tight">
+                          <p className="min-w-0 break-words text-xs font-medium leading-tight">
                             {n.title}
                           </p>
                           {!n.read && (
                             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />
                           )}
                         </div>
-                        <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
+                        <p className="mt-0.5 line-clamp-2 break-words text-[11px] text-muted-foreground">
                           {n.description}
                         </p>
                         <p className="mt-1 text-[10px] text-muted-foreground">
