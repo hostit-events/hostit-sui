@@ -10,7 +10,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/Icon";
 import {
@@ -62,7 +61,7 @@ export interface NotificationsBellProps {
 
 /**
  * Pure UI: the bell trigger + popover inbox. Ported from the prototype's
- * notifications-bell.tsx (shadcn Popover/Button/Badge/ScrollArea + motion),
+ * notifications-bell.tsx (shadcn Popover/Button/Badge + motion),
  * decoupled from any data source — it only takes an AppNotification[] + handlers.
  * The data is supplied by {@link NotificationsBellContainer} via useNotifications.
  */
@@ -98,7 +97,7 @@ export function NotificationsBell({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-80 rounded-2xl border-border/60 bg-card/95 p-0 backdrop-blur"
+        className="w-80 overflow-hidden rounded-2xl border-border/60 bg-card/95 p-0 backdrop-blur"
         align="end"
       >
         <div className="flex items-center justify-between border-b border-border/60 p-3">
@@ -136,7 +135,7 @@ export function NotificationsBell({
           </div>
         </div>
 
-        <ScrollArea className="max-h-80">
+        <div className="max-h-80 overflow-y-auto overscroll-contain">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
               <div className="grid h-10 w-10 place-items-center rounded-full bg-muted/40">
@@ -202,7 +201,7 @@ export function NotificationsBell({
               </AnimatePresence>
             </ul>
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );
