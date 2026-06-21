@@ -18,8 +18,8 @@ export function LandingV2() {
   const rootRef = useRef<HTMLDivElement>(null);
   const host = () => router.push("/create");
   const demo = () => router.push("/discover");
-  // "Open app" → the public app home (discover). It's the route group's public
-  // landing, so it's what "open the app" naturally means for a visitor.
+  // "Explore events" → the public app home (the discover feed). It's the route
+  // group's public landing — the neutral "enter the product" door for a visitor.
   const openApp = () => router.push("/discover");
 
   // Mobile section-links menu (the inline `.lv-nav-links` are hidden under 880px).
@@ -189,7 +189,7 @@ export function LandingV2() {
             <a href="#proof" onClick={(e) => { e.preventDefault(); scrollToId("proof"); }}>Proof</a>
           </nav>
           <div className="lv-nav-cta">
-            <Button variant="ghost" className="lv-btn lv-btn-primary h-auto" onClick={openApp}>Open app</Button>
+            <Button variant="ghost" className="lv-btn lv-btn-primary h-auto" onClick={openApp}>Explore events</Button>
             <button
               ref={menuToggleRef}
               type="button"
@@ -205,7 +205,7 @@ export function LandingV2() {
         </div>
       </header>
 
-      {/* MOBILE MENU — section links + Open app, shown where inline links hide */}
+      {/* MOBILE MENU — section links + Explore events, shown where inline links hide */}
       <div
         className={`lv-nav-sheet${menuOpen ? " open" : ""}`}
         hidden={!menuOpen}
@@ -233,7 +233,7 @@ export function LandingV2() {
             className="lv-btn lv-btn-primary lv-nav-menu-cta h-auto"
             onClick={() => { setMenuOpen(false); openApp(); }}
           >
-            Open app<Icon icon="ic:round-arrow-forward" size={19} />
+            Explore events<Icon icon="ic:round-arrow-forward" size={19} />
           </Button>
         </div>
       </div>

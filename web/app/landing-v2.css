@@ -54,7 +54,10 @@
 
 .lv-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 120; transition: background .5s var(--ease), border-color .5s var(--ease); border-bottom: 1px solid transparent; }
 .lv-nav.solid { background: rgba(7,9,18,0.72); backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2); border-bottom-color: var(--hair); }
-.lv-nav-in { display: flex; align-items: center; gap: 20px; height: 76px; }
+/* The nav spans wider than the 1500px content sections (issue #91) so it doesn't
+   cluster in the middle of wide screens. Nav-scoped: content sections stay 1500. */
+.lv-nav .lv-wrap { max-width: 1880px; }
+.lv-nav-in { display: flex; align-items: center; gap: 20px; height: 88px; }
 .lv-nav-links { display: flex; gap: 34px; margin-left: 52px; flex: 1; }
 .lv-nav-links a { font-size: 14px; color: var(--paper-dim); letter-spacing: .01em; transition: color .3s var(--ease); cursor: pointer; }
 .lv-nav-links a:hover { color: var(--paper); }
