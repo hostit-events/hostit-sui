@@ -2,13 +2,14 @@
 // v3 (2026-05-31): faithful Sui port of the HostIt EVM Diamond. Multi-module
 // package (hub/event/ticket/market/checkin); shared Hub; one shared Event per
 // event; generic Coin<T> payments.
-// 2026-06-20: FRESH publish (single package, version 1) carrying the forum
-// organizer-admin change (#37). Shipped as a re-publish — not because the change
-// is incompatible (#37 is additive) but because `sui client upgrade` was
-// non-functional at the time; see DEPLOYING.md. Because there are no upgrades on
-// this id yet, ALL package-id pins below (PACKAGE_ID / PACKAGE_ID_LATEST /
-// PREDICT_SELLOUT_PKG / PREDICT_RANGE_PKG) equal the same new id. The separate
-// constants are kept because a FUTURE upgrade re-splits them (see comments).
+// 2026-06-21: FRESH publish (single package, version 1) adopting OZ access_control
+// RBAC (#51) + atomic create_event_with_price (#68). A fresh publish was REQUIRED
+// — OZ access_control mints its registry from an OTW in `init`, which only runs at
+// first publish, so it can't be added via `sui client upgrade` (see DEPLOYING.md).
+// Because there are no upgrades on this id yet, ALL package-id pins below
+// (PACKAGE_ID / PACKAGE_ID_LATEST / PREDICT_SELLOUT_PKG / PREDICT_RANGE_PKG) equal
+// the same new id. The separate constants are kept because a FUTURE upgrade
+// re-splits them (see comments).
 
 export const NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK ?? "testnet") as
   | "testnet"
@@ -24,7 +25,7 @@ export function explorerTxUrl(digest: string): string {
 
 export const PACKAGE_ID =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_ID ??
-  "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd";
+  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
 
 /**
  * Latest package version for Move-CALL targets (`targetLatest`). On a fresh
@@ -36,7 +37,7 @@ export const PACKAGE_ID =
  */
 export const PACKAGE_ID_LATEST =
   process.env.NEXT_PUBLIC_HOSTIT_PACKAGE_LATEST_ID ??
-  "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd";
+  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
 
 /**
  * Type-origin pin for `predict::SelloutMarket` (+ its events). SelloutMarket is
@@ -46,7 +47,7 @@ export const PACKAGE_ID_LATEST =
  */
 export const PREDICT_SELLOUT_PKG =
   process.env.NEXT_PUBLIC_HOSTIT_PREDICT_SELLOUT_PKG ??
-  "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd";
+  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
 
 /**
  * Type-origin pin for `predict::RangeMarket` (+ its events). Also defined in the
@@ -55,20 +56,20 @@ export const PREDICT_SELLOUT_PKG =
  */
 export const PREDICT_RANGE_PKG =
   process.env.NEXT_PUBLIC_HOSTIT_PREDICT_RANGE_PKG ??
-  "0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd";
+  "0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c";
 
 /** Shared protocol Hub (config + 3% fee treasury). Every paid sale needs it. */
 export const HUB_ID =
   process.env.NEXT_PUBLIC_HOSTIT_HUB_ID ??
-  "0x4e02096883ac6505fd83cfb25ce6ea5414a49395ac443d830d6df075e9402b46";
+  "0x9468930839c11fdad73e739a4052d1fe9367bd8ea98dd3f7198bade074138514";
 
 /** Shared POAP dedup registry (one proof-of-attendance NFT per ticket). */
 export const POAP_REGISTRY_ID =
   process.env.NEXT_PUBLIC_HOSTIT_POAP_REGISTRY_ID ??
-  "0x13b9aad046800a554d365e2474f0e658753db9feadfde5913af1651c68a01044";
+  "0x5f234a6fbf1a3cb46595f51a437b45328c3f574255b70fab70029a4c6eaa5001";
 
 export const TRANSFER_POLICY_ID =
-  "0x37fed2fd12c6037a72413fd2da8b6e715587fdc625bf137f2edee61e20cbdcf1";
+  "0xb6e6f12c669175ded687cbccb559ec32ac555229f832abd6cb13331d858a7c85";
 
 // === Protocol governance (OpenZeppelin access_control RBAC — GH#51) ===
 // Replaces the single PlatformCap with revocable, role-scoped authority
@@ -88,11 +89,11 @@ export const OZ_ACCESS_PKG =
 
 /**
  * Shared `AccessControl<governance::GOVERNANCE>` registry — created by
- * `governance::init` at the GH#51 FRESH publish. EMPTY until that gated deploy
- * lands; set NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID (or hardcode the id post-deploy).
+ * `governance::init` at the GH#51 fresh publish (2026-06-21). Deployer
+ * 0xc8567c14… is the default admin holding TreasuryRole + ConfigAdminRole.
  */
 export const GOVERNANCE_REGISTRY_ID =
-  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "";
+  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "0xdda50d958747715c464a9d098d7b84fabb6037bcfd477b3909767659b25dfd27";
 
 /** Target a function in the OZ `access_control` module (root-admin flow). */
 export const ozAccessTarget = (fn: string) =>

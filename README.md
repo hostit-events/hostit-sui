@@ -4,7 +4,7 @@ A **permissionless** event-ticketing platform on [Sui](https://sui.io). Anyone c
 
 HostIt is a faithful Sui Move port of the HostIt EVM Diamond, paired with a Next.js dApp. It uses **Walrus** for event media, **Seal** for encrypted data, and **Enoki** for sponsored transactions and social login.
 
-> **Status:** live on **Sui testnet**. Move package `hostit_ticket`, version 1 (`0x6a41303d…671fcd`). See [On-chain deployment](#on-chain-deployment).
+> **Status:** live on **Sui testnet**. Move package `hostit_ticket`, version 1 (`0x7816f65c…cefcd314c`). See [On-chain deployment](#on-chain-deployment).
 
 ---
 
@@ -149,11 +149,11 @@ Live on **Sui testnet**. `web/lib/config.ts` is the source of truth (all values 
 
 | Object | ID |
 |---|---|
-| Package (fresh v1 — original == latest; all calls + type origins) | `0x6a41303dbb806d02889c78eb887a9d73f63d2ffedcd40c1a36c7f581b7671fcd` |
-| Shared `Hub` | `0x78d084b5fb25875d9d87cb04540e1f9633f2ad2851d2b1667db4f8d30131ef24` |
-| Shared `PoapRegistry` | `0x8488a2e7b7079d71fad61e358dcde291635d94a69c43a7c4bc5b72b4470ae888` |
-| Shared `TransferPolicy<Ticket>` | `0x8817b9cbefdb613cf3c63e2eb3b0a7993575e8e992abc11df40fb8c32b1b78f3` |
-| Shared `AccessControl<GOVERNANCE>` (protocol RBAC) | _pending GH#51 fresh publish_ |
+| Package (fresh v1 — original == latest; all calls + type origins) | `0x7816f65c8fb05298df91fe25065b82ada0f61d8020d5673376ad02ecefcd314c` |
+| Shared `Hub` | `0x9468930839c11fdad73e739a4052d1fe9367bd8ea98dd3f7198bade074138514` |
+| Shared `PoapRegistry` | `0x5f234a6fbf1a3cb46595f51a437b45328c3f574255b70fab70029a4c6eaa5001` |
+| Shared `TransferPolicy<Ticket>` | `0xb6e6f12c669175ded687cbccb559ec32ac555229f832abd6cb13331d858a7c85` |
+| Shared `AccessControl<GOVERNANCE>` (protocol RBAC) | `0xdda50d958747715c464a9d098d7b84fabb6037bcfd477b3909767659b25dfd27` |
 | OZ `access_control` dependency (testnet, published-at) | `0xb357701a…390465d7` |
 | Collateral coin (testnet USDC) | `0xa1ec7fc0…::usdc::USDC` |
 
