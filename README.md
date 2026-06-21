@@ -1,17 +1,17 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://hostit-sui.vercel.app/brand/logo-white.png">
-  <img alt="HostIt" src="https://hostit-sui.vercel.app/brand/logo-navy.png" width="240">
+  <source media="(prefers-color-scheme: dark)" srcset="https://sui.hostit.events/brand/logo-white.png">
+  <img alt="HostIt" src="https://sui.hostit.events/brand/logo-navy.png" width="240">
 </picture>
 
 ### Sell out, pay out, and bet on it — on-chain.
 
 **Permissionless event ticketing on [Sui](https://sui.io).** Any wallet can host. Tickets sell in any coin, gasless. Payouts withdraw straight from on-chain escrow — no platform skim, no takedowns. Then a parimutuel market settles itself on the final count: no oracle, no house.
 
-[**▶ Live demo — hostit-sui.vercel.app**](https://hostit-sui.vercel.app) · [Move package](#deploy) · [Built for the Walrus track](#walrus)
+[**▶ Live demo — sui.hostit.events**](https://sui.hostit.events) · [Move package](#deploy) · [Built for the Walrus track](#walrus)
 
-[![Sui testnet](https://img.shields.io/badge/Sui-testnet-4DA2FF)](https://hostit-sui.vercel.app)
+[![Sui testnet](https://img.shields.io/badge/Sui-testnet-4DA2FF?logo=sui&logoColor=white)](https://sui.hostit.events)
 [![Walrus](https://img.shields.io/badge/Walrus-content%20layer-00C2A8)](#walrus)
 [![Seal](https://img.shields.io/badge/Seal-threshold%20encryption-7C5CFC)](#seal)
 [![Enoki](https://img.shields.io/badge/Enoki-gasless%20%2B%20zkLogin-FF7A45)](#features)
@@ -296,7 +296,7 @@ A layered posture spanning on-chain and the off-chain edge:
 
 ## 📦 On-chain deployment
 
-Live on **Sui testnet** at **[hostit-sui.vercel.app](https://hostit-sui.vercel.app)**. `web/lib/config.ts` is the source of truth (all values are env-overridable).
+Live on **Sui testnet** at **[sui.hostit.events](https://sui.hostit.events)**. `web/lib/config.ts` is the source of truth (all values are env-overridable).
 
 | Object | ID |
 |---|---|
@@ -396,7 +396,7 @@ For a deeper engineering guide, see [`CLAUDE.md`](./CLAUDE.md). To deploy/upgrad
 
 <div align="center">
 
-**[▶ Try the live demo](https://hostit-sui.vercel.app)** · Built on Sui · Walrus · Seal · Enoki
+**[▶ Try the live demo](https://sui.hostit.events)** · Built on Sui · Walrus · Seal · Enoki
 
 *Events made easy. Your event, your rules.*
 
