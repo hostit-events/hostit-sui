@@ -576,3 +576,14 @@ button[class*="connect" i] {
 /* Geist is now the app-wide default (set on --font-* in @theme above); the
    landing re-scopes the brand fonts on `.lv`. `.app-shell` no longer needs a
    font override. */
+
+/* Honor prefers-reduced-motion for the Radix dialog/sheet open/close animations
+   (the ticket dialog, #82) — tw-animate's enter/exit isn't gated by default. */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-content"] {
+    animation: none !important;
+  }
+}

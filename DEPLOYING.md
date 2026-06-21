@@ -129,6 +129,16 @@ Before promoting to mainnet:
 - Re-publish to mainnet (a distinct package id) and point the frontend env vars at the mainnet ids + mainnet USDC coin type.
 - Update the Enoki gas pool / allowlist for mainnet.
 
+## Wallet passes (optional — Apple / Google Wallet)
+
+The ticket dialog (#82) can offer "Add to Apple Wallet" / "Add to Google Wallet". Both are **opt-in and degrade gracefully**: with their env vars unset, `/api/wallet-pass/*` returns 503 and the buttons are hidden (the `/api/wallet-pass/capabilities` probe drives this). No deploy step is required to ship the dialog without passes.
+
+To enable them, set the **server-only** secrets (never `NEXT_PUBLIC_`-prefixed; full list + comments in `web/.env.local.example`):
+- **Apple**: `APPLE_PASS_TYPE_ID`, `APPLE_TEAM_ID`, `APPLE_PASS_CERT`, `APPLE_PASS_KEY`, `APPLE_PASS_KEY_PASSPHRASE` (optional), `APPLE_WWDR_CERT` — needs a paid Apple Developer account + a Pass Type ID & signing cert.
+- **Google**: `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_WALLET_SA_EMAIL`, `GOOGLE_WALLET_SA_KEY`, `GOOGLE_WALLET_CLASS_ID` (optional) — needs a Google Wallet API issuer + service-account key.
+
+Notes: the Apple icon ships as a generated placeholder (`web/lib/walletIcon.ts`) — replace it with a branded 87×87 (and @2x/@3x) PNG before public launch. The pass content is supplied per-request from the user's own ticket; the QR encodes the bare on-chain ticket id (the same value the door scanner reads).
+
 ---
 
 See also: [`README`](./README.md) (architecture + deployed ids), [`CONTRIBUTING`](./CONTRIBUTING.md) (dev workflow), [`CLAUDE.md`](./CLAUDE.md) (full package-versioning model).
