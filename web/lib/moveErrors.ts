@@ -57,6 +57,10 @@ const MAP: Record<string, Record<number, string>> = {
     1: "This ticket isn't for this event.",
     2: "Unknown moderation action.",
   },
+  reviews: {
+    1: "This POAP isn't for this event — you can only review events you attended.",
+    2: "Rating must be between 1 and 5 stars.",
+  },
   hub: { 1: "Insufficient balance.", 2: "No balance to withdraw.", 3: "Value too high." },
   predict: {
     1: "This market is already settled.",

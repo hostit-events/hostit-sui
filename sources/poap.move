@@ -100,6 +100,9 @@ public fun has_claimed(reg: &PoapRegistry, ticket_id: ID): bool {
 
 public fun poap_event_seq(p: &Poap): u64 { p.event_seq }
 public fun poap_name(p: &Poap): &String { &p.name }
+/// Object id of the `Event` this POAP attests attendance for. Read cross-module
+/// (e.g. `reviews::post_review`) to prove a POAP belongs to a given event.
+public fun event_id(p: &Poap): ID { p.event_id }
 
 // === Test-only ===
 
