@@ -221,9 +221,6 @@ export function SettingsScreen() {
           className="glow"
           style={{ width: 360, height: 360, background: "rgba(0,124,250,.4)", top: -150, right: -40, opacity: 0.2 }}
         />
-        <span className="eyebrow">
-          <Icon icon="ic:round-settings" size={14} /> Settings
-        </span>
         <h1 className="page-title" style={{ marginTop: 12, fontSize: 34 }}>
           Your account
         </h1>

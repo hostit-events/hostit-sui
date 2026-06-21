@@ -76,7 +76,6 @@ export function AuthScreen() {
       <Card style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 480, padding: 32 }}>
         <div className="space-y-6">
           <div style={{ textAlign: "center" }}>
-            <span className="eyebrow"><Icon icon="ion:ticket" size={14} /> HostIt</span>
             <h1 className="page-title" style={{ marginTop: 16, fontSize: 30 }}>Welcome to HostIt</h1>
             <p className="page-sub" style={{ marginTop: 8 }}>
               Tickets, events and proof-of-attendance — fully on-chain on Sui. Sign in

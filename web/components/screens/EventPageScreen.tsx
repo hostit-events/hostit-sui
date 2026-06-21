@@ -413,7 +413,6 @@ export function EventPageScreen({ id }: { id: string }) {
         <div className="space-y-8" style={{ minWidth: 0 }}>
           {/* Title block */}
           <div className="space-y-3">
-            {cat && <span className="eyebrow">{cat}</span>}
             <h1 className="page-title" style={{ fontSize: 34 }}>
               {name}
             </h1>

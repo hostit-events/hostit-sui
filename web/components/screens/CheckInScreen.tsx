@@ -144,9 +144,6 @@ function Header() {
         className="glow"
         style={{ width: 380, height: 380, background: "rgba(0,124,250,.4)", top: -150, right: -60, opacity: 0.22 }}
       />
-      <span className="eyebrow">
-        <Icon icon="zondicons:inbox-check" size={14} /> Check-in
-      </span>
       <h1 className="page-title" style={{ marginTop: 12, fontSize: 34 }}>
         Door console
       </h1>

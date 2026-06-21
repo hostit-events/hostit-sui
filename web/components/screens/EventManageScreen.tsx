@@ -329,9 +329,6 @@ export function EventManageScreen({ id }: { id: string }) {
     return (
       <div className="space-y-5 screen-in">
         <Card className="p-5">
-          <span className="eyebrow">
-            <Icon icon="material-symbols:lock-outline" size={14} /> Restricted
-          </span>
           <h2 className="page-title" style={{ marginTop: 12, fontSize: 26 }}>
             Not your event
           </h2>

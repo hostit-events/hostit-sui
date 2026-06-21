@@ -256,11 +256,7 @@ function SelloutMarketCard({
     Boolean(marketId) && !marketQ.isLoading && (marketQ.isError || !market);
 
   // Shared header used in every state of the card.
-  const header = (
-    <span className="eyebrow">
-      <Icon icon="mdi:timer-sand" size={14} /> Sellout Clock
-    </span>
-  );
+  const header = null;
 
   // ---- No market yet: permissionless create CTA. ----
   if (!loading && !marketId) {
@@ -639,11 +635,7 @@ function RangeMarketCard({
     Boolean(marketId) && !marketQ.isLoading && (marketQ.isError || !market);
 
   // Shared header used in every state of the card.
-  const header = (
-    <span className="eyebrow">
-      <Icon icon="mdi:chart-bar" size={14} /> Final tickets sold
-    </span>
-  );
+  const header = null;
 
   // ---- No market yet: permissionless create CTA (quartile cutoffs). ----
   if (!loading && !marketId) {

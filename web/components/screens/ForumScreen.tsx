@@ -666,9 +666,6 @@ function ForumShell({ id, children }: { id: string; children: React.ReactNode })
             opacity: 0.2,
           }}
         />
-        <span className="eyebrow">
-          <Icon icon="ic:round-forum" size={14} /> Forum
-        </span>
         <div className="flex items-center justify-between gap-3" style={{ marginTop: 12 }}>
           <h1 className="page-title" style={{ fontSize: 30 }}>
             Event chat

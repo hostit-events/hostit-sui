@@ -976,38 +976,6 @@ function AdvancedCreate({
           className="glow"
           style={{ width: 360, height: 360, background: p1, top: -150, right: -40, opacity: 0.16 }}
         />
-        {/* Suggest (#93): one tap fills the whole form with a funny AI event. */}
-        <div className="absolute right-0 top-0 z-10">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onSuggestClick}
-                disabled={suggesting}
-                aria-label="Suggest a fun event"
-              >
-                {suggesting ? (
-                  <>
-                    <Icon icon="svg-spinners:3-dots-fade" size={14} /> Conjuring…
-                  </>
-                ) : (
-                  <>
-                    <Icon icon="ph:magic-wand-fill" size={14} />{" "}
-                    {suggestedOnce ? "Suggest another" : "Suggest"}
-                  </>
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              Fill the form with a fun AI-generated event — edit anything before you publish.
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        <span className="eyebrow">
-          <Icon icon="mdi:rocket-launch" size={14} /> Host
-        </span>
         <h1 className="page-title" style={{ marginTop: 12, fontSize: 32 }}>
           Forge an event
         </h1>

@@ -78,9 +78,6 @@ export function MyTickets({ address }: { address: string }) {
   if (tickets.length === 0)
     return (
       <Card className="p-4" style={{ color: "var(--fg3)" }}>
-        <span className="eyebrow">
-          <Icon icon="ion:ticket" size={14} /> Wallet
-        </span>
         <p style={{ marginTop: 10 }}>
           No tickets yet. Tickets you buy or claim show up here.{" "}
           <Link href="/discover" style={{ color: "var(--hi-blue)" }}>Discover events</Link>.
@@ -91,9 +88,6 @@ export function MyTickets({ address }: { address: string }) {
   return (
     <section className="space-y-5">
       <div>
-        <span className="eyebrow">
-          <Icon icon="ion:ticket" size={14} /> Wallet
-        </span>
         <h2 className="page-title" style={{ marginTop: 12, fontSize: 26 }}>
           My tickets <span style={{ color: "var(--fg3)" }}>({tickets.length})</span>
         </h2>
