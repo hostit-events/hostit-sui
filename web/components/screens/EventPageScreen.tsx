@@ -1,28 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import type { Transaction } from "@mysten/sui/transactions";
-import { ENOKI_ENABLED, REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
-import { buyTx, claimFreeTx, getFields, totalWithFee } from "@/lib/ticketing";
-import {
-  useCurrentAccount,
-  useSignAndExecute,
-  useSponsorAndExecute,
-  useSuiQuery,
-} from "@/lib/hooks";
-import { useEventPrices } from "@/lib/events";
-import { useEventMarkets } from "@/lib/markets";
+import { REFUND_PERIOD_MS, coinInfo, fmtAmount } from "@/lib/config";
+import { getFields, totalWithFee } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
+import { useCurrentAccount, useSuiQuery } from "@/lib/hooks";
+import { useEventPrices } from "@/lib/events";
+import { recordRecentlyViewed } from "@/lib/discovery";
+import { useEventMarkets } from "@/lib/markets";
 import { getEventMetadata, type EventMetadata } from "@/lib/metadata";
 import { blobUrl, isBlobId } from "@/lib/walrus";
 import { useIsVerified } from "@/lib/verification";
+import { eventShareUrl } from "@/lib/share";
+import { POAP_TYPE } from "@/lib/poap";
+import {
+  addReview,
+  averageRating,
+  hasReviewed as reviewedByAuthor,
+  listReviews,
+  type Review,
+} from "@/lib/reviews";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
-import { TxLink } from "@/components/TxLink";
 import { EventPoster } from "@/components/EventPoster";
+import { SocialShare } from "@/components/SocialShare";
+import { BuyTicketDialog, type BuyPayload } from "@/components/BuyTicketDialog";
 import { EventMarketsScreen } from "@/components/screens/EventMarketsScreen";
+import { ReviewsSection } from "@/components/screens/ReviewsSection";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +38,8 @@ import type {
   CoinBalance,
   GetAllBalancesParams,
   GetObjectParams,
+  GetOwnedObjectsParams,
+  PaginatedObjectsResponse,
   SuiObjectResponse,
 } from "@mysten/sui/jsonRpc";
 
@@ -48,19 +56,18 @@ function fmtTime(ms: number): string {
 }
 
 // True when `balance` (smallest units) can cover `required` (smallest units,
-// already fee-inclusive). `balance === undefined` means "not loaded yet" → we
-// do NOT block the button on an unknown balance (avoid a flash-disabled CTA on
-// a slow RPC); we only disable once we've confirmed the wallet is short.
+// already fee-inclusive). `balance === undefined` means "not loaded yet" → we do
+// NOT block the button on an unknown balance (avoid a flash-disabled CTA on a slow
+// RPC); we only disable once we've confirmed the wallet is short.
 // Exported for unit testing (see __tests__/EventPageScreen.balance.test.ts).
 export function canAfford(balance: bigint | undefined, required: bigint): boolean {
   if (balance === undefined) return true;
   return balance >= required;
 }
 
-// Inline "you can't afford this" hint shown under a Buy button when the wallet's
-// balance of the selected coin can't cover the fee-inclusive total. Mirrors the
-// markets section's NoUsdcHint, generalized to the priced coin (USDC → Circle
-// faucet; anything else → Sui testnet coins guide).
+// Inline "you can't afford this" hint under a Buy button when the connected
+// wallet's balance of the selected coin can't cover the fee-inclusive total
+// (USDC → Circle faucet; anything else → Sui testnet coins guide).
 function InsufficientCoinHint({ symbol }: { symbol: string }) {
   const isUsdc = symbol === "USDC";
   return (
@@ -107,18 +114,16 @@ export function EventPageScreen({ id }: { id: string }) {
 
   const { pricesBySeq } = useEventPrices();
 
-  const regular = useSignAndExecute();
-  const sponsored = useSponsorAndExecute();
-  const isPending = regular.isPending || sponsored.isPending;
-
   const [meta, setMeta] = useState<EventMetadata | null>(null);
   // Re-render every ~30s so sale-window state (open/ended) stays fresh without a reload.
   const [, setNowTick] = useState(0);
-  // Which coin button is mid-purchase, so only that one shows "Buying…".
-  const [pendingCoin, setPendingCoin] = useState<string | null>(null);
   // Markets opt-in: when no market exists yet, the section is hidden behind a
   // subtle "+ Add a prediction market" link. Clicking it reveals the create UI.
   const [showCreateMarket, setShowCreateMarket] = useState(false);
+  // Buy/claim flow is delegated to BuyTicketDialog (single source of submit
+  // logic, shared with EventQuickViewModal). Opening it sets the payload.
+  const [buyOpen, setBuyOpen] = useState(false);
+  const [buyPayload, setBuyPayload] = useState<BuyPayload | null>(null);
 
   const f = getFields(q.data ?? {});
   const uri = f ? String(f.uri ?? "") : "";
@@ -139,6 +144,64 @@ export function EventPageScreen({ id }: { id: string }) {
   } = useEventMarkets(eventSeqEarly);
   const hasMarket = Boolean(selloutMarketId || rangeMarketId);
 
+  // --- Reviews (GH#58) ------------------------------------------------------
+  // POAP gate: can review iff the connected wallet owns a Poap whose event_id
+  // matches THIS event. Mirrors ForumScreen's ticket gate, swapping the type
+  // filter TICKET_TYPE -> POAP_TYPE. This keeps the permissionless model: the
+  // only "permission" is having attended (holding the event POAP).
+  const poapsQ = useSuiQuery<
+    "getOwnedObjects",
+    GetOwnedObjectsParams,
+    PaginatedObjectsResponse
+  >(
+    "getOwnedObjects",
+    {
+      owner: addr ?? "",
+      filter: { StructType: POAP_TYPE },
+      options: { showContent: true },
+    },
+    { enabled: Boolean(addr) },
+  );
+  const holdsEventPoap = useMemo(() => {
+    if (!addr || !poapsQ.data) return false;
+    return poapsQ.data.data.some((entry) => {
+      const fields = getFields(entry);
+      return fields != null && String(fields.event_id) === id;
+    });
+  }, [addr, poapsQ.data, id]);
+
+  // Persistence is device-local (localStorage) in v1 behind lib/reviews.ts; see
+  // the storage-decision note there. `reviews` is the rendered list, refreshed
+  // from the store on mount/account-change and optimistically after a submit.
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [submittingReview, setSubmittingReview] = useState(false);
+  useEffect(() => {
+    setReviews(listReviews(id));
+  }, [id]);
+  const reviewSummary = useMemo(() => averageRating(reviews), [reviews]);
+  const alreadyReviewed = useMemo(
+    () => (addr ? reviewedByAuthor(id, addr) : false),
+    [addr, id, reviews],
+  );
+  const canReview = Boolean(addr) && holdsEventPoap && !poapsQ.isLoading;
+
+  const submitReview = useCallback(
+    (rating: number, comment: string) => {
+      if (!addr) return;
+      setSubmittingReview(true);
+      try {
+        const next = addReview({ eventId: id, rating, comment, author: addr });
+        setReviews(next);
+        toast.success("Review posted", { description: "Thanks for sharing!" });
+      } catch (e: unknown) {
+        toast.error(humanizeError(e));
+      } finally {
+        setSubmittingReview(false);
+      }
+    },
+    [addr, id],
+  );
+
   useEffect(() => {
     let alive = true;
     if (uri) {
@@ -156,11 +219,14 @@ export function EventPageScreen({ id }: { id: string }) {
     return () => clearInterval(t);
   }, []);
 
-  // Pre-flight: the connected wallet's balances across all coins, so a priced
-  // Buy button can be disabled (with a faucet hint) when the wallet can't cover
-  // the fee-inclusive total. Declared with the other hooks (before the early
-  // returns below) so hook order stays stable. getAllBalances covers multiple
-  // priced coins in one call; gated by `enabled` until a wallet is connected.
+  // Record this event in the device-local "recently viewed" list (GH#56).
+  useEffect(() => {
+    recordRecentlyViewed(id);
+  }, [id]);
+
+  // 016 pre-flight: the connected wallet's balances across all coins, so a priced
+  // Buy button can be disabled (with a faucet hint) when the wallet can't cover the
+  // fee-inclusive total. A hook → must run before the early returns below.
   const balancesQ = useSuiQuery<"getAllBalances", GetAllBalancesParams, CoinBalance[]>(
     "getAllBalances",
     { owner: addr ?? "" },
@@ -212,11 +278,13 @@ export function EventPageScreen({ id }: { id: string }) {
   const soldOut = remaining <= 0n;
   const now = Date.now();
   const windowOpen = now >= purchaseStartMs && now <= endMs;
-  const canAct = Boolean(addr) && !soldOut && windowOpen;
+  // Sale is purchasable when open & not sold out — independent of connection.
+  // BuyTicketDialog owns the connect step, so an unconnected buyer can still
+  // open it ("Connect to buy").
+  const canPurchase = !soldOut && windowOpen;
   const isOrganizer = Boolean(addr) && addr === organizer;
 
   const prices = pricesBySeq.get(eventSeq) ?? [];
-
   const balanceByCoin = new Map<string, bigint>(
     (balancesQ.data ?? []).map((b) => [b.coinType, BigInt(b.totalBalance)]),
   );
@@ -232,26 +300,34 @@ export function EventPageScreen({ id }: { id: string }) {
       ? "Free"
       : "—";
 
-  async function run(tx: Transaction, coinKey?: string) {
-    if (!addr) return;
-    setPendingCoin(coinKey ?? null);
-    try {
-      const out = ENOKI_ENABLED
-        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
-        : await regular.mutateAsync({ transaction: tx });
-      toast.success(isFree ? "Ticket claimed" : "Ticket purchased", {
-        description: <TxLink digest={out.digest} chars={10} />,
-      });
-      q.refetch();
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-    } finally {
-      setPendingCoin(null);
-    }
+  // BuyTicketDialog owns connect → review → mint → done, so we no longer gate on
+  // `addr`: an unconnected buyer lands on the dialog's connect step.
+  function openClaim() {
+    setBuyPayload({
+      kind: "free",
+      eventId: id,
+      eventName: name,
+      remaining,
+      maxPerUser: BigInt(maxPerUser),
+    });
+    setBuyOpen(true);
+  }
+  function openBuy(coinType: string, priceUnits: bigint) {
+    setBuyPayload({
+      kind: "paid",
+      eventId: id,
+      eventName: name,
+      coinType,
+      priceUnits,
+      remaining,
+      maxPerUser: BigInt(maxPerUser),
+    });
+    setBuyOpen(true);
   }
 
+  // Label for a closed sale (sold out / wrong window). When the sale is open the
+  // CTA shows "Connect to buy" / "Buy · …" / "Claim free ticket" instead.
   function statusLabel(): string {
-    if (!addr) return "Connect wallet to buy";
     if (soldOut) return "Sold out";
     if (now < purchaseStartMs) return "Sale not open yet";
     if (now > endMs) return "Event ended";
@@ -282,6 +358,9 @@ export function EventPageScreen({ id }: { id: string }) {
               <Icon icon="streamline:star-badge-solid" size={11} /> Verified
             </Badge>
           )}
+        </div>
+        <div className="absolute" style={{ top: 14, right: 14 }}>
+          <SocialShare title={name} url={eventShareUrl(id)} variant="icon" />
         </div>
         <div
           className="absolute mono"
@@ -375,7 +454,7 @@ export function EventPageScreen({ id }: { id: string }) {
                 title="Refunds"
                 value={
                   isRefundable
-                    ? `Refundable for ${Math.round(REFUND_PERIOD_MS / 86_400_000)} days after the event ends — the 3% platform fee is non-refundable`
+                    ? `Refundable for ${Math.round(REFUND_PERIOD_MS / 86_400_000)} days after the event ends (3% fee non-refundable)`
                     : "Non-refundable"
                 }
               />
@@ -417,6 +496,19 @@ export function EventPageScreen({ id }: { id: string }) {
               <Icon icon="mdi:plus" size={15} /> Add a prediction market
             </Button>
           )}
+
+          {/* Reviews — POAP-gated (only attendees who hold this event's POAP
+              can post). Persistence is device-local in v1 (see lib/reviews.ts);
+              the gate itself is a real on-chain getOwnedObjects read. */}
+          <ReviewsSection
+            reviews={reviews}
+            averageRating={reviewSummary.avg}
+            reviewCount={reviewSummary.count}
+            canReview={canReview}
+            hasReviewed={alreadyReviewed}
+            submitting={submittingReview}
+            onSubmit={submitReview}
+          />
         </div>
 
         {/* ---- Sticky ticket panel ---- */}
@@ -454,15 +546,11 @@ export function EventPageScreen({ id }: { id: string }) {
               </div>
             )}
 
-            {/* Buy / claim actions */}
+            {/* Buy / claim actions — open BuyTicketDialog (connect + submit live there) */}
             {isFree ? (
-              <Button
-                className="w-full"
-                disabled={!canAct || isPending}
-                onClick={() => run(claimFreeTx({ eventId: id, recipient: addr! }))}
-              >
+              <Button className="w-full" disabled={!canPurchase} onClick={openClaim}>
                 <Icon icon="ion:ticket" size={16} />
-                {isPending ? "Claiming…" : canAct ? "Claim free ticket" : statusLabel()}
+                {!canPurchase ? statusLabel() : addr ? "Claim free ticket" : "Connect to claim"}
               </Button>
             ) : prices.length === 0 ? (
               <Badge variant="outline" role="status">Price not set by organizer</Badge>
@@ -471,8 +559,9 @@ export function EventPageScreen({ id }: { id: string }) {
                 {prices.map((p) => {
                   const ci = coinInfo(p.coinType);
                   const total = totalWithFee(BigInt(p.price));
-                  const buying = isPending && pendingCoin === p.coinType;
-                  // undefined while balances load → don't block (canAfford treats it as ok).
+                  // 016: undefined balance (loading / disconnected) is treated as
+                  // affordable so we don't flash-disable; only a confirmed-short
+                  // connected wallet is blocked, with a faucet hint.
                   const bal = balancesQ.data ? (balanceByCoin.get(p.coinType) ?? 0n) : undefined;
                   const affordable = canAfford(bal, total);
                   return (
@@ -481,33 +570,22 @@ export function EventPageScreen({ id }: { id: string }) {
                         <TooltipTrigger asChild>
                           <Button
                             className="w-full"
-                            disabled={!canAct || isPending || !affordable}
-                            onClick={() =>
-                              run(
-                                buyTx({
-                                  eventId: id,
-                                  coinType: p.coinType,
-                                  priceUnits: BigInt(p.price),
-                                  recipient: addr!,
-                                  sponsored: ENOKI_ENABLED,
-                                }),
-                                p.coinType,
-                              )
-                            }
+                            disabled={!canPurchase || !affordable}
+                            onClick={() => openBuy(p.coinType, BigInt(p.price))}
                           >
                             <Icon icon="ion:ticket" size={16} />
-                            {buying
-                              ? "Buying…"
-                              : canAct
+                            {!canPurchase
+                              ? statusLabel()
+                              : addr
                                 ? `Buy · ${fmtAmount(total, ci.decimals)} ${ci.symbol}`
-                                : statusLabel()}
+                                : "Connect to buy"}
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
                           Total incl. 3% fee: {fmtAmount(total, ci.decimals)} {ci.symbol}
                         </TooltipContent>
                       </Tooltip>
-                      {canAct && !affordable && <InsufficientCoinHint symbol={ci.symbol} />}
+                      {Boolean(addr) && !affordable && <InsufficientCoinHint symbol={ci.symbol} />}
                     </div>
                   );
                 })}
@@ -517,11 +595,6 @@ export function EventPageScreen({ id }: { id: string }) {
               </div>
             )}
 
-            {!addr && (
-              <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
-                Connect a wallet to buy or claim.
-              </div>
-            )}
             {now < purchaseStartMs && (
               <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
                 Sales open {fmtDate(purchaseStartMs)} at {fmtTime(purchaseStartMs)}.
@@ -538,6 +611,13 @@ export function EventPageScreen({ id }: { id: string }) {
           </Card>
         </div>
       </div>
+
+      <BuyTicketDialog
+        open={buyOpen}
+        onOpenChange={setBuyOpen}
+        payload={buyPayload}
+        onSuccess={() => q.refetch()}
+      />
     </div>
   );
 }

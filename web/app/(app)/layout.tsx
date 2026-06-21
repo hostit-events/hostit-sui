@@ -2,6 +2,7 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { MobileTabBar } from "@/components/MobileTabBar";
 import { TestnetBanner } from "@/components/TestnetBanner";
+import { DiscoveryCommand } from "@/components/discovery/DiscoveryCommand";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +13,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 w-full mx-auto max-w-[1180px] px-5 sm:px-8 pt-8 pb-24 md:pb-8">{children}</main>
       <Footer />
       <MobileTabBar />
+      {/* App-level Cmd+K palette + calendar + shortcuts (self-contained island). */}
+      <DiscoveryCommand />
     </div>
   );
 }

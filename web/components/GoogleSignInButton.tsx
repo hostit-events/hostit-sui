@@ -14,10 +14,13 @@ export function GoogleSignInButton({
   className,
   label = "Continue with Google",
   style,
+  returnTo,
 }: {
   className?: string;
   label?: string;
   style?: React.CSSProperties;
+  /** Where `/auth` should bounce after the session lands (e.g. the current event URL). */
+  returnTo?: string;
 }) {
   const signIn = useGoogleSignIn();
   const [busy, setBusy] = useState(false);
@@ -31,7 +34,7 @@ export function GoogleSignInButton({
       onClick={async () => {
         setBusy(true);
         try {
-          await signIn();
+          await signIn(returnTo);
         } catch {
           setBusy(false);
         }

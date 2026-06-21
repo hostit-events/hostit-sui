@@ -1,24 +1,131 @@
+import Link from "next/link";
 import { NETWORK, PACKAGE_ID, ENOKI_ENABLED } from "@/lib/config";
+import { Icon } from "./Icon";
+import { Logo } from "./Logo";
 
 export function Footer() {
   return (
-    <footer className="mt-10 hidden border-t md:block">
-      <div className="mx-auto flex max-w-[1180px] flex-col justify-between gap-4 px-5 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:px-8">
-        <div className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/logo-white.png" alt="HostIt" className="h-5 w-auto opacity-80" />
-          <span>Events made easy</span>
+    <footer className="mt-auto hidden border-t bg-background/60 backdrop-blur md:block">
+      <div className="mx-auto max-w-[1340px] px-4 py-8 sm:px-6">
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Brand + blurb */}
+          <div className="space-y-3">
+            <Link href="/" className="flex items-center gap-2" aria-label="HostIt home">
+              <Logo size={20} className="opacity-90" />
+            </Link>
+            <p className="text-xs text-muted-foreground">
+              Events made easy. Mint tickets, check in, and claim
+              proof-of-attendance NFTs on the Sui blockchain.
+            </p>
+          </div>
+
+          {/* Platform */}
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Platform
+            </h3>
+            <ul className="space-y-2 text-sm">
+              <li>
+                <Link
+                  href="/discover"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Discover events
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/wallet"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  My tickets
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/create"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Create event
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Resources */}
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Resources
+            </h3>
+            <ul className="space-y-2 text-sm">
+              <li>
+                <a
+                  href="https://docs.sui.io"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Icon icon="ph:globe-simple-fill" size={12} />
+                  Sui docs
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://github.com/hostit-events/hostit-sui"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Icon icon="mdi:github" size={12} />
+                  Open source
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://docs.enoki.mystenlabs.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Icon icon="mdi:rocket-launch" size={12} />
+                  Gasless onboarding
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          {/* Network — fed from real lib/config values, never hardcoded */}
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Network
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2 rounded-lg border bg-card/40 px-2.5 py-1.5">
+                <span className="text-muted-foreground">Network</span>
+                <span className="flex items-center gap-1.5 text-xs font-medium">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  {NETWORK}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 rounded-lg border bg-card/40 px-2.5 py-1.5">
+                <span className="text-muted-foreground">Package</span>
+                <span className="font-mono text-xs font-medium">
+                  {PACKAGE_ID.slice(0, 10)}…{PACKAGE_ID.slice(-4)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 rounded-lg border bg-card/40 px-2.5 py-1.5">
+                <span className="text-muted-foreground">Gas</span>
+                <span className="text-xs font-medium">
+                  {ENOKI_ENABLED ? "sponsored gas on" : "browser wallets"}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
-          <span>net {NETWORK}</span>
-          <span className="opacity-40">·</span>
-          <span>
-            pkg {PACKAGE_ID.slice(0, 10)}…{PACKAGE_ID.slice(-4)}
-          </span>
-          <span className="opacity-40">·</span>
-          <span className={ENOKI_ENABLED ? "text-foreground" : undefined}>
-            {ENOKI_ENABLED ? "sponsored gas on" : "browser wallets"}
-          </span>
+
+        <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t pt-6 text-xs text-muted-foreground sm:flex-row">
+          <p>© {new Date().getFullYear()} HostIt. Built on Sui.</p>
+          <p className="text-muted-foreground/80">Permissionless ticketing — anyone can host.</p>
         </div>
       </div>
     </footer>
