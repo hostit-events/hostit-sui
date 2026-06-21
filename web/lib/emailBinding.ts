@@ -6,7 +6,7 @@
 // stored on Walrus; only the opaque server HMAC hash is registered on-chain.
 
 import type { Transaction } from "@mysten/sui/transactions";
-import { toBase64, fromBase64 } from "@mysten/sui/utils";
+import { toBase64, fromBase64, toHex } from "@mysten/sui/utils";
 import { useDAppKit } from "@mysten/dapp-kit-react";
 import { useEnokiFlow, useZkLogin } from "@mysten/enoki/react";
 import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
@@ -144,6 +144,7 @@ async function finishBind(a: FinishArgs): Promise<void> {
     ...(a.baseProfile ?? {}),
     v: 1,
     emailBlobId,
+    emailHash: toHex(Uint8Array.from(a.hashBytes)),
     emailHashVersion: a.version,
     emailSource: a.source,
   };

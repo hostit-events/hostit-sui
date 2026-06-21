@@ -18,6 +18,9 @@ export interface ProfileEnvelope {
   location?: string;
   /** Walrus blob id of the Seal-encrypted email envelope (EMAIL_NS_TAG ‖ addr). */
   emailBlobId?: string;
+  /** Opaque registry hash (hex) — owner-gated, so safe to keep here; lets the
+   *  owner unregister/erase without re-deriving it server-side. */
+  emailHash?: string;
   emailHashVersion?: number;
   emailSource?: "google" | "wallet";
   /** Opt-in: discoverable by an exact email-hash lookup (v2 search). */
