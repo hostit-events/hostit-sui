@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "smoke:sponsor": "bun run scripts/sponsor-smoke.ts"
+    "smoke:sponsor": "bun run scripts/sponsor-smoke.ts",
+    "smoke:events": "bun run scripts/create-events-smoke.ts"
   },
   "dependencies": {
     "@marsidev/react-turnstile": "^1.5.3",
