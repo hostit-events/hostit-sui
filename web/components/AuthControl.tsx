@@ -63,7 +63,10 @@ export function AuthControl() {
               aria-label="Sign out"
               onClick={async () => {
                 await signOut();
-                router.replace("/");
+                // Stay in the app on the current route — screens render their own
+                // signed-out / connect state; refresh re-renders without navigating
+                // away to the landing page.
+                router.refresh();
               }}
             >
               <Icon icon="ic:round-logout" size={18} />
@@ -159,7 +162,9 @@ function WalletAccount({ address }: { address: string }) {
         <DropdownMenuItem
           onSelect={() => {
             dAppKit.disconnectWallet().catch(() => {});
-            router.replace("/");
+            // Stay in the app on the current route (see sign-out above) instead of
+            // bouncing to the landing page.
+            router.refresh();
           }}
         >
           <Icon icon="ic:round-logout" size={16} />
