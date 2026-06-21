@@ -18,7 +18,7 @@ import type {
 } from "@mysten/sui/jsonRpc";
 
 // localStorage key for read/dismissed inbox state. Distinct from SettingsScreen's
-// `hostit:notifs` (preference toggles) and `hostit:profile`.
+// `hostit:notifs` (preference toggles).
 const INBOX_KEY = "hostit:notif-inbox";
 
 export type NotificationType = "purchase" | "publish" | "reminder";

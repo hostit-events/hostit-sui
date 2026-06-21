@@ -4,8 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCurrentAccount, useCurrentClient, useSignAndExecute, useSponsorAndExecute } from "@/lib/hooks";
 import { useSuiNSNames } from "@/lib/verification";
-import { sealEncrypt, sealDecrypt, createSessionKey, approveSelf } from "@/lib/seal";
-import { storeBlob, readBlob, storeFile, storeJson } from "@/lib/walrus";
+import { storeFile, storeJson } from "@/lib/walrus";
 import { CATEGORIES } from "@/lib/data";
 import { EMAIL_ENABLED, ENOKI_ENABLED } from "@/lib/config";
 import { useProfile } from "@/lib/profile";
@@ -29,14 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { toBase64, fromBase64, fromHex } from "@mysten/sui/utils";
-import { useDAppKit } from "@mysten/dapp-kit-react";
-import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
-
-// ── localStorage keys ──────────────────────────────────────────────
-const PROFILE_KEY = "hostit:profile";
-const KYC_KEY = "hostit:kyc";
+import { fromHex } from "@mysten/sui/utils";
 
 // Inline helper: safe JSON read from localStorage (SSR-safe, never throws).
 function lsRead<T>(key: string, fallback: T): T {
@@ -57,16 +49,6 @@ function lsWrite(key: string, value: unknown) {
   }
 }
 
-// Seal envelope persisted on Walrus: { id, ct } where ct = base64(ciphertext).
-interface KycEnvelope {
-  id: string;
-  ct: string;
-}
-
-interface Profile {
-  name: string;
-  location: string;
-}
 interface Notifs {
   events: boolean;
   forum: boolean;
@@ -83,8 +65,6 @@ const NOTIF_ROWS: { id: keyof Notifs; label: string; sub: string; icon: string }
 
 const NAV = [
   { id: "account", label: "Account", icon: "ic:round-person" },
-  { id: "email", label: "Email", icon: "ic:round-mail" },
-  { id: "kyc", label: "Verification", icon: "ph:identification-card-fill" },
   { id: "interests", label: "Interests", icon: "ic:round-favorite" },
   { id: "notifications", label: "Notifications", icon: "ic:round-notifications" },
   { id: "security", label: "Security", icon: "ic:round-shield" },
@@ -95,28 +75,17 @@ type Tab = (typeof NAV)[number]["id"];
 export function SettingsScreen() {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
-  const dAppKit = useDAppKit();
   const suiClient = useCurrentClient();
   const names = useSuiNSNames(useMemo(() => (addr ? [addr] : []), [addr]));
   const suiNS = addr ? names.get(addr) ?? null : null;
 
   const [tab, setTab] = useState<Tab>("account");
 
-  // ── Account ──
-  const [profile, setProfile] = useState<Profile>({ name: "", location: "" });
-
   // ── Interests ──
   const [interests, setInterests] = useState<string[]>([]);
 
   // ── Notifications ──
   const [notifs, setNotifs] = useState<Notifs>({ events: true, forum: true, poap: true, marketing: false });
-
-  // ── KYC / Seal ──
-  const [legalName, setLegalName] = useState("");
-  const [idNumber, setIdNumber] = useState("");
-  const [kycBlobId, setKycBlobId] = useState<string | null>(null);
-  const [kycBusy, setKycBusy] = useState(false);
-  const [kycDecrypted, setKycDecrypted] = useState<{ legalName?: string; idNumber?: string } | null>(null);
 
   // ── Account email + public profile (GH#96) ──
   const isGoogle = useIsGoogleSession();
@@ -214,19 +183,14 @@ export function SettingsScreen() {
 
   // hydrate from localStorage on mount
   useEffect(() => {
-    setProfile(lsRead<Profile>(PROFILE_KEY, { name: "", location: "" }));
     setInterests(lsRead<string[]>("hostit:interests", []));
     setNotifs(lsRead<Notifs>("hostit:notifs", { events: true, forum: true, poap: true, marketing: false }));
-    setKycBlobId(lsRead<string | null>(KYC_KEY, null));
+    // Purge stale data from the removed local-profile + verification sections (#111).
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("hostit:profile");
+      window.localStorage.removeItem("hostit:kyc");
+    }
   }, []);
-
-  function saveProfile() {
-    const trimmed: Profile = { name: profile.name.trim(), location: profile.location.trim() };
-    setProfile(trimmed);
-    lsWrite(PROFILE_KEY, trimmed);
-    if (!trimmed.name && !trimmed.location) return;
-    toast.success("Profile saved");
-  }
 
   function toggleInterest(next: string[]) {
     lsWrite("hostit:interests", next);
@@ -241,85 +205,6 @@ export function SettingsScreen() {
     });
   }
 
-  // Encrypt KYC PII with Seal → wrap as envelope → store on Walrus → save blobId.
-  async function saveKyc() {
-    if (!addr) {
-      toast.error("Connect a wallet first.");
-      return;
-    }
-    if (!legalName.trim() && !idNumber.trim()) {
-      toast.error("Enter your legal name or ID number.");
-      return;
-    }
-    setKycBusy(true);
-    const tid = toast.loading("Encrypting with Seal…");
-    try {
-      const payload = new TextEncoder().encode(
-        JSON.stringify({ legalName: legalName.trim(), idNumber: idNumber.trim() }),
-      );
-      const { id, ciphertext } = await sealEncrypt(suiClient, addr, payload);
-      const envelope: KycEnvelope = { id, ct: toBase64(ciphertext) };
-      toast.loading("Storing encrypted blob on Walrus…", { id: tid });
-      const blobId = await storeBlob(new TextEncoder().encode(JSON.stringify(envelope)));
-      lsWrite(KYC_KEY, blobId);
-      setKycBlobId(blobId);
-      setKycDecrypted(null);
-      setLegalName("");
-      setIdNumber("");
-      toast.success("Saved", {
-        id: tid,
-        description: "Your details are encrypted end-to-end — only you can decrypt them.",
-      });
-    } catch (e) {
-      toast.error(
-        `Could not save: ${e instanceof Error ? e.message : "Seal/Walrus error"}. Please try again.`,
-        { id: tid },
-      );
-    } finally {
-      setKycBusy(false);
-    }
-  }
-
-  // Read envelope from Walrus → SessionKey (wallet personal-message sign) → Seal decrypt.
-  async function decryptKyc() {
-    if (!addr) {
-      toast.error("Connect a wallet first.");
-      return;
-    }
-    if (!kycBlobId) {
-      toast.error("Nothing encrypted yet.");
-      return;
-    }
-    setKycBusy(true);
-    const tid = toast.loading("Fetching encrypted blob…");
-    try {
-      const raw = await readBlob(kycBlobId);
-      const env = JSON.parse(new TextDecoder().decode(raw)) as KycEnvelope;
-      toast.loading("Approve the signature request to unlock…", { id: tid });
-      const signer = new CurrentAccountSigner(dAppKit);
-      const sessionKey = await createSessionKey(suiClient, addr, async (message: Uint8Array) => {
-        const { signature } = await signer.signPersonalMessage(message);
-        return { signature };
-      });
-      const plaintext = await sealDecrypt(suiClient, sessionKey, fromBase64(env.ct), (tx) =>
-        approveSelf(tx, env.id),
-      );
-      const parsed = JSON.parse(new TextDecoder().decode(plaintext)) as {
-        legalName?: string;
-        idNumber?: string;
-      };
-      setKycDecrypted(parsed);
-      toast.success("Decrypted — visible only in this session.", { id: tid });
-    } catch (e) {
-      toast.error(
-        `Could not decrypt: ${e instanceof Error ? e.message : "Seal session/policy error"}.`,
-        { id: tid },
-      );
-    } finally {
-      setKycBusy(false);
-    }
-  }
-
   return (
     <div className="space-y-8 screen-in">
       <header className="relative">
@@ -328,9 +213,9 @@ export function SettingsScreen() {
           style={{ width: 360, height: 360, background: "rgba(0,124,250,.4)", top: -150, right: -40, opacity: 0.2 }}
         />
         <h1 className="page-title" style={{ marginTop: 12, fontSize: 34 }}>
-          Your account
+          Settings
         </h1>
-        <p className="page-sub">Profile, interests, notifications and encrypted verification.</p>
+        <p className="page-sub">Profile, email, interests and notifications.</p>
       </header>
 
       {/* Mobile: the header is hidden, so the account sign-in/out lives here
@@ -358,42 +243,8 @@ export function SettingsScreen() {
         {/* panel */}
         <div className="space-y-6" style={{ minWidth: 0 }}>
           <TabsContent value="account">
-            <Card className="space-y-5 px-4">
-              <div>
-                <div className="section-label">Profile</div>
-                <p className="page-sub" style={{ fontSize: 13 }}>
-                  Saved locally on this device.
-                </p>
-              </div>
-              <div className="field">
-                <Label htmlFor="settings-profile-name">Display name</Label>
-                <Input
-                  id="settings-profile-name"
-                  placeholder="Satoshi"
-                  maxLength={80}
-                  value={profile.name}
-                  onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <Label htmlFor="settings-profile-location">Location</Label>
-                <Input
-                  id="settings-profile-location"
-                  placeholder="Lisbon, PT"
-                  maxLength={80}
-                  value={profile.location}
-                  onChange={(e) => setProfile((p) => ({ ...p, location: e.target.value }))}
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <Button onClick={saveProfile}>
-                  <Icon icon="ic:round-save" size={16} /> Save
-                </Button>
-              </div>
-            </Card>
-
             {/* Public profile (on-chain): username + avatar used across HostIt. */}
-            <Card className="space-y-5 px-4" style={{ marginTop: 24 }}>
+            <Card className="space-y-5 px-4">
               <div>
                 <div className="section-label">Public profile</div>
                 <p className="page-sub" style={{ fontSize: 13 }}>
@@ -441,10 +292,9 @@ export function SettingsScreen() {
                 </>
               )}
             </Card>
-          </TabsContent>
 
-          <TabsContent value="email">
-            <Card className="space-y-5 px-4">
+            {/* Email (GH#96): Seal-encrypted; an organizer sees it only on opt-in. */}
+            <Card className="space-y-5 px-4" style={{ marginTop: 24 }}>
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <div className="section-label">Email</div>
@@ -514,93 +364,6 @@ export function SettingsScreen() {
                     with its Walrus TTL; an organizer you already shared with keeps what they decrypted.
                   </p>
                 </div>
-              )}
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="kyc">
-            <Card className="space-y-5 px-4">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <div className="section-label">Identity verification</div>
-                  <p className="page-sub" style={{ fontSize: 13 }}>
-                    Optional. Encrypted on your device, stored on Walrus — never readable by HostIt.
-                  </p>
-                </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="secondary">
-                      <Icon icon="ph:lock-key-fill" size={13} /> Encrypted with Seal
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>Threshold-encrypted with Mysten Seal</TooltipContent>
-                </Tooltip>
-              </div>
-
-              {!addr ? (
-                <div className="mono">Connect a wallet to manage verification.</div>
-              ) : (
-                <>
-                  <div className="field">
-                    <Label htmlFor="settings-kyc-legal-name">Full legal name</Label>
-                    <Input
-                      id="settings-kyc-legal-name"
-                      placeholder="As shown on your government ID"
-                      value={legalName}
-                      onChange={(e) => setLegalName(e.target.value)}
-                      disabled={kycBusy}
-                    />
-                  </div>
-                  <div className="field">
-                    <Label htmlFor="settings-kyc-id-number">ID number</Label>
-                    <Input
-                      id="settings-kyc-id-number"
-                      placeholder="Passport / national ID number"
-                      value={idNumber}
-                      onChange={(e) => setIdNumber(e.target.value)}
-                      disabled={kycBusy}
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Button onClick={saveKyc} disabled={kycBusy}>
-                      <Icon icon="ph:lock-key-fill" size={16} /> Save encrypted
-                    </Button>
-                    <Button variant="outline" onClick={decryptKyc} disabled={kycBusy || !kycBlobId}>
-                      <Icon icon="ph:lock-key-open-fill" size={16} /> Decrypt &amp; view
-                    </Button>
-                  </div>
-
-                  {kycBlobId && (
-                    <Card className="px-3.5 py-3">
-                      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--fg2)" }}>
-                        <Icon icon="ph:cloud-check-fill" size={15} style={{ color: "var(--hi-teal)" }} />
-                        Encrypted record on Walrus
-                      </div>
-                      <div className="mono" style={{ marginTop: 6, wordBreak: "break-all" }}>
-                        {kycBlobId}
-                      </div>
-                    </Card>
-                  )}
-
-                  {kycDecrypted && (
-                    <Card className="space-y-2 px-4 py-3.5" style={{ borderColor: "var(--color-verified)" }}>
-                      <div className="section-label">
-                        <Icon icon="ph:lock-key-open-fill" size={13} /> Decrypted (this session)
-                      </div>
-                      <div className="text-sm">
-                        <span style={{ color: "var(--fg3)" }}>Legal name: </span>
-                        <span style={{ color: "var(--fg1)" }}>{kycDecrypted.legalName || "—"}</span>
-                      </div>
-                      <div className="text-sm">
-                        <span style={{ color: "var(--fg3)" }}>ID number: </span>
-                        <span className="mono" style={{ color: "var(--fg1)" }}>
-                          {kycDecrypted.idNumber || "—"}
-                        </span>
-                      </div>
-                    </Card>
-                  )}
-                </>
               )}
             </Card>
           </TabsContent>
