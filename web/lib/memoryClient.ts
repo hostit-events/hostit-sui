@@ -29,6 +29,7 @@ import { useEnokiFlow, useZkLogin } from "@mysten/enoki/react";
 import { buildMemoryChallenge } from "@/lib/memwalChallenge";
 import { ENOKI_NETWORK } from "@/lib/auth";
 import { getTurnstileToken } from "@/lib/turnstileClient";
+import type { SuggestResponse } from "@/lib/suggest";
 
 /** A single recalled organizer memory (mirrors the relayer's RecallMemory). */
 export interface RecalledMemory {
@@ -260,4 +261,27 @@ export function useOrganizerMemory() {
   );
 
   return { enabled, owner, recall, remember, draft };
+}
+
+/**
+ * Ask /api/create-assist (kind: "suggest") to invent a funny event concept to
+ * fill the create form (#93). Needs no wallet/memory envelope — just a
+ * proof-of-browser Turnstile token. Returns { suggestion, sourced }; throws on a
+ * hard error so the caller can toast it. The server already coerces the model
+ * output to a safe shape; callers should re-`coerceSuggestion` before applying.
+ */
+export async function suggestEvent(): Promise<SuggestResponse> {
+  const turnstileToken = await getTurnstileToken();
+  const res = await fetch("/api/create-assist", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "suggest", turnstileToken }),
+  });
+  const j = (await res.json().catch(() => ({}))) as SuggestResponse | { error?: string };
+  if (!res.ok || !(j as SuggestResponse).suggestion) {
+    throw new Error(
+      (j as { error?: string }).error ?? `Could not suggest an event (${res.status}).`,
+    );
+  }
+  return j as SuggestResponse;
 }
