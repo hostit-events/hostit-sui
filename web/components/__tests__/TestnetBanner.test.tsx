@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // NETWORK is a module-level const fixed at import time from
@@ -28,6 +28,14 @@ describe("TestnetBanner", () => {
   it("renders nothing on mainnet", async () => {
     const { container } = await renderWithNetwork("mainnet");
     expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("collapses out of the a11y tree when dismissed", async () => {
+    await renderWithNetwork("testnet");
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+    // The banner sets aria-hidden when dismissed, so it leaves the a11y tree.
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
