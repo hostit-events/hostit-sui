@@ -11,12 +11,12 @@
 
 [**▶ Live demo — sui.hostit.events**](https://sui.hostit.events) · [Move package](#deploy) · [Built for the Walrus track](#walrus)
 
-<a href="https://sui.hostit.events"><img alt="Sui testnet" height="20" src=".github/badges/sui.png"></a>
-<a href="#walrus"><img alt="Walrus" height="20" src=".github/badges/walrus.png"></a>
-<a href="#seal"><img alt="Seal" height="20" src=".github/badges/seal.png"></a>
-<a href="#features"><img alt="Enoki" height="20" src=".github/badges/enoki.png"></a>
-<a href="#move"><img alt="Move 2024" height="20" src=".github/badges/move.png"></a>
-<a href="#license"><img alt="License: MIT" height="20" src=".github/badges/license.png"></a>
+<a href="https://sui.hostit.events"><img alt="Sui testnet" height="20" src=".github/badges/sui.svg"></a>
+<a href="#walrus"><img alt="Walrus" height="20" src=".github/badges/walrus.svg"></a>
+<a href="#seal"><img alt="Seal" height="20" src=".github/badges/seal.svg"></a>
+<a href="#features"><img alt="Enoki" height="20" src=".github/badges/enoki.svg"></a>
+<a href="#move"><img alt="Move 2024" height="20" src=".github/badges/move.svg"></a>
+<a href="#license"><img alt="License: MIT" height="20" src=".github/badges/license.svg"></a>
 
 </div>
 
