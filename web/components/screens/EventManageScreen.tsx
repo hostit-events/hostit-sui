@@ -1337,6 +1337,18 @@ function CancelZone({ ctx, isCancelled }: { ctx: DeckCtx; isCancelled: boolean }
 
 // === Opted-in attendee emails (organizer decrypt via Seal) ===
 
+/** Trigger a client-side CSV download (no server round-trip). */
+function downloadCsv(rows: { address: string; email: string }[], filename: string) {
+  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const csv = ["address,email", ...rows.map((r) => `${esc(r.address)},${esc(r.email)}`)].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function AttendeeEmailsCard({ ctx }: { ctx: DeckCtx }) {
   const grantsQ = useAllEvents(EV_EMAIL_GRANT_CREATED);
   const client = useCurrentClient();
@@ -1396,6 +1408,17 @@ function AttendeeEmailsCard({ ctx }: { ctx: DeckCtx }) {
     }
   }
 
+  function exportCsv() {
+    const rows = grants
+      .map((g) => ({ address: g.user, email: emails[g.user] ?? "" }))
+      .filter((r) => r.email.includes("@"));
+    if (rows.length === 0) {
+      toast.message("Reveal the emails first, then export.");
+      return;
+    }
+    downloadCsv(rows, `attendees-${ctx.eventId.slice(0, 8)}.csv`);
+  }
+
   if (!EMAIL_ENABLED || grants.length === 0) return null;
 
   return (
@@ -1408,9 +1431,16 @@ function AttendeeEmailsCard({ ctx }: { ctx: DeckCtx }) {
             Decrypts in your browser via Seal — one signature.
           </div>
         </div>
-        <Button size="sm" disabled={busy} onClick={reveal}>
-          {busy ? "Decrypting…" : Object.keys(emails).length ? "Re-decrypt" : "Reveal emails"}
-        </Button>
+        <div className="flex gap-2">
+          {Object.keys(emails).length > 0 && (
+            <Button size="sm" variant="outline" onClick={exportCsv}>
+              <Icon icon="ph:download-simple" size={14} /> Export CSV
+            </Button>
+          )}
+          <Button size="sm" disabled={busy} onClick={reveal}>
+            {busy ? "Decrypting…" : Object.keys(emails).length ? "Re-decrypt" : "Reveal emails"}
+          </Button>
+        </div>
       </div>
       {Object.keys(emails).length > 0 && (
         <div style={{ display: "grid", gap: 6 }}>

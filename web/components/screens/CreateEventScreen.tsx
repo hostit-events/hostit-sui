@@ -4,11 +4,14 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ENOKI_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
+import { ENOKI_ENABLED, EMAIL_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, createEventWithPriceTx } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
 import { putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
 import { storeFile } from "@/lib/walrus";
+import { useProfile } from "@/lib/profile";
+import { useIsGoogleSession } from "@/lib/auth";
+import { EmailCaptureDialog } from "@/components/EmailCaptureDialog";
 import {
   useCurrentAccount,
   useCurrentClient,
@@ -303,6 +306,13 @@ function AdvancedCreate({
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
   const txPending = regular.isPending || sponsored.isPending;
+
+  // Email gate (GH#96): an organizer should be reachable, so publishing requires
+  // a bound email — APP-LAYER only (the on-chain create_event stays permissionless).
+  const profile = useProfile(addr);
+  const emailBound = Boolean(profile.data?.emailBlobId);
+  const isGoogle = useIsGoogleSession();
+  const [bindOpen, setBindOpen] = useState(false);
 
   // Id of the draft this form represents. Set when resuming, and overwritten with
   // the entry id returned by each "Save as draft" so re-saves REPLACE (no dupes).
@@ -674,6 +684,10 @@ function AdvancedCreate({
 
   async function publish() {
     if (!addr) return setErr("Connect a wallet to publish.");
+    if (EMAIL_ENABLED && !emailBound) {
+      setBindOpen(true);
+      return setErr("Add an email to your account before publishing — attendees need a way to reach you.");
+    }
     // re-validate everything up to publish
     for (const s of [0, 1]) {
       const e = stepError(s);
@@ -1561,6 +1575,10 @@ function AdvancedCreate({
                 </AnimateIcon>
               ) : !addr ? (
                 <Badge variant="outline">Connect a wallet to publish</Badge>
+              ) : EMAIL_ENABLED && !emailBound ? (
+                <Button size="lg" onClick={() => setBindOpen(true)}>
+                  <Icon icon="ic:round-mail" size={18} /> Add email to publish
+                </Button>
               ) : (
                 <Button
                   size="lg"
@@ -1574,6 +1592,19 @@ function AdvancedCreate({
             </div>
           </div>
         </Card>
+
+        {bindOpen && addr && (
+          <EmailCaptureDialog
+            address={addr}
+            mode={isGoogle ? "google" : "wallet"}
+            baseProfile={profile.data ?? null}
+            onClose={() => setBindOpen(false)}
+            onBound={() => {
+              setBindOpen(false);
+              profile.refetch();
+            }}
+          />
+        )}
 
         {/* ── live ticket stub: the product, mid-fabrication ── */}
         <aside className="space-y-2.5" style={{ position: "sticky", top: 20 }}>
