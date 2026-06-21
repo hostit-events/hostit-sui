@@ -29,7 +29,19 @@ const IMG_SRC = [
   "https://*.suivision.xyz",
 ];
 
-const SCRIPT_SRC = ["'self'", "'unsafe-inline'", "https://code.iconify.design"];
+// challenges.cloudflare.com: the Turnstile bot-wall (#81) loads its api.js here
+// and renders the challenge in an iframe from the same origin (see FRAME_SRC).
+const SCRIPT_SRC = [
+  "'self'",
+  "'unsafe-inline'",
+  "https://code.iconify.design",
+  "https://challenges.cloudflare.com",
+];
+
+// What the app is allowed to embed. `frame-ancestors 'none'` (below) controls
+// who may embed US; this controls what WE embed — needed for the Turnstile
+// iframe. (#81)
+const FRAME_SRC = ["'self'", "https://challenges.cloudflare.com"];
 
 // Google Fonts CSS (@import in app/globals.css) needs the stylesheet host;
 // 'unsafe-inline' covers Next/shadcn/next-themes injected inline styles.
@@ -54,6 +66,7 @@ export function buildCsp(dev = isDev): string {
     "img-src": IMG_SRC,
     "font-src": FONT_SRC,
     "connect-src": connect,
+    "frame-src": FRAME_SRC,
     "frame-ancestors": ["'none'"],
     "form-action": ["'self'", "https://accounts.google.com"],
     "base-uri": ["'self'"],

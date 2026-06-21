@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Icon } from "@/components/Icon";
 import { useOrganizerMemory } from "@/lib/memoryClient";
+import { getTurnstileToken } from "@/lib/turnstileClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -271,6 +272,9 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
     setInput("");
     setBusy(true);
     try {
+      // Proof-of-browser so the server serves Groq rather than the free local
+      // fallback; null when Turnstile is disabled. (#81)
+      const turnstileToken = await getTurnstileToken();
       const res = await fetch("/api/copilot", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -280,6 +284,7 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
           messages: history.map((m) => ({ role: m.role, content: m.content })),
           // Recalled organizer memory as grounding "past context" (may be empty).
           memory: recalled,
+          turnstileToken,
         }),
       });
       if (!res.ok) throw new Error(`Co-pilot request failed (${res.status})`);

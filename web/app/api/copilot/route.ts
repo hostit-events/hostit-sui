@@ -3,6 +3,7 @@
 // API key is set, so the feature is functional out of the box.
 
 import { rateLimit, clientIpFromHeaders } from "@/lib/rateLimit";
+import { verifyTurnstile, blockedByTurnstile } from "@/lib/turnstile";
 
 export const dynamic = "force-dynamic";
 
@@ -178,7 +179,12 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { event?: EventCtx; messages?: Msg[]; memory?: unknown };
+  let body: {
+    event?: EventCtx;
+    messages?: Msg[];
+    memory?: unknown;
+    turnstileToken?: string;
+  };
   try {
     body = JSON.parse(rawBody);
   } catch {
@@ -208,6 +214,14 @@ export async function POST(req: Request) {
         .slice(0, MAX_MEMORY_ITEMS)
         .map((m) => m.trim().slice(0, MAX_MEMORY_ITEM_LEN))
     : [];
+  // Bot-wall: a failed Turnstile challenge gets the FREE local fallback, never
+  // the paid Groq model — denies bots the LLM while keeping the AI UX intact. A
+  // CF outage (unreachable) fails OPEN to Groq. Enforced only when a secret is
+  // set. (#81)
+  if (blockedByTurnstile(await verifyTurnstile(body.turnstileToken, ip))) {
+    return Response.json({ reply: fallback(ev, messages), sourced: "fallback" });
+  }
+
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) return Response.json({ reply: fallback(ev, messages), sourced: "fallback" });
