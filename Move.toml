@@ -8,7 +8,9 @@ authors = ["HostIt contributors"]
 # management) — the single source of truth for the deployed package versions.
 
 [dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet", override = true }
+openzeppelin_access = { r.mvr = "@openzeppelin-move/access" }
+MoveStdlib = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "framework/testnet", override = true }
 
 # Fresh-publish prep: 0x0 so Sui assigns a NEW package id on publish. The
 # post-publish roll sets this to the new original-id (for future upgrades).

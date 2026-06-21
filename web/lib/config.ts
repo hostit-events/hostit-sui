@@ -70,6 +70,34 @@ export const POAP_REGISTRY_ID =
 export const TRANSFER_POLICY_ID =
   "0x37fed2fd12c6037a72413fd2da8b6e715587fdc625bf137f2edee61e20cbdcf1";
 
+// === Protocol governance (OpenZeppelin access_control RBAC — GH#51) ===
+// Replaces the single PlatformCap with revocable, role-scoped authority
+// (TreasuryRole + ConfigAdminRole) and a timelocked root-admin handoff. Our
+// `governance` wrappers (grant/revoke, auth minting) target PACKAGE_ID via
+// `target("governance", …)`; the OZ root-admin timelock flow targets the OZ
+// package below. See DEPLOYING.md.
+
+/**
+ * OZ `access_control` testnet package (published-at). Call target for the OZ
+ * root-admin timelock flow (begin/accept transfer, delay change). Env-overridable
+ * so a future OZ release can be rolled without a code change.
+ */
+export const OZ_ACCESS_PKG =
+  process.env.NEXT_PUBLIC_OZ_ACCESS_PKG ??
+  "0xb357701a05fd1e26b42b167dcadc1c3cf5e521448ceb8fdb088402f7390465d7";
+
+/**
+ * Shared `AccessControl<governance::GOVERNANCE>` registry — created by
+ * `governance::init` at the GH#51 FRESH publish. EMPTY until that gated deploy
+ * lands; set NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID (or hardcode the id post-deploy).
+ */
+export const GOVERNANCE_REGISTRY_ID =
+  process.env.NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID ?? "";
+
+/** Target a function in the OZ `access_control` module (root-admin flow). */
+export const ozAccessTarget = (fn: string) =>
+  `${OZ_ACCESS_PKG}::access_control::${fn}` as const;
+
 // Well-known Sui shared Clock
 export const CLOCK_ID = "0x6";
 
@@ -288,6 +316,11 @@ export const ENOKI_SESSION_EPOCHS = 30;
 export const TICKET_TYPE = `${PACKAGE_ID}::ticket::Ticket`;
 export const EVENT_TYPE = `${PACKAGE_ID}::event::Event`;
 export const ORGANIZER_CAP_TYPE = `${PACKAGE_ID}::event::OrganizerCap`;
+// Protocol RBAC role markers (governance introduced at the GH#51 fresh publish →
+// PACKAGE_ID). Used as type args for the OZ access_control root-admin flow.
+export const GOVERNANCE_TYPE = `${PACKAGE_ID}::governance::GOVERNANCE`;
+export const TREASURY_ROLE_TYPE = `${PACKAGE_ID}::governance::TreasuryRole`;
+export const CONFIG_ADMIN_ROLE_TYPE = `${PACKAGE_ID}::governance::ConfigAdminRole`;
 /** Generic struct head (no type arg) for filtering parimutuel sellout markets. */
 export const SELLOUT_MARKET_TYPE = `${PREDICT_SELLOUT_PKG}::predict::SelloutMarket`;
 /**

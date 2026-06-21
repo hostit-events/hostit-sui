@@ -72,6 +72,22 @@ const MAP: Record<string, Record<number, string>> = {
     5: "The ticket must be locked into a kiosk to complete this sale.",
     6: "The ticket resale policy is already set up — its rules can't be re-attached.",
   },
+  // OpenZeppelin access_control (RBAC) — protocol governance roles (GH#51).
+  access_control: {
+    0: "You don't hold the required protocol role for this action.",
+    1: "The root admin role can only change via the timelocked transfer/renounce flow.",
+    2: "There's no pending admin transfer or renounce.",
+    3: "You're not the pending admin for this transfer.",
+    4: "The admin-handoff timelock hasn't elapsed yet.",
+    5: "Admin delay exceeds the maximum (60 days).",
+    6: "Root role must be a one-time witness (internal — should not occur).",
+    7: "That role isn't a protocol role (foreign role rejected).",
+    8: "The pending action is a renounce, not a transfer.",
+    9: "The pending action is a transfer, not a renounce.",
+    10: "There's no pending admin-delay change.",
+    11: "Can't use the zero address as a role holder or transfer target.",
+    12: "Can't transfer the admin role to the current admin.",
+  },
 };
 
 export function humanizeError(e: unknown): string {
@@ -79,9 +95,24 @@ export function humanizeError(e: unknown): string {
   const modM = raw.match(/Identifier\(\\?"(\w+)\\?"\)/);
   const codeM = raw.match(/\}\s*,\s*(\d+)\)/);
   if (modM && codeM) {
-    const msg = MAP[modM[1]]?.[Number(codeM[1])];
+    let code = Number(codeM[1]);
+    // Move 2024 `#[error]` "clever errors" (e.g. OpenZeppelin `access_control`,
+    // used by `governance`) don't abort with the bare code N — they abort with a
+    // packed u64: bit 63 set, with N in bits 48..55. Decode it so the per-module
+    // maps below still match. (Our own modules use plain `const E: u64` and are
+    // unaffected — their codes are small.) TODO(#51): confirm the exact surfaced
+    // shape with a real testnet dry-run once the governance registry is deployed.
+    if (codeM[1].length >= 16) {
+      try {
+        const packed = BigInt(codeM[1]);
+        if (packed >> 63n === 1n) code = Number((packed >> 48n) & 0xffn);
+      } catch {
+        /* not a parseable bigint — keep the raw numeric code */
+      }
+    }
+    const msg = MAP[modM[1]]?.[code];
     if (msg) return msg;
-    return `Transaction rejected on-chain (${modM[1]} code ${codeM[1]}).`;
+    return `Transaction rejected on-chain (${modM[1]} code ${code}).`;
   }
   if (/rejected|userreject|cancelled|denied the/i.test(raw)) return "You cancelled the transaction.";
   if (/no valid gas coins/i.test(raw))

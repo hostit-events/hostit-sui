@@ -40,7 +40,8 @@ Frontend correctness is verified with `bunx tsc --noEmit` + `bun run lint` + `bu
 ## Move architecture
 
 One package, multiple modules under `hostit_ticket` (`sources/`):
-- `hub` — shared `Hub` object: protocol config + 3% platform-fee treasury. Every paid sale touches it.
+- `hub` — shared `Hub` object: protocol config + 3% platform-fee treasury. Every paid sale touches it. Treasury/config entry fns (`withdraw_platform_balance`, `set_fee_bps`/`set_royalty_bps`/`set_refund_period_ms`) are gated on `governance` roles via an `&Auth<Role>` witness.
+- `governance` — protocol RBAC on OpenZeppelin `access_control` (MVR dep `@openzeppelin-move/access`). Stands up a shared `AccessControl<GOVERNANCE>` in its own `init` (its OTW `GOVERNANCE` is the root role); defines `TreasuryRole` + `ConfigAdminRole` (same module, per OZ Invariant 2). Mint a PTB-local `Auth<Role>` via `treasury_auth`/`config_auth`, grant/revoke via `grant_*`/`revoke_*`; root handoff uses OZ's timelocked transfer. Replaces the old single `PlatformCap`. **Lives in its own module** because `hub`'s OTW is already consumed by `package::claim` and a module has only one OTW.
 - `event` — `create_event` shares one `Event` per event and gives the creator an `OrganizerCap{event_id}`. Holds per-coin price + escrow via dynamic fields. Public getters (`minted`, `start_ms`, `max_tickets`, `event_seq`, …) are read by other modules.
 - `ticket` — one global `Ticket` type with an `event_id` field (not a per-event type).
 - `market` — `buy`/`buy_with_sui`/`claim_free`/`refund`/`withdraw_event_balance`. Generic `Coin<T>` payments; fee split into Hub + event escrow.
@@ -50,7 +51,9 @@ One package, multiple modules under `hostit_ticket` (`sources/`):
 - `forum` — ticket-gated on-chain anchor (`PostCreated`) for Walrus+Seal messages.
 - `predict` — native parimutuel prediction markets: `SelloutMarket<T>` (binary "will it sell out?") and `RangeMarket<T>` (final-tickets-sold buckets). Settles **trustlessly on-chain by reading `event::minted()`** at/after expiry. No oracle, no fee. See "Prediction markets" below.
 
-EVM→Sui mapping (capabilities replace roles): `PlatformCap` = protocol owner; `OrganizerCap{event_id}` = per-event admin; check-in staff = an ed25519 pubkey set on the Event. All times are **milliseconds**.
+EVM→Sui mapping: protocol owner (`onlyOwner`) = OZ `access_control` **roles** in `governance` (`TreasuryRole`/`ConfigAdminRole`, formerly the single `PlatformCap`); `OrganizerCap{event_id}` = per-event admin (a capability — RBAC is protocol-level only, event creation stays **permissionless**); check-in staff = an ed25519 pubkey set on the Event. All times are **milliseconds**.
+
+**OZ `access_control` dependency.** Wired via MVR (`openzeppelin_access = { r.mvr = "@openzeppelin-move/access" }`) which pins the on-chain testnet package; the `Sui`/`MoveStdlib` framework deps carry `override = true` to resolve the version conflict with OZ's transitive pins. Adopting `access_control` needs a One-Time Witness at *first publish*, so it ships as a **fresh publish**, never an upgrade (see DEPLOYING.md).
 
 ## Frontend architecture
 

@@ -26,12 +26,13 @@ The frontend encodes this in `web/lib/config.ts`:
 
 ## Upgrade vs fresh publish — choosing
 
-Default to **upgrade**. A fresh publish is only forced in two cases:
+Default to **upgrade**. A fresh publish is only forced in three cases:
 
 1. **Incompatible Move change** — changing an existing struct's fields/abilities or a public function's signature. `sui client upgrade` rejects these. (e.g. the predict `settle_after_ms` reshape that forced the `0xd61c2a` republish.)
 2. **Changing the *behavior* of an existing function the frontend calls via `PACKAGE_ID` (`target()`).** An upgrade adds a new version, but `PACKAGE_ID::mod::fn` still runs the **old** bytecode — only `PACKAGE_ID_LATEST::mod::fn` runs the new code. So relaxing e.g. `event::create_event`'s asserts won't take effect on an upgrade unless that call is also repointed to `targetLatest`. (This is why #39's relaxed asserts shipped as the `0x80ffb7c9` republish.)
+3. **Adopting a module that must run `init` at publish.** Upgrades do **not** run `init` for newly-added modules. OpenZeppelin `access_control` mints its `AccessControl` registry from a One-Time Witness inside `init` — so the `governance` module (GH#51) cannot be bolted on via upgrade; it needs a fresh publish whose `init` stands up the registry. (Same reason a new OTW / `Publisher` claim can't be added by upgrade.)
 
-Everything else — **new** functions/structs/modules, with new functions called via `targetLatest` — upgrades cleanly and preserves all state. (#37's forum organizer-admin is this case: `post_as_organizer`/`moderate`/`PostModerated` are new and called via `PACKAGE_ID_LATEST`; `forum::post` is unchanged at `PACKAGE_ID`.)
+Everything else — **new** functions/structs/modules whose `init` you don't need to run, with new functions called via `targetLatest` — upgrades cleanly and preserves all state. (#37's forum organizer-admin is this case: `post_as_organizer`/`moderate`/`PostModerated` are new and called via `PACKAGE_ID_LATEST`; `forum::post` is unchanged at `PACKAGE_ID`.) **Caveat:** a new module that relies on its `init` running at publish (like `governance`) is case 3 above, not this.
 
 > **Strategy for "many changes coming":** route call targets for any function whose *behavior* may change through `targetLatest`, not `target()`. Type identities stay pinned (`PACKAGE_ID` + origin pins); only the call sites follow latest. Then upgrades take effect without rewiring, and case 2 above stops forcing republishes — leaving fresh-publish only for genuinely incompatible schema changes. On **mainnet a fresh publish is never acceptable** (it strands users' tickets/events), so the upgrade path must be solid before launch.
 
@@ -96,15 +97,17 @@ When an upgrade can't carry the change (see [the two cases above](#upgrade-vs-fr
    ```bash
    sui client publish --gas-budget 2000000000 --json > /tmp/publish.json
    ```
-2. **Capture from `objectChanges`** — the module initializers (`hub::init`, `poap::init`) auto-create and share everything; no manual setup call is needed:
+2. **Capture from `objectChanges`** — the module initializers (`hub::init`, `poap::init`, `governance::init`) auto-create and share everything; no manual setup call is needed:
    - the published `packageId` (type `published`);
-   - shared **`Hub`**, **`PoapRegistry`**, **`TransferPolicy<…::ticket::Ticket>`**;
-   - the new **`UpgradeCap`**, **`PlatformCap`**, **`TransferPolicyCap<Ticket>`** (owned by the deployer).
+   - shared **`Hub`**, **`PoapRegistry`**, **`TransferPolicy<…::ticket::Ticket>`**, and (GH#51) **`AccessControl<…::governance::GOVERNANCE>`** — the protocol RBAC registry;
+   - the new **`UpgradeCap`**, **`TransferPolicyCap<Ticket>`** (owned by the deployer). **No more `PlatformCap`** — protocol authority is now the deployer's role membership in the registry (default admin + `TreasuryRole` + `ConfigAdminRole`, granted in `governance::init`).
+   - The OZ `access_control` dependency is **not** re-published — it's linked from its on-chain testnet package (`published-at 0xb357701a…`) via the MVR dep.
 3. **Roll `web/lib/config.ts`** — fresh v1, so all four package pins collapse to the new id:
    - `PACKAGE_ID`, `PACKAGE_ID_LATEST`, `PREDICT_SELLOUT_PKG`, `PREDICT_RANGE_PKG` → new id;
-   - `HUB_ID`, `POAP_REGISTRY_ID`, `TRANSFER_POLICY_ID` → the new shared-object ids.
-4. **`Move.toml`** `[addresses] hostit_ticket` → new id; **`Published.toml`** is rewritten by the publish.
-5. **Env diff (Vercel):** `NEXT_PUBLIC_HOSTIT_PACKAGE_ID` (+ any `*_LATEST_ID`/object-id overrides) → new ids; redeploy. `SPONSORED_TARGETS` derive from `config.ts`, so the Enoki allowlist updates on the next server deploy automatically.
+   - `HUB_ID`, `POAP_REGISTRY_ID`, `TRANSFER_POLICY_ID` → the new shared-object ids;
+   - **`GOVERNANCE_REGISTRY_ID`** → the new `AccessControl<GOVERNANCE>` shared-object id (GH#51; currently empty). `OZ_ACCESS_PKG` stays pinned to the OZ testnet `published-at` unless OZ rolls a new release.
+4. **`Move.toml`** `[addresses] hostit_ticket` → new id; **`Published.toml`** is rewritten by the publish. Keep the `openzeppelin_access` MVR dep and the `override = true` flags on `Sui`/`MoveStdlib` (they resolve OZ's transitive framework-version conflict).
+5. **Env diff (Vercel):** `NEXT_PUBLIC_HOSTIT_PACKAGE_ID` (+ any `*_LATEST_ID`/object-id overrides) and **`NEXT_PUBLIC_HOSTIT_GOVERNANCE_ID`** (the new registry id) → new ids; redeploy. `SPONSORED_TARGETS` derive from `config.ts`, so the Enoki allowlist updates on the next server deploy automatically. (The governance admin fns are intentionally **not** sponsored.)
 6. **Re-attach** any `TransferPolicy<Ticket>` rules if resale is live (`policy_rules::setup_ticket_policy`).
 7. **Verify** (`tsc` + on-chain smoke + `objectType` check) and **record** in `.suiperpower/deploy-context.md`.
 

@@ -7,7 +7,9 @@ use sui::clock::{Self, Clock};
 use sui::coin::{Self, Coin};
 use sui::sui::SUI;
 use std::string;
-use hostit_ticket::hub::{Self, Hub, PlatformCap};
+use hostit_ticket::hub::{Self, Hub};
+use hostit_ticket::governance::{Self, GOVERNANCE};
+use openzeppelin_access::access_control::AccessControl;
 use hostit_ticket::event::{Self, Event, OrganizerCap};
 use hostit_ticket::ticket::{Self, Ticket};
 use hostit_ticket::market;
@@ -40,6 +42,8 @@ public struct OTHER has drop {}
 fun begin(): (Scenario, Clock) {
     let mut sc = ts::begin(ADMIN);
     hub::init_for_testing(sc.ctx());
+    // ADMIN becomes the protocol default admin + holder of Treasury/Config roles.
+    governance::init_for_testing(sc.ctx());
     let clock = clock::create_for_testing(sc.ctx());
     (sc, clock)
 }
@@ -827,12 +831,13 @@ fun withdraw_platform_fee() {
 
     sc.next_tx(ADMIN);
     let mut hub = sc.take_shared<Hub>();
-    let pcap = sc.take_from_sender<PlatformCap>();
-    let out = hub::withdraw_platform_balance<SUI>(&mut hub, &pcap, HOSTIT_FEE, ADMIN, sc.ctx());
+    let registry = sc.take_shared<AccessControl<GOVERNANCE>>();
+    let auth = governance::treasury_auth(&registry, sc.ctx());
+    let out = hub::withdraw_platform_balance<SUI>(&mut hub, &auth, HOSTIT_FEE, ADMIN, sc.ctx());
     assert!(coin::value(&out) == HOSTIT_FEE, 0);
     assert!(hub::platform_balance<SUI>(&hub) == 0, 1);
     coin::burn_for_testing(out);
-    sc.return_to_sender(pcap);
+    ts::return_shared(registry);
     ts::return_shared(hub);
     destroy(cap);
     clock.destroy_for_testing();
@@ -1063,15 +1068,16 @@ fun voucher_signature_verifies_over_layout() {
 // === Param tuning ===
 
 #[test]
-fun platform_cap_tunes_params() {
+fun config_admin_role_tunes_params() {
     let (mut sc, mut clock) = begin();
     sc.next_tx(ADMIN);
     let mut hub = sc.take_shared<Hub>();
-    let pcap = sc.take_from_sender<PlatformCap>();
-    hub::set_fee_bps(&mut hub, &pcap, 250);
-    hub::set_royalty_bps(&mut hub, &pcap, 100);
+    let registry = sc.take_shared<AccessControl<GOVERNANCE>>();
+    let auth = governance::config_auth(&registry, sc.ctx());
+    hub::set_fee_bps(&mut hub, &auth, 250);
+    hub::set_royalty_bps(&mut hub, &auth, 100);
     assert!(hub::royalty_bps(&hub) == 100, 0);
-    sc.return_to_sender(pcap);
+    ts::return_shared(registry);
     ts::return_shared(hub);
     clock.destroy_for_testing();
     sc.end();
