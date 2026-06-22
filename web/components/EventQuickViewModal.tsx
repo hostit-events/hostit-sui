@@ -20,7 +20,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -144,7 +143,7 @@ export function EventQuickViewModal({ id }: { id: string }) {
           (only a user-initiated close does) → no router.back; the sibling
           BuyTicketDialog stays mounted and visible. Closing buy restores this
           view with refreshed counts. */}
-      <DialogContent className="overflow-hidden p-0 sm:max-w-lg">
+      <DialogContent showCloseButton={false} className="overflow-hidden p-0 sm:max-w-lg">
         {/* sr-only title/description always present so Radix never warns; the
             visible heading lives in the body once the name loads. */}
         <DialogHeader className="sr-only">
@@ -174,37 +173,42 @@ export function EventQuickViewModal({ id }: { id: string }) {
             {/* Cover */}
             <div className="poster relative" style={{ height: 160 }}>
               <EventPoster seed={id} category={cat} coverUrl={coverUrl} className="absolute inset-0" />
-              <div className="absolute flex gap-1.5" style={{ top: 12, left: 12, flexWrap: "wrap" }}>
-                {meta?.tag && <Badge variant="secondary">{meta.tag}</Badge>}
-                {isFree && <Badge variant="secondary">Free</Badge>}
+              {/* Overlay chrome: dark-glass so it stays legible over any cover. */}
+              <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+                {meta?.tag && (
+                  <Badge className="border-white/15 bg-black/45 text-white backdrop-blur-sm">{meta.tag}</Badge>
+                )}
+                {isFree && (
+                  <Badge className="border-white/15 bg-black/45 text-white backdrop-blur-sm">Free</Badge>
+                )}
                 {verified && (
-                  <Badge variant="secondary">
-                    <Icon icon="streamline:star-badge-solid" size={11} /> Verified
+                  <Badge className="border-white/15 bg-black/45 text-white backdrop-blur-sm">
+                    <Icon icon="streamline:star-badge-solid" size={11} className="text-sky-300" /> Verified
                   </Badge>
                 )}
               </div>
-              <div className="absolute flex items-center gap-1.5" style={{ top: 12, right: 48 }}>
-                {/* Hard <a> nav (not <Link>): the modal is already at /event/[id]
-                    via the interceptor, so only a full document load escapes to
-                    the real EventPageScreen. */}
-                <Button asChild size="icon" variant="secondary" className="size-8 rounded-full" title="Open full page">
-                  <a href={`/event/${id}`} aria-label="Open full event page">
-                    <Icon icon="ic:round-open-in-full" size={15} />
-                  </a>
-                </Button>
+              {/* Just share + close here — the full-page link lives once in the
+                  footer (the old expand icon was a duplicate of "View full page"). */}
+              <div className="absolute right-3 top-3 flex items-center gap-1.5">
                 <SocialShare title={name} url={eventShareUrl(id)} variant="icon" />
+                <button
+                  type="button"
+                  onClick={() => router.back()}
+                  aria-label="Close"
+                  className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur transition-[color,background-color,transform] hover:bg-black/55 active:scale-[0.96]"
+                >
+                  <Icon icon="ic:round-close" size={18} />
+                </button>
               </div>
             </div>
 
-            <div className="space-y-4 px-5 py-4">
-              <div className="space-y-1.5">
-                <h2 className="page-title" style={{ fontSize: 22 }}>
-                  {name}
-                </h2>
-              </div>
+            <div className="space-y-4 px-5 pb-5 pt-4">
+              <h2 className="page-title" style={{ fontSize: 22 }}>
+                {name}
+              </h2>
 
               {/* Quick facts */}
-              <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2" style={{ color: "var(--fg2)" }}>
+              <div className="grid grid-cols-1 gap-x-4 gap-y-2.5 text-sm sm:grid-cols-2" style={{ color: "var(--fg2)" }}>
                 <span className="inline-flex items-center gap-1.5">
                   <Icon icon="proicons:calendar" size={15} />
                   {fmtDate(startMs)}
@@ -254,8 +258,11 @@ export function EventQuickViewModal({ id }: { id: string }) {
               </div>
             </div>
 
-            <DialogFooter className="flex-row items-center justify-between gap-2">
-              <Button asChild variant="ghost" size="sm">
+            {/* Purpose-built footer: DialogFooter's -mx-4/-mb-4 + sm:justify-end
+                assume a p-4 content box and crammed both buttons to the right.
+                Aligned to the body (px-5), divided, primary CTA anchored right. */}
+            <div className="flex items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3.5">
+              <Button asChild variant="ghost" size="sm" className="-ml-2">
                 {/* hard nav escapes the interceptor → full EventPageScreen */}
                 <a href={`/event/${id}`}>
                   <Icon icon="ic:round-open-in-full" size={15} /> View full page
@@ -263,7 +270,7 @@ export function EventQuickViewModal({ id }: { id: string }) {
               </Button>
 
               {isFree ? (
-                <Button size="sm" disabled={!canPurchase} onClick={() => openClaim(name)}>
+                <Button disabled={!canPurchase} onClick={() => openClaim(name)}>
                   <Icon icon="ion:ticket" size={15} />
                   {!canPurchase ? statusLabel() : addr ? "Claim free" : "Connect to claim"}
                 </Button>
@@ -278,7 +285,6 @@ export function EventQuickViewModal({ id }: { id: string }) {
                   const total = totalWithFee(BigInt(p.price));
                   return (
                     <Button
-                      size="sm"
                       disabled={!canPurchase}
                       onClick={() => openBuy(name, p.coinType, BigInt(p.price))}
                     >
@@ -292,7 +298,7 @@ export function EventQuickViewModal({ id }: { id: string }) {
                   );
                 })()
               )}
-            </DialogFooter>
+            </div>
           </>
         )}
       </DialogContent>
