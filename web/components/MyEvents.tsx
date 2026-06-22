@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { COINS, ENOKI_ENABLED, ORGANIZER_CAP_TYPE, coinInfo, toUnits } from "@/lib/config";
-import { useEventList } from "@/lib/events";
+import { useEventList, useEventObjects } from "@/lib/events";
 import {
   getFields,
   setAllowSelfCheckinTx,
@@ -27,8 +27,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Skeleton } from "@/components/ui/skeleton";
 import type {
-  GetObjectParams,
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
   SuiObjectResponse,
@@ -36,7 +36,7 @@ import type {
 
 /** Events you organize, matched to the OrganizerCap you hold for each. */
 export function MyEvents({ address }: { address: string }) {
-  const { events } = useEventList();
+  const { events, isLoading } = useEventList();
   const capsQuery = useSuiQuery<
     "getOwnedObjects",
     GetOwnedObjectsParams,
@@ -63,7 +63,26 @@ export function MyEvents({ address }: { address: string }) {
     [events, address, capByEvent],
   );
 
-  if (mine.length === 0) return null;
+  // Batch-read every organized event's on-chain object in ONE chunked
+  // multiGetObjects call (was an N+1 per-row getObject) and pass each resolved
+  // object down to its row.
+  const eventIds = useMemo(() => mine.map((e) => e.eventId), [mine]);
+  const { byId: eventObjects, refetch: refetchObjects } = useEventObjects(eventIds);
+
+  // Distinguish "still loading" from "genuinely no events" so the organizer's
+  // section shows a skeleton instead of a blank gap that pops in late.
+  if (mine.length === 0) {
+    if (isLoading || capsQuery.isLoading) {
+      return (
+        <section className="space-y-3">
+          <Skeleton className="h-7 w-48" />
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="h-28 w-full" />
+        </section>
+      );
+    }
+    return null;
+  }
 
   return (
     <section className="space-y-5">
@@ -80,6 +99,8 @@ export function MyEvents({ address }: { address: string }) {
             capId={capByEvent.get(e.eventId)!}
             address={address}
             isFree={e.isFree}
+            eventObject={eventObjects.get(e.eventId) ?? null}
+            onRefetch={refetchObjects}
           />
         ))}
       </div>
@@ -92,23 +113,25 @@ function MyEventRow({
   capId,
   address,
   isFree,
+  eventObject,
+  onRefetch,
 }: {
   eventId: string;
   capId: string;
   address: string;
   isFree: boolean;
+  /** Pre-fetched Event object from the batched multiGetObjects read. */
+  eventObject: SuiObjectResponse | null;
+  /** Refetches the batched event objects after an organizer action. */
+  onRefetch: () => void;
 }) {
-  const q = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>("getObject", {
-    id: eventId,
-    options: { showContent: true },
-  });
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
   const isPending = regular.isPending || sponsored.isPending;
   const [coin, setCoin] = useState(COINS[0].type);
   const [priceStr, setPriceStr] = useState("1");
 
-  const f = getFields(q.data ?? {});
+  const f = getFields(eventObject ?? {});
   if (!f) return <Card className="mono p-4">{eventId.slice(0, 14)}… loading</Card>;
   const name = String(f.name);
   const minted = String(f.minted);
@@ -126,7 +149,7 @@ function MyEventRow({
       toast.success("Updated", {
         description: <TxLink digest={out.digest} chars={10} />,
       });
-      q.refetch();
+      onRefetch();
     } catch (e: unknown) {
       toast.error(humanizeError(e));
     }
@@ -174,6 +197,9 @@ function MyEventRow({
         </Button>
         <Button asChild variant="outline" size="sm">
           <Link href={`/event/${eventId}`}>View</Link>
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/checkin">Check-in</Link>
         </Button>
       </div>
 

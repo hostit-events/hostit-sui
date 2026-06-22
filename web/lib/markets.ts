@@ -29,6 +29,10 @@ export interface EventMarkets {
   selloutMarketId: string | null;
   rangeMarketId: string | null;
   loading: boolean;
+  /** A discovery-log read failed — distinguishes "no market exists" (safe to open
+   *  one) from "couldn't check" (must NOT show the create CTA, or a user could
+   *  open a duplicate market and split liquidity). */
+  isError: boolean;
   refetch: () => void;
 }
 
@@ -61,6 +65,7 @@ export function useEventMarkets(eventSeq: string): EventMarkets {
     selloutMarketId,
     rangeMarketId,
     loading: sellout.isLoading || range.isLoading,
+    isError: sellout.isError || range.isError,
     refetch: () => {
       void sellout.refetch();
       void range.refetch();

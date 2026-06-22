@@ -22,6 +22,7 @@
   --color-accent-fg: #FFFFFF;
   --color-danger: #FF6B6B;
   --color-success: #38F06A;
+  --color-warning: #F5A623;        /* amber — non-blocking warnings, status badges */
   --color-verified: #FA00D4;       /* stage-light magenta — suiNS/KYC trust badge */
   --color-verified-soft: #2a1140;
   /* Fonts (--font-sans/-mono/-display) are defined in :root below, NOT here.
@@ -283,7 +284,11 @@
   @media (max-width: 600px) { .ev-grid { grid-template-columns: 1fr; gap: 16px; } }
 
   /* ---- page scaffold ---- */
-  .page-title { font-family: var(--font-sans); font-weight: 700; font-size: 28px; letter-spacing: -.02em; line-height: 1.1; }
+  /* Canonical heading scale. Screens must NOT override these inline (the audit
+     found page titles rendering at 7 different sizes). Use .page-title for the
+     screen <h1> (via <PageHeader>) and .section-title for in-page <h2>s. */
+  .page-title { font-family: var(--font-sans); font-weight: 700; font-size: 30px; letter-spacing: -.02em; line-height: 1.12; }
+  .section-title { font-family: var(--font-sans); font-weight: 700; font-size: 20px; letter-spacing: -.01em; line-height: 1.2; }
   .page-sub { color: var(--fg2); font-size: 15px; margin-top: 4px; }
   .section-label {
     font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--fg3);
@@ -408,22 +413,40 @@ button[class*="connect" i] {
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  /* Surfaces tinted to the brand deep-navy (were neutral grayscale oklch) so the
+     shadcn primitive <Card>/<Popover>/<Dialog> match the brand .card/.ev-card and
+     harmonize with the navy app background. Ascending lightness for elevation:
+     card < popover < muted < secondary < accent. */
+  --card: #141A38;
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: #171E42;
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  /* Primary = brand electric blue. AA-safe: #fff on #0062CC ≈ 5.8:1. The brighter
+     #007CFA stays the accent/link/focus hue (--ring, --hi-blue). */
+  --primary: #0062CC;
+  --primary-foreground: #ffffff;
+  --secondary: #232B54;
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
+  --muted: #1E2549;
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --accent: #2B3563;
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: #007CFA;
+  /* Legacy brand tokens reconciled onto the shadcn scale (the app is always
+     .dark), so inline style={{ color: var(--fg*) }} renders identically to the
+     text-foreground / text-muted-foreground utilities — fixes ~271 inline call
+     sites at the token level with zero screen churn. */
+  --fg1: var(--foreground);
+  --fg2: color-mix(in oklab, var(--foreground) 72%, var(--muted-foreground));
+  --fg3: var(--muted-foreground);
+  --hair: var(--border);
+  --hair-2: var(--border);
+  --brand-card: var(--card);
+  --card-2: var(--popover);
+  --raise: var(--popover);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);

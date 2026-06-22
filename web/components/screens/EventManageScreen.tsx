@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { toast } from "sonner";
 import { fromHex, toHex, fromBase64 } from "@mysten/sui/utils";
@@ -83,7 +84,14 @@ import { Copy } from "@/components/animate-ui/icons/copy";
 import { RefreshCw } from "@/components/animate-ui/icons/refresh-cw";
 import { TxLink } from "@/components/TxLink";
 import { CapacityRing } from "@/components/CapacityRing";
-import { CopilotLauncher } from "@/components/screens/CopilotLauncher";
+// Lazy: the AI co-pilot (+ heavy CopilotPanel chat surface it pulls in) is a
+// floating FAB that only matters once opened — kept out of the first-load bundle.
+// A fixed/floating launcher must NOT use an in-flow Skeleton fallback (it would
+// inject a stray block at the page bottom), so render nothing until it loads.
+const CopilotLauncher = dynamic(
+  () => import("@/components/screens/CopilotLauncher").then((m) => m.CopilotLauncher),
+  { loading: () => null, ssr: false },
+);
 import { DateTimePicker } from "@/components/DateTimePicker";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -295,6 +303,16 @@ export function EventManageScreen({ id }: { id: string }) {
           <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
             The command center needs the wallet that holds this event&apos;s OrganizerCap.
           </p>
+          <div className="flex gap-2" style={{ marginTop: 16, flexWrap: "wrap" }}>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/event/${id}`}>
+                <Icon icon="ic:round-explore" size={16} /> View public page
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/discover">Back to discover</Link>
+            </Button>
+          </div>
         </Card>
       </div>
     );
@@ -309,6 +327,13 @@ export function EventManageScreen({ id }: { id: string }) {
         <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
           <span className="mono">{id.slice(0, 14)}…</span> didn&apos;t resolve to an Event object.
         </p>
+        <div className="flex gap-2" style={{ marginTop: 16, flexWrap: "wrap" }}>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/discover">
+              <Icon icon="ic:round-explore" size={16} /> Back to discover
+            </Link>
+          </Button>
+        </div>
       </Card>
     );
   }

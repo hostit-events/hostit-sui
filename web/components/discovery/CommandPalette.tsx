@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { type DiscoverEvent } from "@/lib/discovery";
 import { coinInfo, fmtAmount } from "@/lib/config";
 
-type Action = "discover" | "tickets" | "dashboard" | "create" | "calendar" | "shortcuts";
+type Action = "discover" | "tickets" | "dashboard" | "create" | "calendar" | "shortcuts" | "settings";
 
 interface CommandItem {
   id: string;
@@ -24,6 +24,9 @@ export interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   events: DiscoverEvent[];
+  /** True while the on-chain event feed is still streaming — shows a loading hint
+   *  instead of "No results" when no events have arrived yet. */
+  eventsLoading?: boolean;
   onAction: (action: Action) => void;
   onSelectEvent: (eventId: string) => void;
 }
@@ -43,6 +46,7 @@ export function CommandPalette({
   open,
   onOpenChange,
   events,
+  eventsLoading = false,
   onAction,
   onSelectEvent,
 }: CommandPaletteProps) {
@@ -106,6 +110,15 @@ export function CommandPalette({
         group: "actions",
         keywords: "calendar month dates schedule",
         run: () => onAction("calendar"),
+      },
+      {
+        id: "nav-settings",
+        label: "Settings",
+        hint: "Account & preferences",
+        icon: "ic:round-settings",
+        group: "navigation",
+        keywords: "account preferences profile notifications config",
+        run: () => onAction("settings"),
       },
       {
         id: "act-shortcuts",
@@ -218,10 +231,21 @@ export function CommandPalette({
 
         <div ref={listRef} className="max-h-[50vh] overflow-y-auto p-2">
           {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-              <Icon icon="ic:round-search" size={24} className="text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No results for &ldquo;{query}&rdquo;</p>
-            </div>
+            eventsLoading ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                <Icon
+                  icon="svg-spinners:3-dots-fade"
+                  size={24}
+                  className="text-muted-foreground"
+                />
+                <p className="text-sm text-muted-foreground">Loading events…</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                <Icon icon="ic:round-search" size={24} className="text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No results for &ldquo;{query}&rdquo;</p>
+              </div>
+            )
           ) : (
             groupOrder.map((groupKey) => {
               const items = groups.get(groupKey);

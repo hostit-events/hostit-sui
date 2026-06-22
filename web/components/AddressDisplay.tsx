@@ -39,7 +39,7 @@ export function AddressDisplay({
 
   if (isLoading) {
     return (
-      <span className={`mono opacity-60 ${className}`}>
+      <span className={`mono ${className}`}>
         {address.slice(0, 8)}…{address.slice(-suffix)}
       </span>
     );

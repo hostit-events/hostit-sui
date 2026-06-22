@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import Link from "next/link";
 import { useCurrentAccount } from "@/lib/hooks";
 import { useEventList, useEventObjects, useActivityFeed, buildDiscoverEvents } from "@/lib/events";
@@ -61,8 +61,11 @@ export function DiscoverScreen() {
     [],
   );
 
+  // Defer the heavy filter so typing stays responsive — the <Input> tracks `q`
+  // immediately while the full-list filter recomputes off the deferred value.
+  const deferredQ = useDeferredValue(q);
   const filtered = useMemo(() => {
-    const ql = q.trim().toLowerCase();
+    const ql = deferredQ.trim().toLowerCase();
     return events.filter((e) => {
       const meta = eventMeta[e.eventId];
       const organizerName = names.get(e.organizer) ?? "";
@@ -82,7 +85,7 @@ export function DiscoverScreen() {
       if (cat !== "all" && meta?.category && meta.category !== cat) return false;
       return true;
     });
-  }, [events, q, cat, eventMeta, names]);
+  }, [events, deferredQ, cat, eventMeta, names]);
 
   // Flattened, on-chain-derived events for the curated discovery rows + calendar.
   // Reuses the data already fetched here (list + objects + prices + lazy meta) —

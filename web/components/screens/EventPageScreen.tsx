@@ -147,6 +147,7 @@ export function EventPageScreen({ id }: { id: string }) {
     selloutMarketId,
     rangeMarketId,
     loading: marketsLoading,
+    isError: marketsError,
     refetch: refetchMarkets,
   } = useEventMarkets(eventSeqEarly);
   const hasMarket = Boolean(selloutMarketId || rangeMarketId);
@@ -379,7 +380,7 @@ export function EventPageScreen({ id }: { id: string }) {
           } as React.CSSProperties
         }
       >
-        <EventPoster seed={id} category={cat} coverUrl={coverUrl} className="absolute inset-0" />
+        <EventPoster seed={id} category={cat} coverUrl={coverUrl} priority className="absolute inset-0" />
         <div
           className="absolute flex gap-1.5"
           style={{ top: 14, left: 14, flexWrap: "wrap" }}
@@ -518,6 +519,17 @@ export function EventPageScreen({ id }: { id: string }) {
                 onMarketChange={refetchMarkets}
               />
             </div>
+          ) : marketsError ? (
+            // Discovery failed — do NOT offer to create a market (one may already
+            // exist; creating a second would split the pool). Offer a retry instead.
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start text-muted-foreground"
+              onClick={() => refetchMarkets()}
+            >
+              <Icon icon="ic:round-refresh" size={15} /> Couldn&apos;t load markets — retry
+            </Button>
           ) : (
             <Button
               variant="ghost"
