@@ -29,6 +29,9 @@ export interface EventPosterProps {
   coverUrl?: string;
   /** Render the hero glyph. Pass false for small strips (duotone + halftone only). */
   glyph?: boolean;
+  /** Above-the-fold hero — load the cover eagerly with high priority (better LCP).
+   *  Leave false/undefined on cards/grids so they stay lazy. */
+  priority?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -109,6 +112,7 @@ export function EventPoster({
   category,
   coverUrl,
   glyph = true,
+  priority = false,
   className,
   style,
 }: EventPosterProps) {
@@ -237,7 +241,8 @@ export function EventPoster({
           src={coverUrl}
           alt=""
           className="absolute inset-0 w-full h-full object-cover"
-          loading="lazy"
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
           decoding="async"
           width={1200}
           height={630}

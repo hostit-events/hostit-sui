@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { Icon } from "@/components/Icon";
 import { EventPoster } from "@/components/EventPoster";
+import { Badge } from "@/components/ui/badge";
 import {
   useRecentlyViewed,
   getEventStatus,
@@ -79,10 +80,13 @@ export function RecentlyViewedRow({ events }: { events: DiscoverEvent[] }) {
                 <div className="relative h-16 w-full overflow-hidden">
                   <EventPoster seed={e.eventId} category={e.category} className="absolute inset-0" />
                   {status === "live" && (
-                    <span className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full border border-rose-400/40 bg-rose-400/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-100 backdrop-blur">
-                      <span className="h-1 w-1 animate-pulse rounded-full bg-rose-400" />
+                    <Badge
+                      variant="live"
+                      className="absolute right-2 top-2 z-10 gap-1 text-[9px] font-semibold uppercase tracking-wide backdrop-blur"
+                    >
+                      <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
                       Live
-                    </span>
+                    </Badge>
                   )}
                   <div className="absolute inset-x-0 bottom-0 p-2">
                     <p className="line-clamp-1 text-xs font-semibold text-white drop-shadow">{e.name}</p>

@@ -450,6 +450,10 @@ function SelloutMarketCard({
         {market.settled && (() => {
           // Resolve claim eligibility from the caller's winning-side stake.
           const stakeLoading = Boolean(addr && winningTableId) && winStakeQ.isLoading;
+          // A FAILED stake read (retry:false) leaves winningStake null — same as a
+          // genuine "no entry". Distinguish it so a transient RPC error doesn't
+          // masquerade as "you didn't win" and hide real winnings.
+          const stakeReadFailed = Boolean(addr && winningTableId) && winStakeQ.isError;
           const hasWinningStake = winningStake !== null && winningStake > 0n;
           // An entry that exists but is 0 means the wallet already claimed.
           const alreadyClaimed = winningStake !== null && winningStake === 0n;
@@ -471,6 +475,20 @@ function SelloutMarketCard({
                 <Button className="w-full" disabled>
                   <Icon icon="ph:coins-bold" size={16} /> Checking your stake…
                 </Button>
+              ) : stakeReadFailed ? (
+                <div className="space-y-1.5">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={isPending}
+                    onClick={() => winStakeQ.refetch()}
+                  >
+                    <Icon icon="ph:arrow-clockwise-bold" size={16} /> Couldn&apos;t check your stake — Retry
+                  </Button>
+                  <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
+                    We couldn&apos;t read your winning-side stake. Retry to check for claimable winnings.
+                  </div>
+                </div>
               ) : hasWinningStake ? (
                 <>
                   <Button
@@ -897,6 +915,12 @@ function RangeMarketCard({
           // winning-bucket stake.
           const refundPath = (market.totals[market.winningBucket] ?? 0n) === 0n;
           const stakeLoading = Boolean(addr && winningTableId) && winStakeQ.isLoading;
+          // A FAILED winning-bucket stake read (retry:false) leaves winningStake
+          // null — indistinguishable from a genuine "no entry". On the refund path
+          // claim stays enabled regardless, so this only matters when there ARE
+          // winners and the gate would otherwise read the error as "you didn't win".
+          const stakeReadFailed =
+            !refundPath && Boolean(addr && winningTableId) && winStakeQ.isError;
           const hasWinningStake = winningStake !== null && winningStake > 0n;
           const alreadyClaimed = winningStake !== null && winningStake === 0n;
           const canClaim = refundPath || hasWinningStake;
@@ -916,6 +940,20 @@ function RangeMarketCard({
                 <Button className="w-full" disabled>
                   <Icon icon="ph:coins-bold" size={16} /> Checking your stake…
                 </Button>
+              ) : stakeReadFailed ? (
+                <div className="space-y-1.5">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={isPending}
+                    onClick={() => winStakeQ.refetch()}
+                  >
+                    <Icon icon="ph:arrow-clockwise-bold" size={16} /> Couldn&apos;t check your stake — Retry
+                  </Button>
+                  <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
+                    We couldn&apos;t read your winning-bucket stake. Retry to check for claimable winnings.
+                  </div>
+                </div>
               ) : canClaim ? (
                 <>
                   <Button

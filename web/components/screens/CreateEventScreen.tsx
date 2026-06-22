@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ENOKI_ENABLED, EMAIL_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
@@ -11,7 +12,6 @@ import { putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata"
 import { storeFile } from "@/lib/walrus";
 import { useProfile } from "@/lib/profile";
 import { useIsGoogleSession } from "@/lib/auth";
-import { EmailCaptureDialog } from "@/components/EmailCaptureDialog";
 import {
   useCurrentAccount,
   useCurrentClient,
@@ -69,6 +69,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+// The email-capture dialog (GH#96) is heavy (OTP/Seal/zkLogin binding flow) and
+// only opens on demand from step 4 — never on first paint. Lazy-load it so its
+// bundle stays out of the initial create-screen JS. ssr:false: it's a purely
+// interactive, browser-only modal. Identical props/behavior to the static import.
+const EmailCaptureDialog = dynamic(
+  () => import("@/components/EmailCaptureDialog").then((m) => m.EmailCaptureDialog),
+  { ssr: false, loading: () => null },
+);
 
 // ── inline helpers ──────────────────────────────────────────────────────────
 // datetime-local needs a "YYYY-MM-DDTHH:mm" string in the user's local zone.

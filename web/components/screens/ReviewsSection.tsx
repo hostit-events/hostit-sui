@@ -6,6 +6,8 @@ import { Loader2, Send, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/States";
 import { cn } from "@/lib/utils";
 import { MAX_COMMENT_LEN, type Review } from "@/lib/reviews";
 import { AddressDisplay } from "@/components/AddressDisplay";
@@ -25,6 +27,16 @@ export interface ReviewsSectionProps {
   /** Mid-submit (real tx/store write) — disables the form + shows the spinner. */
   submitting: boolean;
   onSubmit: (rating: number, comment: string) => void;
+  /**
+   * Optional async-state hints for the review list fetch. The event page owns
+   * the on-chain read (a react-query), so it can thread its `isLoading` /
+   * `isError` / `refetch` straight through. All optional + default to a
+   * resolved/no-error state so existing callers that only pass `reviews` keep
+   * working: without these, the list still renders exactly as before.
+   */
+  isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
 }
 
 export function ReviewsSection({
@@ -35,6 +47,9 @@ export function ReviewsSection({
   hasReviewed,
   submitting,
   onSubmit,
+  isLoading,
+  isError,
+  onRetry,
 }: ReviewsSectionProps) {
   const [rating, setRating] = React.useState(0);
   const [hoverRating, setHoverRating] = React.useState(0);
@@ -66,7 +81,7 @@ export function ReviewsSection({
                     "h-3.5 w-3.5",
                     s <= Math.round(averageRating)
                       ? "fill-amber-400 text-amber-400"
-                      : "text-muted-foreground/40",
+                      : "text-muted-foreground",
                   )}
                 />
               ))}
@@ -98,7 +113,7 @@ export function ReviewsSection({
                     "h-5 w-5 transition-colors",
                     s <= (hoverRating || rating)
                       ? "fill-amber-400 text-amber-400"
-                      : "text-muted-foreground/40",
+                      : "text-muted-foreground",
                   )}
                 />
               </button>
@@ -154,8 +169,33 @@ export function ReviewsSection({
         </div>
       )}
 
-      {/* Review list. */}
-      {reviews.length === 0 ? (
+      {/* Review list. Loading + error are checked BEFORE the empty state so a
+          pending or failed fetch never masquerades as "No reviews yet". Both
+          guards are gated on optional props, so callers that don't thread the
+          query state fall straight through to the data branches as before. */}
+      {isLoading && reviews.length === 0 ? (
+        <div className="space-y-3" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="flex items-start gap-2 rounded-xl border border-border/60 bg-card/40 p-3"
+            >
+              <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-2.5 w-16" />
+                <Skeleton className="h-3 w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : isError && reviews.length === 0 ? (
+        <ErrorState
+          title="Couldn't load reviews"
+          body="Something went wrong reading reviews from chain. This is usually transient."
+          onRetry={onRetry}
+        />
+      ) : reviews.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
           <Star className="h-5 w-5 text-muted-foreground" />
           <p className="text-xs text-muted-foreground">
@@ -192,7 +232,7 @@ export function ReviewsSection({
                               "h-2.5 w-2.5",
                               s <= r.rating
                                 ? "fill-amber-400 text-amber-400"
-                                : "text-muted-foreground/30",
+                                : "text-muted-foreground",
                             )}
                           />
                         ))}

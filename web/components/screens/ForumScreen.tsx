@@ -370,8 +370,13 @@ export function ForumScreen({ id }: { id: string }) {
   }
 
   // --- Moderation (organizer only) ------------------------------------------
+  const moderatingRef = useRef(false);
   async function runModerate(blobId: string, action: number) {
     if (!myCapId || !addr) return;
+    // Re-entry guard so a double-tap on hide/pin can't fire two moderate txs
+    // (the second aborts and surfaces a confusing error after the first succeeds).
+    if (moderatingRef.current) return;
+    moderatingRef.current = true;
     try {
       const tx = forumModerateTx(id, myCapId, blobId, action);
       const out = ENOKI_ENABLED
@@ -390,6 +395,8 @@ export function ForumScreen({ id }: { id: string }) {
       modQ.refetch();
     } catch (e: unknown) {
       toast.error(humanizeError(e));
+    } finally {
+      moderatingRef.current = false;
     }
   }
 

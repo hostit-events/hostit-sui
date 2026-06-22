@@ -176,7 +176,7 @@ export function useEventObjects(ids: string[]) {
     }
     return m;
   }, [q.data]);
-  return { byId, refetch: q.refetch };
+  return { byId, isLoading: q.isLoading, refetch: q.refetch };
 }
 
 /**

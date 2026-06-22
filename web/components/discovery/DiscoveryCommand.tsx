@@ -26,7 +26,7 @@ export function openCommandPalette() {
  */
 export function DiscoveryCommand() {
   const router = useRouter();
-  const { events } = useDiscoverEvents();
+  const { events, isLoading: eventsLoading } = useDiscoverEvents();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -63,6 +63,7 @@ export function DiscoveryCommand() {
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         events={events}
+        eventsLoading={eventsLoading}
         onAction={(action) => {
           switch (action) {
             case "discover":
@@ -76,6 +77,9 @@ export function DiscoveryCommand() {
               break;
             case "create":
               router.push("/create");
+              break;
+            case "settings":
+              router.push("/settings");
               break;
             case "calendar":
               setCalendarOpen(true);

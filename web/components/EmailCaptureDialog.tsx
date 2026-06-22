@@ -51,7 +51,10 @@ export function ProfileGate() {
     setDismissed(Boolean(skip));
   }, [addr]);
 
-  if (!EMAIL_ENABLED || !addr || prof.isLoading) return null;
+  // Don't auto-prompt while the profile is loading OR if the read failed — on a
+  // transient error prof.data is undefined, and prompting would re-bind from an
+  // empty baseProfile and overwrite the user's username/avatar/emailHash.
+  if (!EMAIL_ENABLED || !addr || prof.isLoading || prof.isError) return null;
   if (Boolean(prof.data?.emailBlobId) || dismissed) return null;
 
   return (

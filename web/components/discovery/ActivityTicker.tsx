@@ -37,12 +37,12 @@ export function ActivityTicker({ mints }: ActivityTickerProps) {
       className="relative overflow-hidden rounded-2xl border bg-card/40 p-3 backdrop-blur"
     >
       <div className="flex items-center gap-3">
-        <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1">
+        <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-transparent bg-success/15 px-2.5 py-1 text-success">
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-current" />
           </span>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+          <span className="text-[10px] font-semibold uppercase tracking-wider">
             Live
           </span>
         </div>

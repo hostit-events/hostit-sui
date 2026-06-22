@@ -193,7 +193,22 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
     options: { showContent: true },
   });
   const f = getFields(obj.data ?? {});
-  const allowSelf = Boolean(f?.allow_self_checkin);
+  const chainAllowSelf = Boolean(f?.allow_self_checkin);
+
+  // Optimistic override: flip the Switch immediately on toggle, then reconcile
+  // against the freshly-fetched chain value (clear the override once the query
+  // catches up) and roll back on error. Safe because this is a boolean flip
+  // (no funds move).
+  const [optimisticSelf, setOptimisticSelf] = useState<boolean | null>(null);
+  const allowSelf = optimisticSelf ?? chainAllowSelf;
+
+  // Reconcile: once the queried value matches the optimistic target (the tx has
+  // settled and the refetch landed), drop the override and trust the chain.
+  useEffect(() => {
+    if (optimisticSelf !== null && chainAllowSelf === optimisticSelf) {
+      setOptimisticSelf(null);
+    }
+  }, [chainAllowSelf, optimisticSelf]);
 
   // OrganizerCap that matches this event (gates signer + toggle calls).
   const capsQuery = useSuiQuery<"getOwnedObjects", GetOwnedObjectsParams, PaginatedObjectsResponse>(
@@ -217,15 +232,22 @@ function EventConsole({ event, organizer }: { event: EventInfo; organizer: strin
 
   async function toggleSelf() {
     if (!capId) return;
+    const next = !allowSelf;
+    // Flip the Switch immediately; the `next` snapshot is what we submit and
+    // what we reconcile/roll back against (don't re-read `allowSelf` below).
+    setOptimisticSelf(next);
     try {
       const out = await mutateAsync({
-        transaction: setAllowSelfCheckinTx({ capId, eventId: event.eventId, allow: !allowSelf }),
+        transaction: setAllowSelfCheckinTx({ capId, eventId: event.eventId, allow: next }),
       });
-      toast.success(allowSelf ? "Self check-in disabled" : "Self check-in enabled", {
+      toast.success(next ? "Self check-in enabled" : "Self check-in disabled", {
         description: <TxLink digest={out.digest} chars={10} />,
       });
+      // Pull the updated value; the reconcile effect clears the override once it lands.
       obj.refetch();
     } catch (e: unknown) {
+      // Roll back to the on-chain value.
+      setOptimisticSelf(null);
       toast.error(humanizeError(e));
     }
   }
@@ -436,7 +458,11 @@ function Attendance({ eventId }: { eventId: string }) {
   const q = useAllEvents(CHECKED_IN_EVENT);
 
   useEffect(() => {
-    const t = setInterval(() => void q.refetch(), 8_000);
+    const t = setInterval(() => {
+      // Skip the full enumeration while the tab is hidden (venue network).
+      if (typeof document !== "undefined" && document.hidden) return;
+      void q.refetch();
+    }, 8_000);
     return () => clearInterval(t);
   }, [q.refetch]);
 

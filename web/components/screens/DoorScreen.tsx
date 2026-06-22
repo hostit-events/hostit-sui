@@ -124,7 +124,12 @@ export function DoorScreen({ id }: { id: string }) {
   // enumeration every 8s (matching the old refetchInterval). Cleanup clears the
   // timer so no stray refetch fires after unmount.
   useEffect(() => {
-    const t = setInterval(() => void checkinQ.refetch(), 8000);
+    const t = setInterval(() => {
+      // Don't re-run the full check-in enumeration while the tab is hidden — the
+      // door is often on venue wifi/cellular, so background polling is wasted load.
+      if (typeof document !== "undefined" && document.hidden) return;
+      void checkinQ.refetch();
+    }, 8000);
     return () => clearInterval(t);
   }, [checkinQ.refetch]);
 
