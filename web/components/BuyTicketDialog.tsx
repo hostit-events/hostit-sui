@@ -374,7 +374,7 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
             </div>
           </div>
 
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="wait" initial={false}>
             {step === "connect" && (
               <motion.div
                 key="connect"
@@ -465,7 +465,7 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
 
                 {/* Order summary */}
                 {!isFree && ci && (
-                  <div className="space-y-1.5 rounded-xl border bg-muted/20 p-3 text-xs">
+                  <div className="space-y-1.5 rounded-xl border bg-muted/20 p-3 text-xs tabular-nums">
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">
                         Ticket price × {safeQty}

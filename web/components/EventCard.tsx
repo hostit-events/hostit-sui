@@ -138,7 +138,7 @@ export function EventCard({
   const dateLabel = `${new Date(startMs).toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${new Date(endMs).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 
   return (
-    <Card className="gap-0 py-0 text-left transition-transform duration-200 hover:-translate-y-1">
+    <Card className="gap-0 py-0 text-left transition-transform duration-200 hover:-translate-y-1 active:scale-[0.98]">
       <Link href={`/event/${eventId}`} className="poster rounded-none" style={{ height: 150, display: "block" }}>
         <EventPoster seed={eventId} category={cat} coverUrl={coverUrl} className="absolute inset-0" />
         <div className="absolute flex gap-1.5" style={{ top: 12, left: 12, flexWrap: "wrap" }}>
@@ -147,7 +147,7 @@ export function EventCard({
           {isFree && <Badge variant="secondary">Free</Badge>}
           {meta?.tag && <Badge variant="secondary">{meta.tag}</Badge>}
         </div>
-        <div className="absolute mono" style={{ bottom: 12, left: 14, color: "rgba(255,255,255,.92)", textShadow: "0 1px 4px rgba(0,0,0,.6)" }}>
+        <div className="absolute mono tabular-nums" style={{ bottom: 12, left: 14, color: "rgba(255,255,255,.92)", textShadow: "0 1px 4px rgba(0,0,0,.6)" }}>
           {String(remaining)}/{String(maxTickets)} left
         </div>
       </Link>

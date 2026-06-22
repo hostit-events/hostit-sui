@@ -127,6 +127,8 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Avoid single-word orphans on the last line of any wrapped body text. */
+    text-wrap: pretty;
     /* Never allow horizontal scroll on mobile. `clip` (not `hidden`) doesn't
        create a scroll container, so it won't break the sticky header or the
        landing's sticky/pinned sections. */
@@ -278,17 +280,25 @@
   }
   .ev-card:hover { transform: translateY(-4px); border-color: rgba(0, 124, 250, .5); box-shadow: 0 16px 36px rgba(0, 0, 0, .4); }
   .ev-card .ev-body { padding: 15px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .ev-title { font-weight: 700; font-size: 17px; letter-spacing: -.01em; line-height: 1.25; }
+  .ev-title { font-weight: 700; font-size: 17px; letter-spacing: -.01em; line-height: 1.25; text-wrap: balance; }
   .ev-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; border-top: 1px solid var(--hair); }
   .ev-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 20px; }
   @media (max-width: 600px) { .ev-grid { grid-template-columns: 1fr; gap: 16px; } }
+
+  /* Tactile press feedback for clickable card/tile surfaces. Each surface needs a
+     transform transition for the press to animate (.ev-card already animates
+     transform via its hover-lift; .stat-tile/.pick/.ci-pick/.dash-ev get one here;
+     .cover-pick.empty extends its existing transition shorthand; .cover-pick
+     (single-class) here gives the populated .cover-pick.has state the same press). */
+  .stat-tile, .pick, .ci-pick, .dash-ev, .cover-pick { transition: transform .14s ease; }
+  .ev-card:active, .stat-tile:active, .dash-ev:active, .ci-pick:active, .pick:active, .cover-pick:active { transform: scale(.98); }
 
   /* ---- page scaffold ---- */
   /* Canonical heading scale. Screens must NOT override these inline (the audit
      found page titles rendering at 7 different sizes). Use .page-title for the
      screen <h1> (via <PageHeader>) and .section-title for in-page <h2>s. */
-  .page-title { font-family: var(--font-sans); font-weight: 700; font-size: 30px; letter-spacing: -.02em; line-height: 1.12; }
-  .section-title { font-family: var(--font-sans); font-weight: 700; font-size: 20px; letter-spacing: -.01em; line-height: 1.2; }
+  .page-title { font-family: var(--font-sans); font-weight: 700; font-size: 30px; letter-spacing: -.02em; line-height: 1.12; text-wrap: balance; }
+  .section-title { font-family: var(--font-sans); font-weight: 700; font-size: 20px; letter-spacing: -.01em; line-height: 1.2; text-wrap: balance; }
   .page-sub { color: var(--fg2); font-size: 15px; margin-top: 4px; }
   .section-label {
     font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--fg3);
@@ -507,6 +517,7 @@ button[class*="connect" i] {
   width: 100%;
   aspect-ratio: 16 / 10;
   background: linear-gradient(140deg, var(--p1, #6C7BFF) 0%, var(--p2, #2A3270) 100%);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.10);
 }
 .tstub-foil {
   position: absolute; top: 12px; right: 12px;
@@ -576,7 +587,7 @@ button[class*="connect" i] {
   width: 100%; min-height: 132px; padding: 18px;
   border: 1.5px dashed var(--hair-2); border-radius: var(--r-md, 12px);
   background: rgba(255, 255, 255, .02); color: var(--fg3); cursor: pointer; text-align: center;
-  transition: border-color .15s, background .15s, color .15s;
+  transition: border-color .15s, background .15s, color .15s, transform .14s ease;
 }
 .cover-pick.empty:hover,
 .cover-pick.empty.drag { border-color: var(--hi-blue); background: rgba(0, 124, 250, .06); color: var(--fg2); }

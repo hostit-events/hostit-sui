@@ -52,6 +52,7 @@ export function TrendingRow({ events }: { events: DiscoverEvent[] }) {
               viewport={{ once: true, margin: "-40px" }}
               transition={{ duration: 0.3, delay: Math.min(i * 0.05, 0.25) }}
               whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.98 }}
               className="w-[220px] shrink-0 sm:w-[240px]"
             >
               <Link
@@ -88,7 +89,7 @@ export function TrendingRow({ events }: { events: DiscoverEvent[] }) {
                     ) : (
                       <span />
                     )}
-                    <span className="flex items-center gap-0.5">
+                    <span className="flex items-center gap-0.5 tabular-nums">
                       <Icon icon="ion:ticket" size={11} />
                       {String(ticketsLeft(e))} left
                     </span>
@@ -106,7 +107,7 @@ export function TrendingRow({ events }: { events: DiscoverEvent[] }) {
                     />
                   </div>
                   <div className="flex items-center justify-between border-t pt-1 text-[10px]">
-                    <span className="text-muted-foreground">{formatCountdownCompact(e.startMs)}</span>
+                    <span className="text-muted-foreground tabular-nums">{formatCountdownCompact(e.startMs)}</span>
                     <span className="font-medium">{priceLabel(e)}</span>
                   </div>
                 </div>

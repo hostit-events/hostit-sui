@@ -98,6 +98,7 @@ export function FeaturedCarousel({ events }: { events: DiscoverEvent[] }) {
               viewport={{ once: true, margin: "-40px" }}
               transition={{ duration: 0.4, delay: Math.min(i * 0.06, 0.3) }}
               whileHover={{ y: -4 }}
+              whileTap={{ scale: 0.98 }}
               className="w-[300px] shrink-0 snap-start sm:w-[340px]"
             >
               <Link
@@ -145,7 +146,7 @@ export function FeaturedCarousel({ events }: { events: DiscoverEvent[] }) {
                     ) : (
                       <span />
                     )}
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 tabular-nums">
                       <Icon icon="ion:ticket" size={12} />
                       {sold ? "Sold out" : `${String(left)} left`}
                     </span>
@@ -154,7 +155,7 @@ export function FeaturedCarousel({ events }: { events: DiscoverEvent[] }) {
                     <span className="text-[11px] text-muted-foreground">
                       {formatDateRangeMs(e.startMs, e.endMs)}
                     </span>
-                    <span className="flex items-center gap-1 rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-medium text-fuchsia-300">
+                    <span className="flex items-center gap-1 rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-medium text-fuchsia-300 tabular-nums">
                       <Icon icon="ph:sparkle-fill" size={10} />
                       {formatCountdownCompact(e.startMs)}
                     </span>

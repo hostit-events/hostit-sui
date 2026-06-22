@@ -501,11 +501,11 @@ function Attendance({ eventId }: { eventId: string }) {
     <div className="space-y-4">
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
         <div className="stat-tile fill">
-          <div className="stat-num" style={{ color: "#fff" }}>{rows.length}</div>
+          <div className="stat-num tabular-nums" style={{ color: "#fff" }}>{rows.length}</div>
           <div className="stat-label" style={{ color: "rgba(255,255,255,.8)" }}>Check-ins</div>
         </div>
         <div className="stat-tile">
-          <div className="stat-num">{uniqueCount}</div>
+          <div className="stat-num tabular-nums">{uniqueCount}</div>
           <div className="stat-label">Unique attendees</div>
         </div>
         <div className="stat-tile">

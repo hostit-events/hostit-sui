@@ -52,7 +52,7 @@ export function RecentlyViewedRow({ events }: { events: DiscoverEvent[] }) {
         <button
           type="button"
           onClick={clear}
-          className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          className="text-[11px] text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96]"
           aria-label="Clear recently viewed history"
         >
           Clear
@@ -70,6 +70,7 @@ export function RecentlyViewedRow({ events }: { events: DiscoverEvent[] }) {
               viewport={{ once: true, margin: "-40px" }}
               transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.2) }}
               whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
               className="w-[240px] shrink-0"
             >
               <Link
@@ -93,7 +94,7 @@ export function RecentlyViewedRow({ events }: { events: DiscoverEvent[] }) {
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-1 p-2 text-[10px] text-muted-foreground">
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 tabular-nums">
                     <Icon icon="ic:round-schedule" size={11} />
                     {formatCountdownCompact(e.startMs)}
                   </span>

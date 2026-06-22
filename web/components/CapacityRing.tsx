@@ -77,10 +77,10 @@ export function CapacityRing({ minted, max, checkedIn, p1, p2, size = 176 }: Cap
         </>
       )}
       {/* center label */}
-      <text x={cx} y={cy - 2} textAnchor="middle" fontSize={30} fontWeight={700} fill="var(--fg)">
+      <text x={cx} y={cy - 2} textAnchor="middle" fontSize={30} fontWeight={700} fill="var(--fg)" style={{ fontVariantNumeric: "tabular-nums" }}>
         {minted}
       </text>
-      <text x={cx} y={cy + 19} textAnchor="middle" fontSize={12} fill="var(--fg3)">
+      <text x={cx} y={cy + 19} textAnchor="middle" fontSize={12} fill="var(--fg3)" style={{ fontVariantNumeric: "tabular-nums" }}>
         / {max} minted
       </text>
     </svg>

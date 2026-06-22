@@ -717,7 +717,7 @@ export function EventManageScreen({ id }: { id: string }) {
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="font-semibold" style={{ fontSize: 18 }}>
+      <div className="font-semibold tabular-nums" style={{ fontSize: 18 }}>
         {value}
       </div>
       <div className="text-[11px]" style={{ color: "var(--fg3)" }}>
@@ -737,6 +737,7 @@ function ProvenanceChip({ label, id }: { label: string; id: string }) {
       </a>
       <button
         aria-label={`Copy ${label} id`}
+        className="transition-transform active:scale-[0.96]"
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(id);
@@ -1195,7 +1196,7 @@ function MoneyPanel({
             <div key={c.type} style={{ padding: "10px 0", borderBottom: "1px solid var(--hair)" }}>
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-medium">
+                  <div className="font-medium tabular-nums">
                     {loading ? "…" : fmtAmount(escrow, c.decimals)} {c.symbol}
                     <span className="text-[11px]" style={{ color: "var(--fg3)", marginLeft: 6 }}>
                       withdrawable
@@ -1777,7 +1778,7 @@ function PredictionMarketsPanel({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-sm">
                 <span style={{ color: "var(--fg2)" }}>Pool volume</span>
-                <span className="mono">
+                <span className="mono tabular-nums">
                   {fmtAmount(selloutPool, usdcInfo.decimals)} {usdcInfo.symbol}
                 </span>
               </div>
@@ -1818,7 +1819,7 @@ function PredictionMarketsPanel({
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span style={{ color: "var(--fg2)" }}>Pool volume</span>
-                <span className="mono">
+                <span className="mono tabular-nums">
                   {fmtAmount(rangePool, usdcInfo.decimals)} {usdcInfo.symbol}
                 </span>
               </div>

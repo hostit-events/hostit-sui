@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Icon } from "@/components/Icon";
@@ -55,7 +55,7 @@ export function SocialShare({ title, url, variant = "icon", className }: SocialS
             type="button"
             aria-label="Share event"
             className={cn(
-              "grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur transition-colors hover:bg-black/55",
+              "grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur transition-[color,background-color,transform] hover:bg-black/55 active:scale-[0.96]",
               className,
             )}
           >
@@ -104,13 +104,18 @@ export function SocialShare({ title, url, variant = "icon", className }: SocialS
             className="flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-sm hover:bg-accent"
           >
             <span className="grid h-6 w-6 place-items-center rounded-md bg-muted">
-              {copied ? (
-                <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="text-emerald-500">
-                  <Icon icon="ic:round-check" size={14} />
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={copied ? "ic:round-check" : "mdi:link-variant"}
+                  initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+                  animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                  exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+                  transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+                  className={cn("inline-flex", copied && "text-emerald-500")}
+                >
+                  <Icon icon={copied ? "ic:round-check" : "mdi:link-variant"} size={14} />
                 </motion.span>
-              ) : (
-                <Icon icon="mdi:link-variant" size={14} />
-              )}
+              </AnimatePresence>
             </span>
             <span className="flex-1">{copied ? "Copied!" : "Copy link"}</span>
           </button>

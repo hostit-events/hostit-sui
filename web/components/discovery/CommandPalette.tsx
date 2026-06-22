@@ -273,7 +273,7 @@ export function CommandPalette({
                           onOpenChange(false);
                         }}
                         className={cn(
-                          "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors",
+                          "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-[color,transform] active:scale-[0.98]",
                           isActive ? "bg-accent" : "hover:bg-accent/50",
                         )}
                       >
@@ -320,7 +320,7 @@ export function CommandPalette({
               close
             </span>
           </div>
-          <span className="font-mono">{filtered.length} results</span>
+          <span className="font-mono tabular-nums">{filtered.length} results</span>
         </div>
       </DialogContent>
     </Dialog>

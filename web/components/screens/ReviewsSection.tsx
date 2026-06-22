@@ -106,7 +106,7 @@ export function ReviewsSection({
                 onMouseEnter={() => setHoverRating(s)}
                 onMouseLeave={() => setHoverRating(0)}
                 aria-label={`${s} star${s > 1 ? "s" : ""}`}
-                className="rounded p-0.5 transition-transform hover:scale-110 disabled:cursor-not-allowed"
+                className="rounded p-0.5 transition-transform hover:scale-110 active:scale-[0.95] disabled:cursor-not-allowed"
               >
                 <Star
                   className={cn(
@@ -131,7 +131,7 @@ export function ReviewsSection({
             className="mb-2 min-h-[60px] resize-none rounded-lg text-sm"
           />
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground tabular-nums">
               {comment.length}/{MAX_COMMENT_LEN} · only event POAP holders can review
             </p>
             <Button
@@ -205,7 +205,7 @@ export function ReviewsSection({
       ) : (
         <ScrollArea className="max-h-64">
           <div className="space-y-3 pr-2">
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence mode="popLayout" initial={false}>
               {reviews.map((r, i) => (
                 <motion.div
                   key={r.id}

@@ -49,7 +49,7 @@ export function ActivityTicker({ mints }: ActivityTickerProps) {
         <div className="flex flex-1 items-center gap-2 overflow-hidden">
           <Icon icon="ic:round-bolt" size={16} className="hidden shrink-0 text-muted-foreground sm:block" />
           <div className="relative flex-1 overflow-hidden">
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence mode="popLayout" initial={false}>
               {window.map((m) => (
                 <motion.div
                   key={m.id}
@@ -60,7 +60,7 @@ export function ActivityTicker({ mints }: ActivityTickerProps) {
                   className="flex items-center gap-2 whitespace-nowrap text-xs"
                 >
                   <span className="text-base">{m.emoji}</span>
-                  <span className="mono font-medium text-foreground">{m.walletShort}</span>
+                  <span className="mono font-medium text-foreground tabular-nums">{m.walletShort}</span>
                   <span className="text-muted-foreground">
                     {m.emoji === "🏅" ? "claimed a POAP for" : "got a ticket for"}
                   </span>

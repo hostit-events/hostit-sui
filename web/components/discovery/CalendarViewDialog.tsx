@@ -188,7 +188,7 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
                     onClick={() => setSelectedDay(day.date)}
                     aria-label={`${day.date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}${hasEvents ? `, ${day.events.length} event${day.events.length === 1 ? "" : "s"}` : ""}`}
                     className={cn(
-                      "relative flex min-h-[56px] flex-col items-start rounded-lg border p-1 text-left transition-colors sm:min-h-[64px]",
+                      "relative flex min-h-[56px] flex-col items-start rounded-lg border p-1 text-left transition-[color,transform] active:scale-[0.97] sm:min-h-[64px]",
                       day.inMonth ? "border-border/40 bg-card/40" : "border-transparent bg-transparent opacity-40",
                       isSelected
                         ? "border-primary ring-1 ring-primary"
@@ -290,7 +290,7 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
                             initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -8 }}
-                            transition={{ duration: 0.25, delay: i * 0.04 }}
+                            transition={{ duration: 0.25, delay: Math.min(i * 0.04, 0.2) }}
                             whileHover={{ x: 2 }}
                             onClick={() => open_(e.eventId)}
                             aria-label={`Open ${e.name}`}

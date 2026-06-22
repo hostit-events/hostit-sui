@@ -241,7 +241,7 @@ export function DoorScreen({ id }: { id: string }) {
         {/* === Live attendance count === */}
         <div className="stat-tile fill flex items-center justify-between" style={{ marginTop: 18 }}>
           <div>
-            <div className="stat-num" style={{ fontSize: 38 }}>
+            <div className="stat-num tabular-nums" style={{ fontSize: 38 }}>
               {checkinQ.isLoading ? "—" : count}
             </div>
             <div className="stat-label inline-flex items-center gap-1.5">

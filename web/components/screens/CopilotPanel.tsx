@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { Icon } from "@/components/Icon";
 import { useOrganizerMemory } from "@/lib/memoryClient";
@@ -182,11 +183,22 @@ function RememberButton({
           disabled={saving || saved}
           className="h-7 self-start px-2 text-[11.5px]"
         >
-          <Icon
-            icon={icon}
-            size={12}
-            style={saving ? { animation: "hi-cp-spin .8s linear infinite" } : undefined}
-          />
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={icon}
+              initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+              transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+              className="inline-flex"
+            >
+              <Icon
+                icon={icon}
+                size={12}
+                style={saving ? { animation: "hi-cp-spin .8s linear infinite" } : undefined}
+              />
+            </motion.span>
+          </AnimatePresence>
           {label}
           <style>{`@keyframes hi-cp-spin{to{transform:rotate(360deg)}}`}</style>
         </Button>

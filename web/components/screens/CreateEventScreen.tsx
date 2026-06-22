@@ -1900,7 +1900,7 @@ function SuggestionBanner({
             <Button
               type="button"
               variant="outline"
-              size="icon-sm"
+              size="icon"
               onClick={onDismiss}
               aria-label="Dismiss suggestions"
               style={{ flexShrink: 0 }}

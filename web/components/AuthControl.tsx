@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "motion/react";
 import { useCurrentWallet, useDAppKit, useWallets } from "@mysten/dapp-kit-react";
 import { useCurrentAccount } from "@/lib/hooks";
 import { useGoogleSignIn, useIsGoogleSession, useSignOut } from "@/lib/auth";
@@ -103,7 +104,18 @@ function AccountChip({
             void copyAddress();
           }}
         >
-          <Icon icon={copied ? "ic:round-check" : "ic:round-content-copy"} size={16} />
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={copied ? "ic:round-check" : "ic:round-content-copy"}
+              initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+              transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+              className="inline-flex"
+            >
+              <Icon icon={copied ? "ic:round-check" : "ic:round-content-copy"} size={16} />
+            </motion.span>
+          </AnimatePresence>
           {copied ? "Copied" : "Copy address"}
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
@@ -221,7 +233,7 @@ function LoginMenu() {
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={wallet.icon} alt="" width={18} height={18} className="rounded" />
+                <img src={wallet.icon} alt="" width={18} height={18} className="rounded ring-1 ring-white/10" />
                 {wallet.name}
               </DropdownMenuItem>
             ))}

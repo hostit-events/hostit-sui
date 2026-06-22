@@ -641,7 +641,7 @@ export function ForumScreen({ id }: { id: string }) {
                 </TooltipContent>
               </Tooltip>
               <span
-                className="mono"
+                className="mono tabular-nums"
                 style={{ fontSize: 10, color: "var(--fg3)", whiteSpace: "nowrap" }}
               >
                 {draft.length}/{MAX_MESSAGE_LEN} · ⌘/Ctrl+Enter
@@ -783,7 +783,7 @@ function MessageRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
                   aria-label={pinned ? "Unpin" : "Pin"}
                   onClick={() => onModerate(msg.blobId, pinned ? MOD_UNPIN : MOD_PIN)}
                 >
@@ -795,7 +795,7 @@ function MessageRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
                   aria-label={hidden ? "Unhide" : "Hide"}
                   onClick={() => onModerate(msg.blobId, hidden ? MOD_UNHIDE : MOD_HIDE)}
                 >
@@ -825,7 +825,7 @@ function MessageRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
                   onClick={onResign}
                 >
                   <Icon icon="ic:round-lock" size={13} />

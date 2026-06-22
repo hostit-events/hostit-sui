@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Icon } from "@/components/Icon";
 import { CopilotPanel, type CopilotEvent } from "@/components/screens/CopilotPanel";
 import { Button } from "@/components/ui/button";
@@ -52,11 +53,21 @@ export function CopilotLauncher({ event }: { event: CopilotEvent }) {
           aria-label="Open AI Co-pilot"
         >
           <span className="cp-fab-glow" aria-hidden="true" />
-          <Icon
-            icon={open ? "ic:round-close" : "solar:magic-stick-3-bold"}
-            size={22}
-            className="cp-fab-icon"
-          />
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={open ? "ic:round-close" : "solar:magic-stick-3-bold"}
+              initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+              transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+              className="cp-fab-icon inline-flex"
+            >
+              <Icon
+                icon={open ? "ic:round-close" : "solar:magic-stick-3-bold"}
+                size={22}
+              />
+            </motion.span>
+          </AnimatePresence>
           {!open && <span className="cp-fab-label">Co-pilot</span>}
         </Button>
       </SheetTrigger>
@@ -80,7 +91,7 @@ export function CopilotLauncher({ event }: { event: CopilotEvent }) {
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               data-cp-close
               className="cp-close"
               aria-label="Close AI Co-pilot"

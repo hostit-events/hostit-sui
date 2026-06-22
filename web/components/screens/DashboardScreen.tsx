@@ -103,7 +103,7 @@ function StatTile({
           style={fill ? { background: "rgba(255,255,255,.25)" } : undefined}
         />
       ) : (
-        <div className="stat-num" style={{ marginTop: 10, color: fill ? "#fff" : "var(--fg1)" }}>
+        <div className="stat-num tabular-nums" style={{ marginTop: 10, color: fill ? "#fff" : "var(--fg1)" }}>
           {num}
         </div>
       )}

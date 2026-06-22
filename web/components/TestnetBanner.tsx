@@ -30,7 +30,7 @@ export function TestnetBanner() {
       role="status"
       aria-hidden={!visible}
       className={cn(
-        "relative overflow-hidden border-b border-amber-500/20 bg-amber-500/10 px-9 text-center font-mono text-xs text-amber-200/90 transition-all duration-500 ease-out",
+        "relative overflow-hidden border-b border-amber-500/20 bg-amber-500/10 px-9 text-center font-mono text-xs text-amber-200/90 transition-[max-height,opacity,padding] duration-500 ease-out",
         visible ? "max-h-10 py-1.5 opacity-100" : "max-h-0 border-b-0 py-0 opacity-0",
       )}
     >

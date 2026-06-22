@@ -114,7 +114,7 @@ export function NotificationsBell({
             <motion.span
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              transition={{ type: "spring", bounce: 0, duration: 0.3 }}
               className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white"
             >
               {unread > 9 ? "9+" : unread}
@@ -144,7 +144,7 @@ export function NotificationsBell({
               <button
                 type="button"
                 onClick={onMarkAllRead}
-                className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-[color,background-color,transform] hover:bg-accent hover:text-foreground active:scale-[0.96]"
               >
                 Mark all read
               </button>
@@ -153,7 +153,7 @@ export function NotificationsBell({
               <button
                 type="button"
                 onClick={onClear}
-                className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-[color,background-color,transform] hover:bg-accent hover:text-foreground active:scale-[0.96]"
               >
                 Clear
               </button>
@@ -229,7 +229,7 @@ export function NotificationsBell({
                           onDismiss(n.id);
                         }}
                         aria-label="Dismiss notification"
-                        className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                        className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded text-muted-foreground opacity-0 transition-[opacity,color,background-color,transform] hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 active:scale-[0.96]"
                       >
                         <Icon icon="ic:round-close" size={12} />
                       </button>

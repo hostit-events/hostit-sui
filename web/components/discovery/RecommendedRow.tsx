@@ -75,6 +75,7 @@ export function RecommendedRow({
               viewport={{ once: true, margin: "-40px" }}
               transition={{ duration: 0.3, delay: Math.min(i * 0.06, 0.3) }}
               whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.98 }}
             >
               <Link
                 href={`/event/${e.eventId}`}
@@ -103,10 +104,10 @@ export function RecommendedRow({
                 <div className="flex flex-1 flex-col gap-1 p-2">
                   <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                     {e.city ? <span className="truncate">{e.city}</span> : <span />}
-                    <span>{String(left)} left</span>
+                    <span className="tabular-nums">{String(left)} left</span>
                   </div>
                   <div className="flex items-center justify-between border-t pt-1 text-[10px]">
-                    <span className="text-muted-foreground">{formatCountdownCompact(e.startMs)}</span>
+                    <span className="text-muted-foreground tabular-nums">{formatCountdownCompact(e.startMs)}</span>
                     <span className="font-medium">{priceLabel(e)}</span>
                   </div>
                 </div>

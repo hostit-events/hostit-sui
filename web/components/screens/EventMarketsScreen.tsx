@@ -331,11 +331,11 @@ function SelloutMarketCard({
         {/* Odds */}
         {hasBets ? (
           <div className="flex items-center justify-between text-sm">
-            <Badge>YES {odds.yesPct.toFixed(0)}%</Badge>
+            <Badge className="tabular-nums">YES {odds.yesPct.toFixed(0)}%</Badge>
             <span className="mono text-[12px]" style={{ color: "var(--fg3)" }}>
               {fmtAmount(market.totalYes + market.totalNo, 6)} USDC pooled
             </span>
-            <Badge variant="outline">NO {odds.noPct.toFixed(0)}%</Badge>
+            <Badge variant="outline" className="tabular-nums">NO {odds.noPct.toFixed(0)}%</Badge>
           </div>
         ) : (
           <div className="text-[12px]" style={{ color: "var(--fg3)" }}>
@@ -760,7 +760,7 @@ function RangeMarketCard({
                     {bucketLabel(market.cutoffs, i)}
                     {isWinner && " ✓"}
                   </span>
-                  <span className="mono" style={{ color: "var(--fg3)" }}>
+                  <span className="mono tabular-nums" style={{ color: "var(--fg3)" }}>
                     {hasBets ? `${pct.toFixed(0)}% · ${fmtAmount(t, 6)}` : "—"}
                   </span>
                 </div>

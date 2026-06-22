@@ -240,7 +240,7 @@ export function EventPoster({
         <img
           src={coverUrl}
           alt=""
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover ring-1 ring-inset ring-white/10"
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : "auto"}
           decoding="async"

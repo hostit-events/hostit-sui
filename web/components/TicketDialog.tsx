@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { getEventMetadata } from "@/lib/metadata";
 import { svgQrToPngBlob, downloadBlob, shareOrDownloadPng } from "@/lib/qrPng";
@@ -185,11 +186,22 @@ export function TicketDialog(props: TicketDialogProps) {
           <button
             type="button"
             onClick={copyId}
-            className="mono ml-auto inline-flex items-center gap-1.5 truncate text-xs text-foreground transition-colors hover:text-primary"
+            className="mono ml-auto inline-flex items-center gap-1.5 truncate text-xs text-foreground transition-[color,transform] hover:text-primary active:scale-[0.96]"
             aria-label={copied ? "Ticket id copied" : "Copy ticket id"}
           >
             <span className="truncate">{ticketId.slice(0, 10)}…{ticketId.slice(-4)}</span>
-            <Icon icon={copied ? "ic:round-check" : "ic:round-content-copy"} size={14} className="flex-none" />
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={copied ? "ic:round-check" : "ic:round-content-copy"}
+                initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+                transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+                className="inline-flex"
+              >
+                <Icon icon={copied ? "ic:round-check" : "ic:round-content-copy"} size={14} className="flex-none" />
+              </motion.span>
+            </AnimatePresence>
           </button>
         </div>
       </div>

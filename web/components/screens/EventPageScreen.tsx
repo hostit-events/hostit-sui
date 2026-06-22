@@ -397,7 +397,7 @@ export function EventPageScreen({ id }: { id: string }) {
           <SocialShare title={name} url={eventShareUrl(id)} variant="icon" />
         </div>
         <div
-          className="absolute mono"
+          className="absolute mono tabular-nums"
           style={{
             bottom: 14,
             left: 16,
@@ -563,7 +563,7 @@ export function EventPageScreen({ id }: { id: string }) {
               <h2 className="section-label flex items-center gap-1.5" style={{ margin: 0 }}>
                 <Icon icon="ion:ticket" size={14} /> Tickets
               </h2>
-              <div className="text-sm" style={{ color: "var(--fg2)", marginTop: 6 }}>
+              <div className="text-sm tabular-nums" style={{ color: "var(--fg2)", marginTop: 6 }}>
                 {soldOut ? (
                   <span style={{ color: "var(--color-danger)" }}>Sold out</span>
                 ) : (
