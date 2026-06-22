@@ -240,7 +240,9 @@ export const COINS: CoinInfo[] = [
 ];
 
 export function coinInfo(type: string): CoinInfo {
-  return COINS.find((c) => c.type === type) ?? { symbol: "?", type, decimals: 9 };
+  // Match by normalized type (not strict ===) so a padded / no-0x coin type from
+  // on-chain reads still resolves to SUI/USDC instead of falling back to "?".
+  return COINS.find((c) => matchesCoinType(type, c.type)) ?? { symbol: "?", type, decimals: 9 };
 }
 
 /**
@@ -273,9 +275,16 @@ export function fmtAmount(units: bigint, decimals: number): string {
   return `${whole.toLocaleString("en-US")}.${fracStr}`;
 }
 
-/** Normalize a coin type from a `type_name` (which omits the 0x and may be padded). */
+/**
+ * Compare two coin types that may be in different shapes: canonical short
+ * (`0x2::sui::SUI`), a `type_name` (no `0x`, address zero-padded to 64 hex chars,
+ * which is how SUI arrives in events), or 0x-padded. Strip an optional `0x` then
+ * leading zeros from the address so all forms compare equal (Sui addresses ignore
+ * leading zeros). The old `^0x0*` only stripped zeros after a literal `0x`, so a
+ * padded `type_name` never matched SUI and the symbol fell back to "?".
+ */
 export function matchesCoinType(typeName: string, full: string): boolean {
-  const norm = (s: string) => s.replace(/^0x0*/, "").toLowerCase();
+  const norm = (s: string) => s.replace(/^0x/i, "").replace(/^0+/, "").toLowerCase();
   return norm(typeName) === norm(full);
 }
 

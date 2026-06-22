@@ -2,6 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   toUnits,
   fmtAmount,
+  coinInfo,
+  matchesCoinType,
+  SUI_COIN_TYPE,
+  USDC_COIN_TYPE,
   EV_POAP_CLAIMED,
   EV_TICKET_MINTED,
   PACKAGE_ID,
@@ -39,6 +43,32 @@ describe("fmtAmount", () => {
   });
   it("groups with ',' so it never collides with the '.' decimal", () => {
     expect(fmtAmount(1_234_500_000n, 6)).toBe("1,234.5");
+  });
+});
+
+describe("coin-type normalization (ticket price showed '?' instead of SUI)", () => {
+  // How SUI arrives in PriceSet events: a `type_name` — no 0x, address padded to
+  // 64 hex chars. The old `^0x0*` normalizer didn't strip these zeros, so it never
+  // matched `0x2::sui::SUI` and the symbol fell back to "?".
+  const SUI_TYPE_NAME =
+    "0000000000000000000000000000000000000000000000000000000000000002::sui::SUI";
+
+  it("matchesCoinType equates every shape of the SUI type", () => {
+    expect(matchesCoinType(SUI_TYPE_NAME, SUI_COIN_TYPE)).toBe(true);
+    expect(matchesCoinType(`0x${SUI_TYPE_NAME}`, SUI_COIN_TYPE)).toBe(true);
+    expect(matchesCoinType("0x2::sui::SUI", SUI_COIN_TYPE)).toBe(true);
+  });
+
+  it("coinInfo resolves SUI (was '?') and USDC from any shape, with right decimals", () => {
+    expect(coinInfo(SUI_TYPE_NAME)).toMatchObject({ symbol: "SUI", decimals: 9 });
+    expect(coinInfo(`0x${SUI_TYPE_NAME}`).symbol).toBe("SUI");
+    expect(coinInfo("0x2::sui::SUI").symbol).toBe("SUI");
+    expect(coinInfo(USDC_COIN_TYPE)).toMatchObject({ symbol: "USDC", decimals: 6 });
+  });
+
+  it("still returns '?' for a genuinely unknown coin", () => {
+    expect(coinInfo("0xdead::foo::BAR").symbol).toBe("?");
+    expect(matchesCoinType("0xdead::foo::BAR", SUI_COIN_TYPE)).toBe(false);
   });
 });
 

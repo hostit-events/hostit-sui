@@ -7,7 +7,6 @@ import { Icon } from "@/components/Icon";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { CATEGORIES, catPalette } from "@/lib/data";
 import {
@@ -64,9 +63,11 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
+  // Opening the calendar lands on today: select it so the side panel shows
+  // today's events straight away (the grid already defaults to today's month).
   useEffect(() => {
-    if (open) setSelectedDay(null);
-  }, [open]);
+    if (open) setSelectedDay(today);
+  }, [open, today]);
 
   const days = useMemo<CalendarDay[]>(() => {
     const firstOfMonth = new Date(viewYear, viewMonth, 1);
@@ -118,13 +119,15 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-3xl">
+      <DialogContent className="flex max-h-[92vh] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-3xl">
         <DialogTitle className="sr-only">Calendar view</DialogTitle>
         <DialogDescription className="sr-only">
           Browse events in a month grid. Click a day to see events.
         </DialogDescription>
 
-        <div className="flex items-center justify-between border-b bg-muted/20 p-4">
+        {/* pr-14 reserves room for the Dialog's absolute close button (top-2
+            right-2) so it doesn't overlap the Today / prev / next controls. */}
+        <div className="flex shrink-0 items-center justify-between border-b bg-muted/20 py-4 pl-4 pr-14">
           <div className="flex items-center gap-2">
             <div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-sky-500/30 to-violet-500/30">
               <Icon icon="proicons:calendar" size={16} />
@@ -163,7 +166,10 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
           </div>
         </div>
 
-        <div className="grid gap-0 lg:grid-cols-[1fr_280px]">
+        {/* Body: one scroll container on mobile (grid stacks); on lg it becomes a
+            fixed 2-col grid where only the events panel scrolls. min-h-0 + grow let
+            it shrink and scroll instead of stretching the dialog past max-h. */}
+        <div className="grid min-h-0 grow gap-0 overflow-y-auto lg:grid-cols-[1fr_280px] lg:overflow-hidden">
           <div className="p-3">
             <div className="grid grid-cols-7 gap-1 pb-1">
               {WEEKDAYS.map((d) => (
@@ -252,8 +258,11 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
             </div>
           </div>
 
-          <div className="border-t bg-muted/20 lg:border-l lg:border-t-0">
-            <div className="border-b border-border/40 p-3">
+          <div className="relative border-t bg-muted/20 lg:border-l lg:border-t-0">
+            {/* lg:absolute fills the grid cell (= calendar height) without letting
+                a long event list stretch the row; the inner list scrolls instead. */}
+            <div className="flex flex-col lg:absolute lg:inset-0">
+              <div className="shrink-0 border-b border-border/40 p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {selectedDay
                   ? selectedDay.toLocaleDateString("en-US", {
@@ -269,8 +278,7 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
                   : "Click a day to see events"}
               </p>
             </div>
-            <ScrollArea className="max-h-[50vh] lg:max-h-[calc(92vh-14rem)]">
-              <div className="p-2">
+              <div className="p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                 {selectedDayEvents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
                     <Icon icon="proicons:calendar" size={24} className="text-muted-foreground" />
@@ -337,7 +345,7 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </div>
         </div>
       </DialogContent>
