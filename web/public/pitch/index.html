@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>HostIt — Walrus-native ticketing · Sui Overflow 2026 (Walrus Track)</title>
+<meta name="description" content="HostIt is permissionless event ticketing native on Sui, where Walrus is the entire content backend the product cannot exist without. Sui Overflow 2026 — Walrus Track." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500;600;700;800&family=Poppins:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================================
+   HostIt — Walrus track pitch deck. Single file, no build, no deps.
+   Aesthetic: "Will-Call" — every slide is a torn-off section of one long
+   admission ticket on deep-navy stock (dot-matrix print, perforation rail,
+   registration marks). Brand tokens lifted from web/app/globals.css.
+   Nav: ← / → / Space / Home / End / click edges / swipe / dots. Cmd-P → PDF.
+   ========================================================================== */
+:root{
+  --bg:#0C112B; --bg2:#0E1430; --navy900:#131939; --card:#141A38; --card2:#182046;
+  --raise:#1B234C; --edge:#232D5A;
+  --blue:#007CFA; --blue-hover:#0062CC;
+  --magenta:#FA00D4; --teal:#1CE2D8; --green:#05F53D; --amber:#F5A623;
+  --foil:#58F5B0;
+  --fg1:#FFFFFF; --fg2:#C8C8C8; --fg3:#B0B0B4;
+  --hair:rgba(255,255,255,.10); --hair2:rgba(255,255,255,.16);
+  --sans:"Hanken Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --display:"Poppins",var(--sans);
+  --mono:"Space Mono",ui-monospace,monospace;
+  --ease:cubic-bezier(.2,.7,.3,1);
+  --accent:var(--teal); /* per-slide hero accent, overridden inline */
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:
+    radial-gradient(1100px 700px at 80% -10%, rgba(0,124,250,.10), transparent 60%),
+    radial-gradient(900px 600px at 0% 0%, rgba(250,0,212,.05), transparent 55%),
+    linear-gradient(180deg,var(--navy900) 0%, var(--bg) 100%);
+  background-attachment:fixed;
+  color:var(--fg1); font-family:var(--sans);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  overflow:hidden;
+}
+::selection{background:rgba(0,124,250,.35)}
+a{color:var(--blue);text-decoration:none}
+
+/* ---- deck viewport / slide system ---- */
+.deck{position:fixed;inset:0;overflow:hidden}
+.slide{
+  position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+  padding:clamp(34px,5.2vw,96px); padding-left:clamp(48px,6vw,120px);
+  opacity:0;visibility:hidden;transform:translateX(8%);
+  transition:opacity .42s var(--ease), transform .42s var(--ease), visibility 0s linear .42s;
+}
+.slide.active{opacity:1;visibility:visible;transform:none;transition:opacity .42s var(--ease), transform .42s var(--ease), visibility 0s;}
+.slide.prev{transform:translateX(-6%)}
+.slide__in{max-width:1180px;width:100%;margin:0 auto;position:relative;z-index:2}
+
+/* ---- ticket motifs ---- */
+.dotfield{position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(rgba(255,255,255,.10) 1px, transparent 1px);
+  background-size:7px 7px; mix-blend-mode:overlay; opacity:.5}
+.perf{position:absolute;top:0;bottom:0;left:30px;width:0;border-left:2px dashed var(--hair2);pointer-events:none;z-index:1;opacity:.6}
+.perf::before,.perf::after{content:"";position:absolute;left:-12px;width:22px;height:22px;border-radius:50%;background:var(--bg);border:1px solid var(--hair)}
+.perf::before{top:-11px}.perf::after{bottom:-11px}
+.regmark{position:absolute;width:14px;height:14px;opacity:.4;z-index:1;color:var(--fg3)}
+.regmark::before,.regmark::after{content:"";position:absolute;background:currentColor}
+.regmark::before{left:50%;top:0;width:1px;height:100%;transform:translateX(-.5px)}
+.regmark::after{top:50%;left:0;height:1px;width:100%;transform:translateY(-.5px)}
+.rm-tl{top:26px;left:42px}.rm-tr{top:26px;right:26px}.rm-bl{bottom:26px;left:42px}.rm-br{bottom:26px;right:26px}
+.glow{position:absolute;border-radius:50%;filter:blur(110px);pointer-events:none;z-index:0;opacity:.5}
+
+/* ---- type system ---- */
+.kicker{display:inline-flex;align-items:center;gap:11px;font-family:var(--mono);
+  font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--fg3);margin-bottom:26px}
+.kicker .slash{width:22px;height:2px;background:var(--accent);border-radius:2px;flex:none;box-shadow:0 0 12px var(--accent)}
+.kicker b{color:var(--fg2);font-weight:700}
+h1.headline{font-family:var(--sans);font-weight:800;letter-spacing:-.022em;line-height:1.02;
+  font-size:clamp(34px,5.4vw,72px);margin:0;color:var(--fg1)}
+h2.headline{font-family:var(--sans);font-weight:800;letter-spacing:-.02em;line-height:1.05;
+  font-size:clamp(30px,4.3vw,54px);margin:0;color:var(--fg1)}
+.headline em{font-style:italic;color:var(--accent)}
+.lede{font-size:clamp(16px,1.35vw,19px);line-height:1.55;color:var(--fg2);max-width:62ch;margin:22px 0 0;white-space:pre-line}
+.lede b{color:var(--fg1);font-weight:700}
+.lede .hot{color:var(--accent);font-weight:600}
+.foot{position:absolute;left:clamp(48px,6vw,120px);bottom:clamp(26px,3vw,40px);font-family:var(--mono);
+  font-size:11px;letter-spacing:.12em;color:var(--fg3);z-index:2}
+.foot a{color:var(--fg2)}
+.mono{font-family:var(--mono)}
+
+/* ---- reusable bits ---- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.chip{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--fg2);
+  border:1px solid var(--hair2);border-radius:50px;padding:8px 14px;background:rgba(255,255,255,.02)}
+.chip.on{border-color:var(--accent);color:#fff;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
+.chip .d{color:var(--accent)}
+.tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--amber);
+  border:1px solid color-mix(in srgb,var(--amber) 45%,transparent);border-radius:4px;padding:3px 7px}
+
+.bullets{list-style:none;padding:0;margin:24px 0 0;display:flex;flex-direction:column;gap:13px;max-width:64ch}
+.bullets li{display:flex;gap:13px;align-items:flex-start;font-size:clamp(15px,1.25vw,17.5px);line-height:1.45;color:var(--fg2)}
+.bullets li b{color:var(--fg1);font-weight:700}
+.bullets .mk{flex:none;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;margin-top:1px;
+  font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 14%,transparent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+
+/* stat tiles */
+.stats{display:grid;gap:16px;margin-top:30px}
+.stat{border:1px solid var(--hair);border-radius:16px;background:var(--card);padding:22px 24px;position:relative;overflow:hidden}
+.stat .num{font-family:var(--display);font-weight:800;font-size:clamp(40px,5vw,68px);line-height:1;letter-spacing:-.02em;color:#fff}
+.stat .num .u{color:var(--accent)}
+.stat .lbl{margin-top:12px;color:var(--fg2);font-size:14px;line-height:1.4;max-width:30ch}
+.stat .est{position:absolute;top:16px;right:16px}
+
+/* code card */
+.code{border:1px solid var(--hair2);border-radius:14px;background:#0a0f24;
+  box-shadow:var(--shadow,0 24px 60px -36px rgba(0,0,0,.8));overflow:hidden}
+.code .bar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--hair);background:rgba(255,255,255,.02)}
+.code .bar i{width:10px;height:10px;border-radius:50%;background:var(--hair2)}
+.code .bar span{margin-left:8px;font-family:var(--mono);font-size:11px;color:var(--fg3);letter-spacing:.04em}
+.code pre{margin:0;padding:20px 22px;font-family:var(--mono);font-size:clamp(12.5px,1.15vw,15px);line-height:1.7;color:#dfe6ff;overflow:auto;white-space:pre}
+.code .cm{color:#6b78a8}.code .kw{color:var(--magenta)}.code .fn{color:var(--teal)}.code .st{color:var(--green)}.code .em2{color:var(--amber)}
+
+/* stamp */
+.stamp{font-family:var(--mono);font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--magenta);border:3px solid var(--magenta);border-radius:8px;padding:9px 16px;display:inline-block;
+  transform:rotate(-12deg);font-size:clamp(14px,1.6vw,20px);
+  text-shadow:0 2px 16px rgba(0,0,0,.5);box-shadow:0 6px 30px -10px color-mix(in srgb,var(--magenta) 60%,transparent)}
+
+/* ticket-book grid (8 use cases) */
+.book{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:28px}
+.ucell{border:1px solid var(--hair);border-radius:12px;background:var(--card);padding:15px 15px 16px;position:relative;overflow:hidden;min-height:118px}
+.ucell::after{content:"";position:absolute;left:10px;right:10px;top:38px;border-top:1.5px dashed var(--hair)}
+.ucell .ix{font-family:var(--mono);font-size:11px;color:var(--fg3);letter-spacing:.1em}
+.ucell .lk{position:absolute;top:13px;right:13px;font-family:var(--mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;padding:3px 6px;border-radius:5px}
+.ucell.pub .lk{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 45%,transparent)}
+.ucell.enc .lk{color:var(--magenta);border:1px solid color-mix(in srgb,var(--magenta) 45%,transparent)}
+.ucell .ut{margin-top:26px;font-weight:700;color:#fff;font-size:15px;letter-spacing:-.01em}
+.ucell .us{margin-top:5px;font-size:12px;line-height:1.4;color:var(--fg3)}
+.bookfoot{margin-top:16px;font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--fg2)}
+.bookfoot b{color:var(--teal)}
+
+/* lanes (layering) */
+.lanes{display:flex;flex-direction:column;gap:12px;margin-top:26px}
+.lane{display:flex;align-items:center;gap:18px;border:1px solid var(--hair);border-left-width:3px;border-radius:12px;
+  background:var(--card);padding:16px 20px}
+.lane .who{font-family:var(--mono);font-weight:700;font-size:14px;letter-spacing:.06em;text-transform:uppercase;min-width:96px}
+.lane .what{color:var(--fg2);font-size:14.5px;line-height:1.4}
+.lane .what b{color:var(--fg1)}
+.lane.sui{border-left-color:var(--blue)} .lane.sui .who{color:var(--blue)}
+.lane.wal{border-left-color:var(--teal)} .lane.wal .who{color:var(--teal)}
+.lane.seal{border-left-color:var(--magenta)} .lane.seal .who{color:var(--magenta)}
+.trace{margin-top:18px;font-family:var(--mono);font-size:12.5px;line-height:1.9;color:var(--fg2);
+  border:1px dashed var(--hair2);border-radius:10px;padding:14px 16px;background:rgba(255,255,255,.015)}
+.trace .a{color:var(--magenta)}.trace .b{color:var(--teal)}.trace .c{color:var(--blue)}.trace .g{color:var(--green)}
+
+/* two-col */
+.cols{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(26px,3.4vw,56px);align-items:center}
+.cols.rev{grid-template-columns:.92fr 1.08fr}
+
+/* gauge */
+.gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:18px}
+.gauge{width:min(340px,40vw)}
+.nolist{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:6px}
+.nolist .no{font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:var(--green);
+  border:1px solid color-mix(in srgb,var(--green) 40%,transparent);border-radius:50px;padding:7px 13px}
+.nolist .no b{color:#fff}
+
+/* wordmark row */
+.marks{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:6px}
+.marks span{font-family:var(--mono);font-size:13px;letter-spacing:.04em;color:var(--fg2);
+  padding-bottom:6px;border-bottom:1px solid var(--hair)}
+.quote{margin-top:26px;border-left:3px solid var(--blue);padding:6px 0 6px 18px}
+.quote p{margin:0;font-size:clamp(16px,1.5vw,21px);line-height:1.4;color:var(--fg1);font-weight:600}
+.quote .by{margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--fg3);display:flex;align-items:center;gap:9px}
+.quote .av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;
+  background:linear-gradient(135deg,var(--blue),var(--magenta))}
+
+/* big ADMIT stub (cover + close) */
+.stub{border:1px solid var(--hair2);border-radius:18px;overflow:hidden;background:var(--card);position:relative;
+  box-shadow:0 30px 70px -40px color-mix(in srgb,var(--blue) 55%,transparent),0 18px 40px -26px rgba(0,0,0,.8)}
+.stub .art{position:relative;aspect-ratio:16/9;background:linear-gradient(140deg,var(--blue) 0%,#2A3270 60%,var(--magenta) 140%)}
+.stub .foil{position:absolute;top:13px;right:13px;display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);
+  font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#fff;padding:6px 11px;border-radius:50px;
+  background:rgba(8,11,28,.34);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.28)}
+.stub .foil i{width:6px;height:6px;border-radius:50%;background:var(--foil);box-shadow:0 0 9px var(--foil)}
+.stub .qr{position:absolute;left:16px;bottom:14px;width:74px;height:74px;background:#fff;border-radius:8px;padding:6px}
+.stub .body{padding:18px 20px 20px}
+.stub .adm{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--green)}
+.stub .name{font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:-.02em;margin-top:4px}
+.stub .meta{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:11px 16px}
+.stub .ml{font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--fg3)}
+.stub .mv{margin-top:3px;font-size:13px;color:#fff;font-weight:600}
+
+/* ---- chrome: progress + dots + counter + hint ---- */
+.progress{position:fixed;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.06);z-index:40}
+.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--teal));transition:width .42s var(--ease);box-shadow:0 0 14px var(--blue)}
+.dots{position:fixed;right:18px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:9px;z-index:40}
+.dots button{width:9px;height:9px;border-radius:50%;border:0;padding:0;cursor:pointer;background:rgba(255,255,255,.20);transition:all .2s ease}
+.dots button:hover{background:rgba(255,255,255,.45)}
+.dots button[aria-current="true"]{background:var(--blue);box-shadow:0 0 10px var(--blue);transform:scale(1.25)}
+.counter{position:fixed;right:18px;bottom:14px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--fg3);z-index:40}
+.counter b{color:var(--fg1)}
+.brand{position:fixed;left:18px;top:16px;display:flex;align-items:center;gap:9px;z-index:40;font-family:var(--display);font-weight:800;letter-spacing:-.02em;font-size:16px;color:#fff}
+.brand svg{filter:drop-shadow(0 2px 8px rgba(0,124,250,.5))}
+.hint{position:fixed;left:50%;bottom:13px;transform:translateX(-50%);font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  color:var(--fg3);z-index:40;opacity:.8;transition:opacity .4s ease}
+.hint.gone{opacity:0}
+kbd{font-family:var(--mono);background:rgba(255,255,255,.07);border:1px solid var(--hair2);border-radius:4px;padding:1px 5px;color:var(--fg2)}
+.edge{position:fixed;top:0;bottom:0;width:14%;z-index:30;cursor:pointer}
+.edge.l{left:0}.edge.r{right:0}
+
+/* ---- enter animations ---- */
+.slide .reveal{opacity:0;transform:translateY(10px)}
+.slide.active .reveal{opacity:1;transform:none;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+.slide.active .reveal{transition-delay:calc(var(--i,0)*.07s + .08s)}
+
+@media (max-width:760px){
+  .cols,.cols.rev{grid-template-columns:1fr;gap:24px}
+  .book{grid-template-columns:repeat(2,1fr)}
+  .stats{grid-template-columns:1fr}
+  .dots{display:none}
+  .slide{padding-left:clamp(40px,6vw,120px)}
+}
+@media (prefers-reduced-motion:reduce){
+  .slide{transition:opacity .12s linear,visibility 0s}
+  .slide.active .reveal{transition:none;transition-delay:0s}
+  .progress i{transition:width .12s linear}
+  .stamp{transform:rotate(-12deg)!important}
+}
+
+/* ---- print → one slide per landscape page (Cmd-P to PDF) ---- */
+@media print{
+  @page{size:1280px 720px;margin:0}
+  html,body{height:auto;overflow:visible;background:var(--bg)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .deck{position:static}
+  .slide{position:relative;inset:auto;opacity:1!important;visibility:visible!important;transform:none!important;
+    width:1280px;height:720px;page-break-after:always;break-after:page}
+  .slide .reveal{opacity:1!important;transform:none!important}
+  .progress,.dots,.counter,.hint,.edge,.brand{display:none!important}
+}
+</style>
+</head>
+<body>
+<div class="brand" aria-hidden="true">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 5h3v14H4zM17 5h3v14h-3zM7 9l10 6M7 15l10-6" stroke="#007CFA" stroke-width="2.2" stroke-linecap="round"/></svg>
+  HostIt
+</div>
+
+<main class="deck" id="deck" aria-label="HostIt pitch deck — use arrow keys to navigate">
+
+  <!-- 1 · TITLE -->
+  <section class="slide" style="--accent:var(--teal)" aria-label="Title">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-tr"></i><i class="regmark rm-bl"></i><i class="regmark rm-br"></i>
+    <div class="glow" style="width:540px;height:540px;background:rgba(0,124,250,.32);top:-160px;right:-120px"></div>
+    <div class="slide__in">
+      <div class="cols">
+        <div>
+          <span class="kicker reveal" style="--i:0"><span class="slash"></span> Sui Overflow 2026 · <b>Walrus Track</b></span>
+          <h1 class="headline reveal" style="--i:1">Sell out, pay out, and bet on it — <em>on-chain.</em></h1>
+          <p class="lede reveal" style="--i:2">Permissionless event ticketing, native on Sui — where <b>Walrus is the entire content backend</b> the product literally cannot exist without.</p>
+          <div class="chips reveal" style="--i:3">
+            <span class="chip on"><span class="d">◆</span> Walrus</span>
+            <span class="chip"><span class="d">◆</span> Seal</span>
+            <span class="chip"><span class="d">◆</span> Enoki zkLogin</span>
+            <span class="chip"><span class="d">◆</span> Sui Move</span>
+          </div>
+        </div>
+        <div class="reveal" style="--i:3">
+          <div class="stub">
+            <div class="art">
+              <span class="foil"><i></i> on Sui · gas sponsored</span>
+              <div class="qr" aria-hidden="true">
+                <svg viewBox="0 0 21 21" width="100%" height="100%" shape-rendering="crispEdges"><rect width="21" height="21" fill="#fff"/><g fill="#0C112B"><rect x="1" y="1" width="5" height="5"/><rect x="2" y="2" width="3" height="3" fill="#fff"/><rect x="3" y="3" width="1" height="1" fill="#0C112B"/><rect x="15" y="1" width="5" height="5"/><rect x="16" y="2" width="3" height="3" fill="#fff"/><rect x="17" y="3" width="1" height="1" fill="#0C112B"/><rect x="1" y="15" width="5" height="5"/><rect x="2" y="16" width="3" height="3" fill="#fff"/><rect x="3" y="17" width="1" height="1" fill="#0C112B"/><rect x="8" y="2" width="1" height="1"/><rect x="10" y="1" width="1" height="2"/><rect x="12" y="3" width="1" height="1"/><rect x="8" y="8" width="1" height="1"/><rect x="10" y="9" width="2" height="1"/><rect x="13" y="8" width="1" height="2"/><rect x="9" y="11" width="1" height="2"/><rect x="11" y="12" width="2" height="1"/><rect x="15" y="9" width="1" height="1"/><rect x="17" y="10" width="2" height="1"/><rect x="16" y="13" width="1" height="2"/><rect x="8" y="15" width="1" height="1"/><rect x="10" y="16" width="1" height="2"/><rect x="12" y="17" width="2" height="1"/><rect x="14" y="15" width="1" height="2"/><rect x="2" y="8" width="2" height="1"/><rect x="4" y="10" width="1" height="2"/><rect x="2" y="12" width="1" height="1"/></g></svg>
+              </div>
+            </div>
+            <div class="body">
+              <div class="adm">◆ Admit — Sui Overflow 2026</div>
+              <div class="name">HostIt</div>
+              <div class="meta">
+                <div><div class="ml">Where</div><div class="mv">Sui testnet</div></div>
+                <div><div class="ml">Content layer</div><div class="mv" style="color:var(--teal)">Walrus</div></div>
+                <div><div class="ml">Live at</div><div class="mv">sui.hostit.events</div></div>
+                <div><div class="ml">Status</div><div class="mv" style="color:var(--green)">Working app</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="foot reveal" style="--i:4"><a href="https://sui.hostit.events">sui.hostit.events</a> · github.com/hostit-events</div>
+  </section>
+
+  <!-- 2 · PROBLEM -->
+  <section class="slide" style="--accent:var(--amber)" aria-label="Problem">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-br"></i>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> The status quo is broken</span>
+      <h2 class="headline reveal" style="--i:1">Your ticketing platform holds your money,<br>gatekeeps your sales, and owns your data.</h2>
+      <div class="cols" style="margin-top:30px;align-items:start">
+        <p class="lede reveal" style="--i:2">To run an event today you stitch together <b>five tools that never talk</b>: a ticketer, a payment processor, a check-in app, an email blaster, and a spreadsheet.
+
+The ticketer is <span class="hot">custodial</span> (it holds your cash), <span class="hot">gatekept</span> (you apply for permission to sell), and <span class="hot">closed</span> (nothing programmable lives on top of an event).
+
+<b>We lived this across 6 real events. So we rebuilt it.</b></p>
+        <div class="stats reveal" style="--i:3">
+          <div class="stat"><span class="tag est">Industry estimate</span><div class="num">5<span class="u">+</span></div><div class="lbl">disconnected tools to run one event</div></div>
+          <div class="stat"><span class="tag est">Industry estimate</span><div class="num">~20<span class="u">%</span></div><div class="lbl">of revenue lost to fees, fraud &amp; no-shows</div></div>
+          <div class="stat"><div class="num" style="font-size:clamp(30px,3.4vw,52px)">Theirs</div><div class="lbl">your sales, money &amp; attendee data — frozen the day they decide to deplatform you</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · SOLUTION -->
+  <section class="slide" style="--accent:var(--blue)" aria-label="Solution">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tr"></i><i class="regmark rm-bl"></i>
+    <div class="glow" style="width:480px;height:480px;background:rgba(0,124,250,.22);bottom:-160px;left:-120px"></div>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> The HostIt way</span>
+      <h2 class="headline reveal" style="--i:1">One permissionless platform. <em>No gatekeeper, no custodian, no takedowns.</em></h2>
+      <ul class="bullets reveal" style="--i:2">
+        <li><span class="mk">⌁</span><span><b>Any wallet hosts</b> — connect (or sign in with Google) and publish the same afternoon. No application.</span></li>
+        <li><span class="mk">$</span><span><b>Payouts withdraw from on-chain escrow</b> — sell in SUI, USDC, any <span class="mono">Coin&lt;T&gt;</span>. A flat 3% fee, no custodian, no skim.</span></li>
+        <li><span class="mk">⛽</span><span><b>Gasless checkout &amp; check-in</b> — buyers never touch a faucet; sponsored server-side via Enoki.</span></li>
+        <li><span class="mk">◎</span><span><b>Native prediction markets</b> + an <b>end-to-end-encrypted ticket-holder forum</b> + POAP collectibles.</span></li>
+      </ul>
+      <p class="lede reveal" style="--i:3;margin-top:24px"><b>Live on Sui testnet today: <a href="https://sui.hostit.events">sui.hostit.events</a></b> — a real working app, not slideware.</p>
+    </div>
+  </section>
+
+  <!-- 4 · TRACTION -->
+  <section class="slide" style="--accent:var(--green)" aria-label="Traction">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-tr"></i><i class="regmark rm-bl"></i><i class="regmark rm-br"></i>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> Proof · stated honestly</span>
+      <h2 class="headline reveal" style="--i:1"><span class="count" data-to="50">0</span>K attendees. <span class="count" data-to="6">0</span> flagship events.<br>Already shipped — <em>on EVM.</em></h2>
+      <div class="cols rev" style="margin-top:30px;align-items:center">
+        <div class="reveal" style="--i:2">
+          <p class="lede">HostIt is a faithful Sui Move port of the HostIt EVM Diamond — <b>same brand, same crew</b>. That ~50K is <span class="hot">real EVM-side traction</span>; the Sui app is the port, rebuilt <b>Walrus-native</b>.
+
+We're not guessing whether organizers want this. <b>We've run the events.</b></p>
+          <div class="quote">
+            <p>“Hosting Web3Lagos on HostIt was a smooth experience — easy integrations, hands-on support, and great post-event data.”</p>
+            <div class="by"><span class="av">AA</span> Awosika Ayodeji · Founder, Web3bridge</div>
+          </div>
+        </div>
+        <div class="reveal" style="--i:3">
+          <div class="marks">
+            <span>Web3Lagos</span><span>Borderless</span><span>Anambra Web3</span><span>Blockchain @ Unilag</span><span>ProdFest</span><span>Fuel Africa</span>
+          </div>
+          <div class="stats" style="margin-top:22px;grid-template-columns:1fr 1fr">
+            <div class="stat"><div class="num" style="font-size:clamp(30px,3.4vw,46px)">Gasless</div><div class="lbl">tickets &amp; check-in, sponsored on Sui</div></div>
+            <div class="stat"><div class="num" style="font-size:clamp(30px,3.4vw,46px)">Escrow</div><div class="lbl">every payout backed on-chain</div></div>
+          </div>
+          <p class="lede" style="font-size:13px;margin-top:14px"><span class="tag" style="color:var(--green);border-color:color-mix(in srgb,var(--green) 45%,transparent)">Real, EVM-side — now native on Sui</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · THE QUESTION -->
+  <section class="slide" style="--accent:var(--teal)" aria-label="The question">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-bl"></i><i class="regmark rm-br"></i>
+    <div class="slide__in" style="max-width:1000px">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> The question every Walrus deck must answer</span>
+      <h2 class="headline reveal" style="--i:1">Anyone can put one image on Walrus<br>and call it <em>“decentralized.”</em></h2>
+      <p class="lede reveal" style="--i:2;max-width:70ch">That's the bar most submissions clear — and stop at. One blob, one screenshot, one press release. We think that misreads what Walrus is <b>for</b>.
+
+<b>Walrus is a content backend, not a demo prop.</b> So we asked a harder question:</p>
+      <p class="lede reveal" style="--i:3;color:var(--fg1);font-size:clamp(18px,1.9vw,26px);font-weight:600;max-width:60ch;margin-top:26px">What would a real consumer app look like if Walrus held <em style="color:var(--teal);font-style:italic">everything</em> users actually read?</p>
+    </div>
+  </section>
+
+  <!-- 6 · THESIS -->
+  <section class="slide" style="--accent:var(--teal)" aria-label="Thesis">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-tr"></i>
+    <div class="glow" style="width:460px;height:460px;background:rgba(28,226,216,.14);top:-140px;right:-100px"></div>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> The thesis</span>
+      <h2 class="headline reveal" style="--i:1">Walrus is the entire content backend.<br><em>There is no content database. Anywhere.</em></h2>
+      <p class="lede reveal" style="--i:2">Public metadata, media, <b>and</b> Seal-encrypted private data — all on Walrus, across <b>eight distinct use cases</b>, on a single <b>49-line SDK-free HTTP client</b>. No Postgres, no S3, no websocket holding content behind it.</p>
+      <div class="lanes reveal" style="--i:3;margin-top:24px">
+        <div class="lane sui"><span class="who">Sui</span><span class="what"><b>the index &amp; the truth</b> — identity, ownership, logic, access policy. The on-chain event log is the only record of where content lives.</span></div>
+        <div class="lane wal"><span class="who">Walrus</span><span class="what"><b>the store</b> — every byte anyone actually reads: public metadata, media, art, reviews + encrypted forum, vault, drafts, AI memory.</span></div>
+        <div class="lane seal"><span class="who">Seal</span><span class="what"><b>the lock</b> — threshold encryption on the private subset, released only when a Move policy passes.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · SHOWSTOPPER -->
+  <section class="slide" style="--accent:var(--magenta)" aria-label="The showstopper">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-br"></i>
+    <div class="glow" style="width:420px;height:420px;background:rgba(250,0,212,.12);bottom:-150px;right:-80px"></div>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> The showstopper · provable in one assert</span>
+      <h2 class="headline reveal" style="--i:1">A HostIt event that doesn't live on Walrus<br><em>literally cannot exist.</em></h2>
+      <div class="cols" style="margin-top:28px;align-items:center">
+        <div class="reveal" style="--i:2">
+          <div class="code">
+            <div class="bar"><i></i><i></i><i></i><span>sources/event.move — fn create_event</span></div>
+<pre><span class="cm">// an Event is deliberately thin…</span>
+<span class="kw">public struct</span> <span class="fn">Event</span> has key {
+  name, start_ms, end_ms, max_tickets, flags,
+  <span class="em2">uri</span>: String,   <span class="cm">// ← nothing but a Walrus blob id</span>
+}
+
+<span class="cm">// …and the constructor refuses an empty uri:</span>
+<span class="kw">assert!</span>(string::length(&amp;uri) &gt; <span class="st">0</span>, <span class="em2">E_EMPTY_URI</span>);
+<span class="cm">// every Event MUST point at a Walrus blob</span></pre>
+          </div>
+        </div>
+        <div class="reveal" style="--i:3">
+          <p class="lede" style="margin-top:0">The mint aborts with <span class="mono" style="color:var(--magenta)">E_EMPTY_URI</span> if you try to create an event without a Walrus blob id.
+
+<b>Sui state is structurally incomplete without Walrus</b> — a property you prove by reading one line and trying to violate it, not a claim you take on faith.</p>
+          <div style="margin-top:28px"><span class="stamp">Void without Walrus</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · EIGHT USE CASES -->
+  <section class="slide" style="--accent:var(--teal)" aria-label="Eight Walrus use cases">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tr"></i><i class="regmark rm-bl"></i>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> Breadth few can match</span>
+      <h2 class="headline reveal" style="--i:1">Eight genuinely different uses. <em>One tiny client.</em></h2>
+      <div class="book reveal" style="--i:2">
+        <div class="ucell pub"><span class="ix">01</span><span class="lk">public</span><div class="ut">Event metadata</div><div class="us">JSON — the canonical content of every event · <span class="mono">Event.uri</span></div></div>
+        <div class="ucell pub"><span class="ix">02</span><span class="lk">public</span><div class="ut">Cover images</div><div class="us">raw bytes, straight from the aggregator as <span class="mono">&lt;img src&gt;</span></div></div>
+        <div class="ucell pub"><span class="ix">03</span><span class="lk">public</span><div class="ut">POAP artwork</div><div class="us">blob id cloned into the NFT via Sui Display</div></div>
+        <div class="ucell pub"><span class="ix">05</span><span class="lk">public</span><div class="ut">Public reviews</div><div class="us">POAP-gated — only proven attendees can post</div></div>
+        <div class="ucell enc"><span class="ix">04</span><span class="lk">🔒 Seal</span><div class="ut">Ticket-gated forum</div><div class="us">one encrypted blob per message; non-holders can't read</div></div>
+        <div class="ucell enc"><span class="ix">06</span><span class="lk">🔒 Seal</span><div class="ut">Self vault</div><div class="us">encrypted to your own address — <span class="mono">seal_approve_self</span></div></div>
+        <div class="ucell enc"><span class="ix">07</span><span class="lk">🔒 Seal</span><div class="ut">Event drafts</div><div class="us">full in-progress form · 30-epoch TTL · no backend</div></div>
+        <div class="ucell enc"><span class="ix">08</span><span class="lk">🔒 Seal</span><div class="ut">AI organizer memory</div><div class="us">TEE-relayed embeddings that ground AI drafting</div></div>
+      </div>
+      <div class="bookfoot reveal" style="--i:3">Four public · four encrypted — all through <b>web/lib/walrus.ts</b>. No content database anywhere.</div>
+    </div>
+  </section>
+
+  <!-- 9 · THE 49 LINES -->
+  <section class="slide" style="--accent:var(--blue)" aria-label="The client">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-br"></i>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> The whole backend</span>
+      <h2 class="headline reveal" style="--i:1"><em>PUT</em> to write. <em>GET</em> to read.<br>No SDK. That's it.</h2>
+      <div class="cols" style="margin-top:26px;align-items:center">
+        <div class="reveal" style="--i:2">
+          <div class="code">
+            <div class="bar"><i></i><i></i><i></i><span>web/lib/walrus.ts — 49 lines, no SDK</span></div>
+<pre><span class="cm">// write — returns a content-addressed blob id</span>
+<span class="kw">PUT</span>  {publisher}/v1/blobs?epochs=<span class="st">N</span>
+
+<span class="cm">// read — anyone, anywhere</span>
+<span class="kw">GET</span>  {aggregator}/v1/blobs/{<span class="fn">id</span>}
+
+<span class="cm">// dedup handled: newlyCreated ?? alreadyCertified</span>
+<span class="cm">// blobUrl() → a cover image is just an &lt;img src&gt;</span></pre>
+          </div>
+        </div>
+        <ul class="bullets reveal" style="--i:3">
+          <li><span class="mk">T</span><span><b>TTL is first-class</b> — 10 epochs default, 30 for drafts that must outlive a session.</span></li>
+          <li><span class="mk">⇄</span><span><b>Dedup handled</b> — <span class="mono">newlyCreated</span> vs <span class="mono">alreadyCertified</span> resolved transparently.</span></li>
+          <li><span class="mk">↻</span><span><b>Uploads cached</b> so a retry never re-stores the same bytes.</span></li>
+          <li><span class="mk">⛨</span><span><b>Both origins pinned in the CSP</b> — graceful fallback to public testnet endpoints.</span></li>
+        </ul>
+      </div>
+      <p class="lede reveal" style="--i:4;margin-top:22px">The entire content layer of a consumer app fits in <b>a file you can read over coffee.</b></p>
+    </div>
+  </section>
+
+  <!-- 10 · WALRUS + SEAL -->
+  <section class="slide" style="--accent:var(--magenta)" aria-label="Walrus + Seal">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tr"></i><i class="regmark rm-bl"></i>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> Walrus + Seal · the headline pairing</span>
+      <h2 class="headline reveal" style="--i:1">One encrypted blob. Two on-chain policies.<br><em>Access composes; content stays single-copy.</em></h2>
+      <div class="trace reveal" style="--i:2">
+        <span class="a">Seal.encrypt</span>(message, <span class="c">event_id</span>) → <span class="b">Walrus.store({id, ct})</span> → <span class="c">forum::post(blob_id)</span> anchors it on-chain
+        <br>&nbsp;
+        <br>decrypt the <b>same ciphertext</b> via either Move policy:
+        <br>&nbsp;&nbsp;<span class="g">✓ seal_approve_ticket</span>&nbsp;&nbsp;— a ticket holder &nbsp;&nbsp;<b>OR</b>&nbsp;&nbsp;<span class="g">✓ seal_approve_organizer</span>&nbsp;&nbsp;— the OrganizerCap
+      </div>
+      <ul class="bullets reveal" style="--i:3;margin-top:22px">
+        <li><span class="mk">⛓</span><span><b>Authorization composes on-chain</b> — two independent Move policies, <b>one blob</b>. Neither party re-encrypts.</span></li>
+        <li><span class="mk">⦿</span><span><b>The aggregator only ever sees ciphertext.</b> Walrus holds exactly one copy; Seal holds the key; Sui decides who gets it.</span></li>
+        <li><span class="mk">⊘</span><span><b>Namespacing is real</b> — organizer-only data is domain-separated, so a ticket-holder policy can never decrypt it.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 11 · IMMUTABILITY -->
+  <section class="slide" style="--accent:var(--teal)" aria-label="Immutability">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-br"></i>
+    <div class="slide__in" style="max-width:1000px">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> Immutability, done right</span>
+      <h2 class="headline reveal" style="--i:1">We embrace Walrus's permanence<br><em>instead of fighting it.</em></h2>
+      <p class="lede reveal" style="--i:2">A post is an immutable event <b>plus</b> an immutable blob — so moderation is by <b>tombstone</b> (<span class="mono">PostModerated</span>, keyed on the blob id), never deletion.
+
+No content database means <span class="hot">no takedowns, no silent edits, no platform that can rewrite your event's history.</span>
+
+Permanence isn't a constraint we worked around. It's the property that makes the whole thing <b>trustworthy.</b></p>
+    </div>
+  </section>
+
+  <!-- 12 · PREDICTION MARKETS -->
+  <section class="slide" style="--accent:var(--green)" aria-label="Prediction markets">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tr"></i><i class="regmark rm-bl"></i>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> The engineering centerpiece</span>
+      <div class="cols rev" style="align-items:center">
+        <div>
+          <h2 class="headline reveal" style="--i:1">Bet on whether it sells out — <em>settled trustlessly, no oracle.</em></h2>
+          <p class="lede reveal" style="--i:2">Every event opens native parimutuel markets: a <b>Sellout Clock</b> and a <b>final-tickets-sold range</b>. They settle by reading the contract's own <span class="mono">event::minted()</span> at expiry — anyone can settle; goalposts are snapshotted at creation so they can't move.</p>
+          <div class="nolist reveal" style="--i:3;justify-content:flex-start">
+            <span class="no"><b>no</b> oracle</span><span class="no"><b>no</b> keeper</span><span class="no"><b>no</b> house</span><span class="no"><b>no</b> fee</span>
+          </div>
+          <p class="lede reveal" style="--i:4;font-size:13px;margin-top:18px"><span class="tag">Note</span> &nbsp;DeepBook Predict has no self-serve oracle on testnet — so we shipped our own that settles on event state. <b>Impossible on a Web2 ticketing platform.</b></p>
+        </div>
+        <div class="gauge-wrap reveal" style="--i:3">
+          <svg class="gauge" viewBox="0 0 200 130" fill="none" aria-hidden="true">
+            <path d="M20 115 A 80 80 0 0 1 180 115" stroke="rgba(255,255,255,.12)" stroke-width="12" stroke-linecap="round"/>
+            <path id="gaugeFill" d="M20 115 A 80 80 0 0 1 180 115" stroke="var(--green)" stroke-width="12" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="251" style="filter:drop-shadow(0 0 8px var(--green))"/>
+            <g id="needle" style="transform-origin:100px 115px;transform:rotate(-90deg);transition:transform 1.3s var(--ease)">
+              <line x1="100" y1="115" x2="100" y2="48" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="100" cy="115" r="6" fill="#fff"/>
+            </g>
+            <text x="100" y="104" text-anchor="middle" fill="#fff" font-family="Poppins" font-weight="800" font-size="26" id="gaugePct">0%</text>
+            <text x="100" y="124" text-anchor="middle" fill="#B0B0B4" font-family="Space Mono" font-size="8" letter-spacing="1.5">SELLOUT CLOCK</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13 · GASLESS ONBOARDING -->
+  <section class="slide" style="--accent:var(--blue)" aria-label="Gasless onboarding">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-tr"></i>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> Onboarding · gasless</span>
+      <h2 class="headline reveal" style="--i:1">The decentralization is <em>invisible</em> to the user.</h2>
+      <p class="lede reveal" style="--i:2">Sign in with Google via <b>Enoki zkLogin</b> — no seed phrase, no wallet hurdle, no faucet. Checkout and check-in route through server-side sponsorship, scoped by one allowlist. Yet every byte read is on Walrus and every private message is Seal-encrypted.</p>
+      <div class="chips reveal" style="--i:3;margin-top:28px">
+        <span class="chip on">Google sign-in · zkLogin</span>
+        <span class="chip on">Gas sponsored</span>
+        <span class="chip on">SUI · USDC · any Coin&lt;T&gt;</span>
+        <span class="chip on">3% fee → escrow</span>
+        <span class="chip on">Your keys, your tickets</span>
+      </div>
+      <p class="lede reveal" style="--i:4;margin-top:26px">The hard crypto is fully hidden behind a <b>consumer-grade flow</b> — so a real attendee at Web3Lagos can actually use it.</p>
+    </div>
+  </section>
+
+  <!-- 14 · WHY THIS WINS / ASK -->
+  <section class="slide" style="--accent:var(--blue)" aria-label="Why this wins the Walrus track">
+    <div class="dotfield"></div><div class="perf"></div>
+    <i class="regmark rm-tl"></i><i class="regmark rm-tr"></i><i class="regmark rm-bl"></i><i class="regmark rm-br"></i>
+    <div class="glow" style="width:520px;height:520px;background:rgba(0,124,250,.26);bottom:-180px;right:-120px"></div>
+    <div class="slide__in">
+      <span class="kicker reveal" style="--i:0"><span class="slash"></span> Why this wins the Walrus track</span>
+      <h2 class="headline reveal" style="--i:1">Load-bearing, not decorative. <em>The contract enforces it.</em></h2>
+      <div class="cols" style="margin-top:26px;align-items:center">
+        <ul class="bullets reveal" style="--i:2">
+          <li><span class="mk">①</span><span><b>Load-bearing</b> — the Move code asserts a non-empty Walrus uri. No Walrus, no event.</span></li>
+          <li><span class="mk">②</span><span><b>Breadth</b> — 8 distinct uses, public &amp; encrypted, on one 49-line client.</span></li>
+          <li><span class="mk">③</span><span><b>Composition</b> — Walrus + Seal gated by on-chain Move policy; same blob, two policies.</span></li>
+          <li><span class="mk">④</span><span><b>No content database — anywhere.</b> Sui indexes, Walrus stores. Full stop.</span></li>
+          <li><span class="mk">⑤</span><span><b>Real product</b> — ported from a platform that served ~50K attendees.</span></li>
+        </ul>
+        <div class="reveal" style="--i:3">
+          <div class="stub">
+            <div class="art" style="background:linear-gradient(140deg,#05402a 0%,#0C112B 55%,var(--blue) 150%)">
+              <span class="foil"><i></i> Admit One</span>
+            </div>
+            <div class="body">
+              <div class="adm" style="color:var(--green)">◆ Admit — Walrus Track · Sui Overflow 2026</div>
+              <div class="name">It's live. It's real. It's open.</div>
+              <div class="meta">
+                <div><div class="ml">Try it</div><div class="mv"><a href="https://sui.hostit.events">sui.hostit.events</a></div></div>
+                <div><div class="ml">Verify it</div><div class="mv">github.com/hostit-events</div></div>
+                <div><div class="ml">Price</div><div class="mv">3% per ticket — that's it</div></div>
+                <div><div class="ml">Status</div><div class="mv" style="color:var(--green)">Live on testnet</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="lede reveal" style="--i:4;margin-top:20px">Every claim here is greppable in the repo. <b>Proven on EVM. Native on Sui. Built on Walrus — by design.</b></p>
+    </div>
+  </section>
+
+</main>
+
+<!-- chrome -->
+<div class="edge l" id="edgeL" aria-hidden="true"></div>
+<div class="edge r" id="edgeR" aria-hidden="true"></div>
+<nav class="dots" id="dots" aria-label="Slides"></nav>
+<div class="counter" id="counter"><b>01</b> / 14</div>
+<div class="hint" id="hint">← → or <kbd>Space</kbd> to navigate · <kbd>F</kbd> fullscreen · <kbd>P</kbd> print</div>
+<div class="progress"><i id="bar"></i></div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var N = slides.length, cur = 0;
+  var bar = document.getElementById('bar'), counter = document.getElementById('counter'),
+      dots = document.getElementById('dots'), hint = document.getElementById('hint');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var pad = function(n){return (n<10?'0':'')+n;};
+
+  // build dots
+  slides.forEach(function(s,i){
+    var b = document.createElement('button');
+    b.setAttribute('aria-label','Go to slide '+(i+1));
+    b.addEventListener('click',function(){go(i);});
+    dots.appendChild(b);
+  });
+  var dotBtns = Array.prototype.slice.call(dots.children);
+
+  function animateSlide(s){
+    // gauge
+    var fill = s.querySelector('#gaugeFill'), needle = s.querySelector('#needle'), pct = s.querySelector('#gaugePct');
+    if(fill && needle){
+      var target = 78; // illustrative sellout %
+      var setG = function(v){
+        fill.style.strokeDashoffset = String(251 - 251*(v/100));
+        needle.style.transform = 'rotate('+(-90 + 180*(v/100))+'deg)';
+        pct.textContent = Math.round(v)+'%';
+      };
+      if(reduce){ setG(target); }
+      else { setG(0); var t0=null; var step=function(ts){ if(t0===null)t0=ts; var p=Math.min((ts-t0)/1300,1); var e=1-Math.pow(1-p,4); setG(target*e); if(p<1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
+    }
+    // counters
+    s.querySelectorAll('.count').forEach(function(el){
+      var to = parseFloat(el.getAttribute('data-to'))||0;
+      if(reduce){ el.textContent = String(to); return; }
+      var t0=null; (function step(ts){ if(!t0)t0=ts; var p=Math.min((ts-t0)/1100,1); var e=1-Math.pow(1-p,4); el.textContent=String(Math.round(to*e)); if(p<1) requestAnimationFrame(step); })(performance.now());
+    });
+  }
+
+  function go(i){
+    i = Math.max(0, Math.min(N-1, i));
+    if(i===cur && slides[cur].classList.contains('active')) return;
+    slides.forEach(function(s,j){
+      s.classList.toggle('active', j===i);
+      s.classList.toggle('prev', j<i);
+    });
+    dotBtns.forEach(function(b,j){ b.setAttribute('aria-current', j===i?'true':'false'); });
+    cur = i;
+    bar.style.width = ((i)/(N-1)*100)+'%';
+    counter.innerHTML = '<b>'+pad(i+1)+'</b> / '+pad(N);
+    if(location.hash !== '#'+(i+1)) history.replaceState(null,'','#'+(i+1));
+    animateSlide(slides[i]);
+  }
+  function next(){go(cur+1);} function prev(){go(cur-1);}
+
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight'||e.key==='PageDown'||(e.key===' '&&!e.shiftKey)){e.preventDefault();next();}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'||(e.key===' '&&e.shiftKey)){e.preventDefault();prev();}
+    else if(e.key==='Home'){e.preventDefault();go(0);}
+    else if(e.key==='End'){e.preventDefault();go(N-1);}
+    else if(e.key==='f'||e.key==='F'){ if(!document.fullscreenElement){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();} else {document.exitFullscreen&&document.exitFullscreen();} }
+    else if(e.key==='p'||e.key==='P'){ window.print(); }
+    if(e.key!=='f'&&e.key!=='F') hint.classList.add('gone');
+  });
+  document.getElementById('edgeL').addEventListener('click',prev);
+  document.getElementById('edgeR').addEventListener('click',next);
+
+  // touch swipe
+  var x0=null;
+  document.addEventListener('touchstart',function(e){x0=e.touches[0].clientX;},{passive:true});
+  document.addEventListener('touchend',function(e){ if(x0===null)return; var dx=e.changedTouches[0].clientX-x0; if(Math.abs(dx)>50){ dx<0?next():prev(); } x0=null; },{passive:true});
+
+  // deep link
+  var start = parseInt((location.hash||'').replace('#',''),10);
+  go(isNaN(start)?0:start-1);
+  setTimeout(function(){hint.classList.add('gone');}, 6000);
+})();
+</script>
+</body>
+</html>

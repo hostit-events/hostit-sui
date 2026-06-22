@@ -99,6 +99,15 @@ const config: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
+  // Clean URL for the static pitch deck (public/pitch/index.html). Next/Vercel
+  // serve the file at /pitch/index.html but don't resolve a bare /pitch directory
+  // index, so map both /pitch and /pitch/ onto the file.
+  async rewrites() {
+    return [
+      { source: "/pitch", destination: "/pitch/index.html" },
+      { source: "/pitch/", destination: "/pitch/index.html" },
+    ];
+  },
 };
 
 export default config;
