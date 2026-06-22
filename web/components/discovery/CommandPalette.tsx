@@ -207,10 +207,11 @@ export function CommandPalette({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Anchor at top-[15vh] on ALL sizes: cancel the dialog's base
-          -translate-y-1/2 unconditionally, else on mobile the tall palette is
-          pulled up by half its height and the search input clears the top. */}
-      <DialogContent className="top-[15vh] max-w-xl gap-0 overflow-hidden rounded-2xl p-0 translate-y-0">
+      {/* Anchor at top-[15vh] on all sizes (cancel the dialog's base
+          -translate-y-1/2, else mobile pulls the tall palette up and clips the
+          search). Raycast-wide on desktop — sm:max-w-2xl overrides the base
+          sm:max-w-sm (384px); mobile keeps the base full-width-minus-margins. */}
+      <DialogContent showCloseButton={false} className="top-[15vh] gap-0 overflow-hidden rounded-2xl p-0 translate-y-0 sm:max-w-2xl">
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <DialogDescription className="sr-only">
           Search commands and events. Use arrow keys to navigate, Enter to select.
@@ -230,6 +231,16 @@ export function CommandPalette({
           <kbd className="hidden shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
             ESC
           </kbd>
+          {/* Esc has no touch equivalent, so keep a tap-to-close on mobile only;
+              desktop closes via Esc (the hint above) — Raycast-style, no X. */}
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close search"
+            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96] sm:hidden"
+          >
+            <Icon icon="ic:round-close" size={18} />
+          </button>
         </div>
 
         <div ref={listRef} className="max-h-[50vh] overflow-y-auto p-2">
