@@ -49,12 +49,11 @@ export function useProfile(address: string | null | undefined) {
       if (!address) return null;
       const blobId = await fetchPointer(address);
       if (!blobId) return null;
-      try {
-        const env = await readJson<ProfileEnvelope>(blobId);
-        return env && env.v === 1 ? env : null;
-      } catch {
-        return null;
-      }
+      // Let a genuine blob-read failure surface as react-query `isError` so the
+      // Settings editor can offer a retry instead of a misleading "no profile".
+      // Display consumers read `.data?.…` with fallbacks, so they still degrade.
+      const env = await readJson<ProfileEnvelope>(blobId);
+      return env && env.v === 1 ? env : null;
     },
   });
 }

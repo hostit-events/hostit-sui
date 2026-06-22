@@ -20,12 +20,18 @@ import { EmailCaptureDialog } from "@/components/EmailCaptureDialog";
 import { Icon } from "@/components/Icon";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { AuthControl } from "@/components/AuthControl";
+import { PageHeader } from "@/components/PageHeader";
+import { UserAvatar } from "@/components/UserAvatar";
+import { ErrorState } from "@/components/States";
+import { TxLink } from "@/components/TxLink";
+import { humanizeError } from "@/lib/moveErrors";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { fromHex } from "@mysten/sui/utils";
@@ -130,7 +136,7 @@ export function SettingsScreen() {
       prof.refetch();
       toast.success("Public profile saved", { id: tid });
     } catch (e) {
-      toast.error(`Couldn't save: ${e instanceof Error ? e.message : "error"}`, { id: tid });
+      toast.error(`Couldn't save: ${humanizeError(e)}`, { id: tid });
     } finally {
       setProfileBusy(false);
     }
@@ -145,7 +151,7 @@ export function SettingsScreen() {
       setEmailPlain(email);
       toast.success("Decrypted — visible only in this session.", { id: tid });
     } catch (e) {
-      toast.error(`Couldn't decrypt: ${e instanceof Error ? e.message : "error"}`, { id: tid });
+      toast.error(`Couldn't decrypt: ${humanizeError(e)}`, { id: tid });
     } finally {
       setEmailBusy(false);
     }
@@ -159,7 +165,7 @@ export function SettingsScreen() {
     setEmailBusy(true);
     const tid = toast.loading("Removing your email…");
     try {
-      await eraseEmail({
+      const digest = await eraseEmail({
         address: addr,
         hashBytes: Array.from(fromHex(prof.data.emailHash)),
         sign,
@@ -172,10 +178,15 @@ export function SettingsScreen() {
       prof.refetch();
       toast.success("Email removed", {
         id: tid,
-        description: "On-chain record cleared. The encrypted blob expires with its Walrus TTL.",
+        description: (
+          <span>
+            On-chain record cleared (<TxLink digest={digest} />). The encrypted blob expires with its
+            Walrus TTL.
+          </span>
+        ),
       });
     } catch (e) {
-      toast.error(`Couldn't remove: ${e instanceof Error ? e.message : "error"}`, { id: tid });
+      toast.error(`Couldn't remove: ${humanizeError(e)}`, { id: tid });
     } finally {
       setEmailBusy(false);
     }
@@ -207,16 +218,7 @@ export function SettingsScreen() {
 
   return (
     <div className="space-y-8 screen-in">
-      <header className="relative">
-        <div
-          className="glow"
-          style={{ width: 360, height: 360, background: "rgba(0,124,250,.4)", top: -150, right: -40, opacity: 0.2 }}
-        />
-        <h1 className="page-title" style={{ marginTop: 12, fontSize: 34 }}>
-          Settings
-        </h1>
-        <p className="page-sub">Profile, email, interests and notifications.</p>
-      </header>
+      <PageHeader title="Settings" sub="Profile, email, interests and notifications." />
 
       {/* Mobile: the header is hidden, so the account sign-in/out lives here
           (this is the "Account" bottom-tab destination). */}
@@ -243,19 +245,41 @@ export function SettingsScreen() {
         {/* panel */}
         <div className="space-y-6" style={{ minWidth: 0 }}>
           <TabsContent value="account">
-            {/* Public profile (on-chain): username + avatar used across HostIt. */}
-            <Card className="space-y-5 px-4">
-              <div>
-                <div className="section-label">Public profile</div>
-                <p className="page-sub" style={{ fontSize: 13 }}>
-                  Username + avatar shown across HostIt (stored on Walrus, keyed to your address). A
-                  suiNS name, if set, takes precedence as your verified handle.
-                </p>
-              </div>
-              {!addr ? (
-                <div className="mono">Connect a wallet to set a public profile.</div>
-              ) : (
-                <>
+            {!addr ? (
+              <Card className="px-4 py-8 text-center text-sm text-muted-foreground">
+                Connect a wallet to manage your profile.
+              </Card>
+            ) : prof.isLoading ? (
+              <Card className="space-y-3 px-4">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </Card>
+            ) : prof.isError ? (
+              <ErrorState
+                title="Couldn't load your profile"
+                body="We couldn't read your on-chain profile just now — this is usually transient."
+                onRetry={() => prof.refetch()}
+              />
+            ) : (
+              <div className="space-y-6">
+                {/* Public profile (on-chain): username + avatar used across HostIt. */}
+                <Card className="space-y-5 px-4">
+                  <div>
+                    <div className="section-label">Public profile</div>
+                    <p className="page-sub text-[13px]">
+                      Username + avatar shown across HostIt (stored on Walrus, keyed to your address). A
+                      suiNS name, if set, takes precedence as your verified handle.
+                    </p>
+                  </div>
+                  {/* Live identity preview — how you appear to others across HostIt. */}
+                  <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
+                    <UserAvatar address={addr} size="lg" />
+                    <div className="min-w-0 text-sm">
+                      <AddressDisplay address={addr} className="font-medium" />
+                      <div className="text-[12px] text-muted-foreground">How you appear across HostIt.</div>
+                    </div>
+                  </div>
                   <div className="field">
                     <Label htmlFor="settings-username">Username</Label>
                     <Input
@@ -276,7 +300,7 @@ export function SettingsScreen() {
                       onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
                       disabled={profileBusy}
                     />
-                    <p className="text-[12px]" style={{ color: "var(--fg3)" }}>
+                    <p className="text-[12px] text-muted-foreground">
                       {avatarFile
                         ? avatarFile.name
                         : prof.data?.avatarBlobId
@@ -289,83 +313,72 @@ export function SettingsScreen() {
                       <Icon icon="ic:round-save" size={16} /> {profileBusy ? "Saving…" : "Save public profile"}
                     </Button>
                   </div>
-                </>
-              )}
-            </Card>
+                </Card>
 
-            {/* Email (GH#96): Seal-encrypted; an organizer sees it only on opt-in. */}
-            <Card className="space-y-5 px-4" style={{ marginTop: 24 }}>
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <div className="section-label">Email</div>
-                  <p className="page-sub" style={{ fontSize: 13 }}>
-                    Encrypted with Seal — an organizer sees it only if you opt in when buying a ticket.
-                  </p>
-                </div>
-                {emailBound && (
-                  <Badge variant="secondary">
-                    <Icon icon="ph:lock-key-fill" size={13} />{" "}
-                    {prof.data?.emailSource === "google" ? "Google" : "Wallet"}
-                  </Badge>
-                )}
-              </div>
-
-              {!EMAIL_ENABLED ? (
-                <div className="mono">Email isn&apos;t enabled on this deployment.</div>
-              ) : !addr ? (
-                <div className="mono">Connect a wallet to manage your email.</div>
-              ) : !emailBound ? (
-                <div className="space-y-3">
-                  <p className="text-sm" style={{ color: "var(--fg2)" }}>No email linked yet.</p>
-                  <Button onClick={() => setBindOpen(true)}>
-                    <Icon icon="ic:round-mail" size={16} /> Add email
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm" style={{ color: "var(--fg2)" }}>
-                      {emailPlain ?? "•••••••• (encrypted)"}
-                    </span>
-                    {!emailPlain && (
-                      <Button variant="outline" size="sm" disabled={emailBusy} onClick={revealEmail}>
-                        <Icon icon="ph:eye" size={14} /> Reveal
-                      </Button>
+                {/* Email (GH#96): Seal-encrypted; an organizer sees it only on opt-in. */}
+                <Card className="space-y-5 px-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="section-label">Email</div>
+                      <p className="page-sub text-[13px]">
+                        Encrypted with Seal — an organizer sees it only if you opt in when buying a ticket.
+                      </p>
+                    </div>
+                    {emailBound && (
+                      <Badge variant="secondary">
+                        <Icon icon="ph:lock-key-fill" size={13} />{" "}
+                        {prof.data?.emailSource === "google" ? "Google" : "Wallet"}
+                      </Badge>
                     )}
                   </div>
-                  <div
-                    className="flex items-center gap-2 flex-wrap"
-                    style={{ borderTop: "1px solid var(--hair)", paddingTop: 14 }}
-                  >
-                    {prof.data?.emailSource === "google" ? (
-                      <>
-                        <span className="text-[12px]" style={{ color: "var(--fg3)" }}>
-                          <Icon icon="ph:lock-fill" size={13} /> Verified via Google — managed by your
-                          Google account.
+
+                  {!EMAIL_ENABLED ? (
+                    <div className="mono">Email isn&apos;t enabled on this deployment.</div>
+                  ) : !emailBound ? (
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">No email linked yet.</p>
+                      <Button onClick={() => setBindOpen(true)}>
+                        <Icon icon="ic:round-mail" size={16} /> Add email
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm text-muted-foreground">
+                          {emailPlain ?? "•••••••• (encrypted)"}
                         </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={emailBusy}
-                          onClick={doEraseEmail}
-                          style={{ borderColor: "var(--color-danger)", color: "var(--color-danger)" }}
-                        >
-                          Delete my email data
-                        </Button>
-                      </>
-                    ) : (
-                      <Button variant="outline" size="sm" disabled={emailBusy} onClick={doEraseEmail}>
-                        Disconnect email
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-[11px]" style={{ color: "var(--fg3)" }}>
-                    Removing clears the on-chain record + revokes shares. The encrypted blob expires
-                    with its Walrus TTL; an organizer you already shared with keeps what they decrypted.
-                  </p>
-                </div>
-              )}
-            </Card>
+                        {!emailPlain && (
+                          <Button variant="outline" size="sm" disabled={emailBusy} onClick={revealEmail}>
+                            <Icon icon="ph:eye" size={14} /> Reveal
+                          </Button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap border-t pt-3.5">
+                        {prof.data?.emailSource === "google" ? (
+                          <>
+                            <span className="text-[12px] text-muted-foreground">
+                              <Icon icon="ph:lock-fill" size={13} /> Verified via Google — managed by your
+                              Google account.
+                            </span>
+                            <Button variant="destructive" size="sm" disabled={emailBusy} onClick={doEraseEmail}>
+                              Delete my email data
+                            </Button>
+                          </>
+                        ) : (
+                          <Button variant="outline" size="sm" disabled={emailBusy} onClick={doEraseEmail}>
+                            Disconnect email
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Removing clears the on-chain record + revokes shares. The encrypted blob expires
+                        with its Walrus TTL; an organizer you already shared with keeps what they decrypted.
+                      </p>
+                    </div>
+                  )}
+                </Card>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="interests">

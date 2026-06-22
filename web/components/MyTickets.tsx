@@ -13,6 +13,7 @@ import {
   matchesCoinType,
 } from "@/lib/config";
 import { refundTx, selfCheckInTx, getFields } from "@/lib/ticketing";
+import { useEventObjects } from "@/lib/events";
 import { humanizeError } from "@/lib/moveErrors";
 import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
 import { Icon } from "./Icon";
@@ -23,9 +24,9 @@ import { TicketDialog } from "@/components/TicketDialog";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
-  GetObjectParams,
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
   SuiObjectResponse,
@@ -62,6 +63,20 @@ export function MyTickets({ address }: { address: string }) {
     });
   }, [q.data]);
 
+  // Refundability + window live on the Event object, not the ticket. Batch-read
+  // every ticket's event in ONE chunked multiGetObjects call (was an N+1
+  // per-card getObject) and pass each resolved object down to its stub.
+  const eventIds = useMemo(
+    () => Array.from(new Set(tickets.map((t) => String(t.fields.event_id)))),
+    [tickets],
+  );
+  const { byId: eventObjects, isLoading: eventsLoading, refetch: refetchEvents } = useEventObjects(eventIds);
+
+  const refresh = () => {
+    void q.refetch();
+    void refetchEvents();
+  };
+
   if (q.isLoading)
     return (
       <Card className="mono p-4" role="status" aria-live="polite">
@@ -85,6 +100,26 @@ export function MyTickets({ address }: { address: string }) {
       </Card>
     );
 
+  // Tickets are loaded; show a skeleton grid ONLY while the batched event objects
+  // are genuinely still loading. If the batch resolved empty (e.g. events orphaned
+  // by a fresh publish) or errored, fall through and render the tickets with
+  // degraded refund info rather than a permanent skeleton.
+  if (eventsLoading && eventObjects.size === 0)
+    return (
+      <section className="space-y-5">
+        <div>
+          <h2 className="page-title" style={{ marginTop: 12, fontSize: 26 }}>
+            My tickets <span style={{ color: "var(--fg3)" }}>({tickets.length})</span>
+          </h2>
+        </div>
+        <div className="ev-grid">
+          {tickets.map((t) => (
+            <Skeleton key={t.id} className="h-44 w-full rounded-xl" />
+          ))}
+        </div>
+      </section>
+    );
+
   return (
     <section className="space-y-5">
       <div>
@@ -94,7 +129,14 @@ export function MyTickets({ address }: { address: string }) {
       </div>
       <div className="ev-grid">
         {tickets.map((t) => (
-          <TicketStub key={t.id} ticketId={t.id} fields={t.fields} address={address} onChange={() => q.refetch()} />
+          <TicketStub
+            key={t.id}
+            ticketId={t.id}
+            fields={t.fields}
+            eventObject={eventObjects.get(String(t.fields.event_id)) ?? null}
+            address={address}
+            onChange={refresh}
+          />
         ))}
       </div>
     </section>
@@ -104,11 +146,14 @@ export function MyTickets({ address }: { address: string }) {
 function TicketStub({
   ticketId,
   fields,
+  eventObject,
   address,
   onChange,
 }: {
   ticketId: string;
   fields: Record<string, unknown>;
+  /** Pre-fetched Event object from the batched multiGetObjects read. */
+  eventObject: SuiObjectResponse | null;
   address: string;
   onChange: () => void;
 }) {
@@ -128,12 +173,9 @@ function TicketStub({
   const refundCoin = COINS.find((c) => matchesCoinType(paidType, c.type))?.type ?? `0x${paidType}`;
   const ci = coinInfo(refundCoin);
 
-  // Refundability + window live on the Event object, not the ticket.
-  const eventQ = useSuiQuery<"getObject", GetObjectParams, SuiObjectResponse>("getObject", {
-    id: eventId,
-    options: { showContent: true },
-  });
-  const ef = getFields(eventQ.data ?? {});
+  // Refundability + window live on the Event object, not the ticket. The
+  // parent batch-reads every event in one multiGetObjects and passes it down.
+  const ef = getFields(eventObject ?? {});
   const isRefundable = ef ? Boolean(ef.is_refundable) : false;
   const endMs = ef ? Number(ef.end_ms) : 0;
   const refundOpensMs = endMs;

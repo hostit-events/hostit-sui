@@ -7,8 +7,10 @@ import { useRouter } from "next/navigation";
 import { useCurrentWallet, useDAppKit, useWallets } from "@mysten/dapp-kit-react";
 import { useCurrentAccount } from "@/lib/hooks";
 import { useGoogleSignIn, useIsGoogleSession, useSignOut } from "@/lib/auth";
+import { useDisplayName } from "@/lib/profile";
 import { ENOKI_ENABLED, NETWORK } from "@/lib/config";
 import { Icon } from "./Icon";
+import { UserAvatar } from "./UserAvatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,7 +20,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // dapp-kit's ConnectButton is a web component that pulls in
 // @webcomponents/scoped-custom-element-registry, which touches `window` at
@@ -32,76 +33,43 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 /**
  * Header auth control, unified across auth methods:
- * - Google (Enoki) session → our own account chip + sign out (dapp-kit's
- *   ConnectButton doesn't know about zkLogin sessions).
- * - Wallet session → our own app-styled account dropdown (copy / explorer /
- *   my tickets / disconnect), overriding dapp-kit's stock ConnectButton chrome.
- * - Signed out → a "Login" dropdown (Connect Wallet + Sign in with Google),
- *   or the wallet ConnectButton when Enoki is off.
+ * - Google (Enoki) session and Wallet session both render the SAME `AccountChip`
+ *   (avatar + display name + dropdown) so identity looks identical everywhere and
+ *   the profile a user sets in Settings (username/avatar/suiNS) actually shows in
+ *   the header — previously the chip showed only raw hex + a divergent gradient.
+ * - Signed out → a "Login" dropdown (Connect Wallet + Sign in with Google), or the
+ *   wallet ConnectButton when Enoki is off.
  */
 export function AuthControl() {
   const account = useCurrentAccount();
   const isGoogle = useIsGoogleSession();
-  const signOut = useSignOut();
-  const router = useRouter();
 
-  if (account && isGoogle) {
-    return (
-      <div className="acct flex items-center gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="mono text-[13px]">{short(account.address)}</span>
-          </TooltipTrigger>
-          <TooltipContent>{account.address}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label="Sign out"
-              onClick={async () => {
-                await signOut();
-                // Stay in the app on the current route — screens render their own
-                // signed-out / connect state; refresh re-renders without navigating
-                // away to the landing page.
-                router.refresh();
-              }}
-            >
-              <Icon icon="ic:round-logout" size={18} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Sign out</TooltipContent>
-        </Tooltip>
-      </div>
-    );
-  }
-
+  if (account && isGoogle) return <GoogleAccount address={account.address} />;
   if (account) return <WalletAccount address={account.address} />;
-
   if (ENOKI_ENABLED) return <LoginMenu />;
-
   return <ConnectButton />;
 }
 
-/** Deterministic 0–359 hue from an address, for the fallback avatar gradient. */
-function addrHue(addr: string): number {
-  return parseInt(addr.slice(2, 8) || "0", 16) % 360;
-}
-
 /**
- * Connected-wallet control, styled to match the app (replaces dapp-kit's stock
- * `ConnectButton`). An outline chip — wallet icon (or a gradient avatar derived
- * from the address) + short address + chevron — opens a dropdown with copy
- * address, view on explorer, my tickets, and disconnect.
+ * The one account chip for every session type. Avatar = the shared `UserAvatar`
+ * (uploaded profile avatar → single seeded-color fallback). Name = `useDisplayName`
+ * (profile username → suiNS → short hex). Dropdown: copy / explorer / my tickets /
+ * settings / sign-out. `sublabel` + `signOutLabel` + `onSignOut` are the only bits
+ * that differ between Google and wallet sessions.
  */
-function WalletAccount({ address }: { address: string }) {
-  const dAppKit = useDAppKit();
-  const wallet = useCurrentWallet();
-  const router = useRouter();
+function AccountChip({
+  address,
+  sublabel,
+  signOutLabel,
+  onSignOut,
+}: {
+  address: string;
+  sublabel: string;
+  signOutLabel: string;
+  onSignOut: () => void;
+}) {
+  const { data: name } = useDisplayName(address);
   const [copied, setCopied] = useState(false);
-
   const explorerUrl = `https://${NETWORK === "mainnet" ? "" : `${NETWORK}.`}suivision.xyz/account/${address}`;
 
   async function copyAddress() {
@@ -117,25 +85,17 @@ function WalletAccount({ address }: { address: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="gap-2">
-          {wallet?.icon ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={wallet.icon} alt="" width={18} height={18} className="rounded-full" />
-          ) : (
-            <span
-              className="size-[18px] flex-none rounded-full"
-              style={{
-                background: `linear-gradient(135deg, hsl(${addrHue(address)} 70% 55%), hsl(${(addrHue(address) + 60) % 360} 70% 45%))`,
-              }}
-            />
-          )}
-          <span className="mono text-[13px]">{short(address)}</span>
+        <Button type="button" variant="outline" size="sm" className="gap-2" title={address}>
+          <UserAvatar address={address} size="sm" />
+          <span className="max-w-[14ch] truncate text-[13px] font-medium">
+            {name ? `@${name}` : short(address)}
+          </span>
           <Icon icon="ic:round-keyboard-arrow-down" size={14} className="opacity-70" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="font-normal text-xs text-muted-foreground">
-          Connected{wallet?.name ? ` · ${wallet.name}` : ""}
+          {sublabel}
         </DropdownMenuLabel>
         <DropdownMenuItem
           onSelect={(e) => {
@@ -158,20 +118,56 @@ function WalletAccount({ address }: { address: string }) {
             My tickets
           </Link>
         </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/settings">
+            <Icon icon="ic:round-settings" size={16} />
+            Settings
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={() => {
-            dAppKit.disconnectWallet().catch(() => {});
-            // Stay in the app on the current route (see sign-out above) instead of
-            // bouncing to the landing page.
-            router.refresh();
-          }}
-        >
+        <DropdownMenuItem onSelect={onSignOut}>
           <Icon icon="ic:round-logout" size={16} />
-          Disconnect
+          {signOutLabel}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Google/zkLogin session chip. Sign-out stays on the current route. */
+function GoogleAccount({ address }: { address: string }) {
+  const signOut = useSignOut();
+  const router = useRouter();
+  return (
+    <AccountChip
+      address={address}
+      sublabel="Signed in with Google"
+      signOutLabel="Sign out"
+      onSignOut={async () => {
+        await signOut();
+        // Stay in the app on the current route — screens render their own
+        // signed-out / connect state; refresh re-renders without navigating away.
+        router.refresh();
+      }}
+    />
+  );
+}
+
+/** Connected-wallet chip. Disconnect stays on the current route. */
+function WalletAccount({ address }: { address: string }) {
+  const dAppKit = useDAppKit();
+  const wallet = useCurrentWallet();
+  const router = useRouter();
+  return (
+    <AccountChip
+      address={address}
+      sublabel={`Connected${wallet?.name ? ` · ${wallet.name}` : ""}`}
+      signOutLabel="Disconnect"
+      onSignOut={() => {
+        dAppKit.disconnectWallet().catch(() => {});
+        router.refresh();
+      }}
+    />
   );
 }
 

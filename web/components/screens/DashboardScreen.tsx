@@ -8,6 +8,8 @@ import { useAllEvents, useEventList } from "@/lib/events";
 import { listDrafts, deleteDraft, type DraftIndexEntry } from "@/lib/drafts";
 import { COINS, PACKAGE_ID, EV_TICKET_MINTED, coinInfo, fmtAmount, matchesCoinType } from "@/lib/config";
 import { MyEvents } from "@/components/MyEvents";
+import { PageHeader } from "@/components/PageHeader";
+import { ErrorState } from "@/components/States";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { Icon } from "@/components/Icon";
 import { Card, CardContent } from "@/components/ui/card";
@@ -79,11 +81,13 @@ function StatTile({
   num,
   label,
   fill = false,
+  loading = false,
 }: {
   icon: string;
   num: string;
   label: string;
   fill?: boolean;
+  loading?: boolean;
 }) {
   return (
     <div className={`stat-tile ${fill ? "fill" : ""}`}>
@@ -93,9 +97,16 @@ function StatTile({
           {label}
         </span>
       </div>
-      <div className="stat-num" style={{ marginTop: 10, color: fill ? "#fff" : "var(--fg1)" }}>
-        {num}
-      </div>
+      {loading ? (
+        <Skeleton
+          className="mt-2.5 h-7 w-20"
+          style={fill ? { background: "rgba(255,255,255,.25)" } : undefined}
+        />
+      ) : (
+        <div className="stat-num" style={{ marginTop: 10, color: fill ? "#fff" : "var(--fg1)" }}>
+          {num}
+        </div>
+      )}
     </div>
   );
 }
@@ -191,12 +202,19 @@ export function DashboardScreen() {
   const statsTruncated = Boolean(
     minted.data?.truncated || checkins.data?.truncated || poaps.data?.truncated,
   );
+  // Surface a real fetch failure instead of letting it read as zero sales/attendees.
+  const statsError = minted.isError || checkins.isError || poaps.isError;
+  const refetchStats = () => {
+    minted.refetch();
+    checkins.refetch();
+    poaps.refetch();
+  };
 
   // --- not connected gate ---
   if (!addr) {
     return (
       <div className="space-y-8 screen-in">
-        <Header />
+        <PageHeader title="Dashboard" sub="Live sales, attendees and revenue for the events you host." />
         <Card>
           <CardContent>
             <div className="font-semibold flex items-center gap-2">
@@ -218,7 +236,7 @@ export function DashboardScreen() {
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="space-y-8 screen-in">
-      <Header />
+      <PageHeader title="Dashboard" sub="Live sales, attendees and revenue for the events you host." />
 
       {/* segmented tabs */}
       <TabsList className="h-auto flex-wrap">
@@ -238,41 +256,51 @@ export function DashboardScreen() {
       {/* ===================== OVERVIEW ===================== */}
       <TabsContent value="overview">
         <div className="space-y-8">
-          <section className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))" }}>
-            <StatTile
-              icon="ph:calendar-star-fill"
-              num={statsLoading ? "…" : String(myEvents.length)}
-              label="Your events"
-              fill
-            />
-            <StatTile
-              icon="ion:ticket"
-              num={statsLoading ? "…" : ticketsSold.toLocaleString()}
-              label="Tickets sold (recent)"
-            />
-            <StatTile
-              icon="zondicons:inbox-check"
-              num={statsLoading ? "…" : checkedInCount.toLocaleString()}
-              label="Checked in (recent)"
-            />
-            <StatTile
-              icon="solar:dollar-minimalistic-bold"
-              num={statsLoading ? "…" : grossLabel(grossByCoin)}
-              label="Gross revenue (recent)"
-            />
+          <section className="space-y-3">
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))" }}>
+              <StatTile
+                icon="ph:calendar-star-fill"
+                num={String(myEvents.length)}
+                label="Your events"
+                loading={statsLoading}
+                fill
+              />
+              <StatTile
+                icon="ion:ticket"
+                num={ticketsSold.toLocaleString()}
+                label="Tickets sold (recent)"
+                loading={statsLoading}
+              />
+              <StatTile
+                icon="zondicons:inbox-check"
+                num={checkedInCount.toLocaleString()}
+                label="Checked in (recent)"
+                loading={statsLoading}
+              />
+              <StatTile
+                icon="solar:dollar-minimalistic-bold"
+                num={grossLabel(grossByCoin)}
+                label="Gross revenue (recent)"
+                loading={statsLoading}
+              />
+            </div>
+            {statsError ? (
+              <p className="text-xs flex flex-wrap items-center gap-2" style={{ color: "var(--color-danger)" }}>
+                Couldn&apos;t load some on-chain figures — they may be incomplete.
+                <Button variant="outline" size="sm" onClick={refetchStats}>
+                  Retry
+                </Button>
+              </p>
+            ) : (
+              <p className="text-xs" style={{ color: "var(--fg3)" }}>
+                Sales, check-in and revenue figures are aggregated from on-chain logs (up to the ~1000
+                most recent), filtered to your events.
+                {statsTruncated
+                  ? " You have more activity than that — older mint, check-in and POAP events aren't all loaded yet, so these figures may undercount."
+                  : ""}
+              </p>
+            )}
           </section>
-          <p className="text-xs" style={{ color: "var(--fg3)", marginTop: -16 }}>
-            Sales, check-in and revenue figures are aggregated from on-chain logs (up to the ~1000
-            most recent), filtered to your events.
-            {statsTruncated
-              ? " You have more activity than that — older mint, check-in and POAP events aren't all loaded yet, so these figures may undercount."
-              : ""}
-          </p>
-          {statsTruncated && (
-            <p className="mono text-sm" style={{ color: "var(--fg3)", textAlign: "center" }}>
-              Showing the most recent on-chain activity — older events aren&apos;t all loaded yet.
-            </p>
-          )}
 
           {/* Local event drafts — hidden entirely when there are none. */}
           {drafts.length > 0 && (
@@ -370,6 +398,8 @@ export function DashboardScreen() {
                 <Skeleton className="h-4 w-2/3" />
               </CardContent>
             </Card>
+          ) : minted.isError ? (
+            <ErrorState title="Couldn't load attendees" onRetry={() => minted.refetch()} />
           ) : mintRows.length === 0 ? (
             <Card>
               <CardContent>
@@ -468,24 +498,28 @@ export function DashboardScreen() {
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))" }}>
             <StatTile
               icon="ion:ticket"
-              num={minted.isLoading ? "…" : ticketsSold.toLocaleString()}
+              num={ticketsSold.toLocaleString()}
               label="Tickets minted (recent)"
+              loading={minted.isLoading}
               fill
             />
             <StatTile
               icon="solar:dollar-minimalistic-bold"
-              num={minted.isLoading ? "…" : grossLabel(grossByCoin)}
+              num={grossLabel(grossByCoin)}
               label="Gross revenue (recent)"
+              loading={minted.isLoading}
             />
             <StatTile
               icon="zondicons:inbox-check"
-              num={checkins.isLoading ? "…" : checkedInCount.toLocaleString()}
+              num={checkedInCount.toLocaleString()}
               label="Checked in (recent)"
+              loading={checkins.isLoading}
             />
             <StatTile
               icon="streamline:star-badge-solid"
-              num={poaps.isLoading ? "…" : poapCount.toLocaleString()}
+              num={poapCount.toLocaleString()}
               label="POAPs claimed (recent)"
+              loading={poaps.isLoading}
             />
           </div>
           <p className="text-xs" style={{ color: "var(--fg3)" }}>
@@ -543,23 +577,6 @@ export function DashboardScreen() {
         </section>
       </TabsContent>
     </Tabs>
-  );
-}
-
-function Header() {
-  return (
-    <header className="relative">
-      <div
-        className="glow"
-        style={{ width: 360, height: 360, background: "rgba(0,124,250,.4)", top: -150, right: -60, opacity: 0.2 }}
-      />
-      <div>
-        <h1 className="page-title" style={{ marginTop: 12, fontSize: 34 }}>
-          Dashboard
-        </h1>
-        <p className="page-sub">Live sales, attendees and revenue for the events you host.</p>
-      </div>
-    </header>
   );
 }
 

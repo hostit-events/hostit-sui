@@ -253,12 +253,13 @@ export async function eraseEmail(args: {
   sign: SignPersonalMessage;
   submitTx: SubmitTx;
   baseProfile: ProfileEnvelope | null;
-}): Promise<void> {
-  await args.submitTx(unregisterEmailTx(args.hashBytes));
+}): Promise<string> {
+  const { digest } = await args.submitTx(unregisterEmailTx(args.hashBytes));
   const next: ProfileEnvelope = { ...(args.baseProfile ?? {}), v: 1 };
   delete next.emailBlobId;
   delete next.emailHashVersion;
   delete next.emailSource;
   const blobId = await storeJson(next);
   await writeProfilePointer(args.address, blobId, args.sign);
+  return digest;
 }

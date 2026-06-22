@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { Bell, Rocket, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,22 @@ const TYPE_META: Record<
   },
 };
 
+/**
+ * Where a notification deep-links when clicked:
+ *  - publish (your own event) → the organizer manage page
+ *  - sale (your event sold a ticket) → the organizer manage page
+ *  - purchase / reminder (a ticket/POAP you hold) → the event page
+ *  - anything without an event id → your wallet (tickets & POAPs)
+ */
+export function routeForNotification(n: AppNotification): string {
+  if (!n.eventId) return "/wallet";
+  if (n.type === "publish") return `/manage/${n.eventId}`;
+  // A sale ("your event sold a ticket", id sale_*) belongs on the organizer page,
+  // not the public buy page.
+  if (n.id.startsWith("sale_")) return `/manage/${n.eventId}`;
+  return `/event/${n.eventId}`;
+}
+
 export function formatAgo(ts: number): string {
   if (!ts) return "recently";
   const diff = Date.now() - ts;
@@ -73,6 +90,15 @@ export function NotificationsBell({
   onDismiss,
 }: NotificationsBellProps) {
   const [open, setOpen] = React.useState(false);
+  const router = useRouter();
+
+  const handleOpen = React.useCallback(
+    (n: AppNotification) => {
+      setOpen(false);
+      router.push(routeForNotification(n));
+    },
+    [router],
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -158,8 +184,17 @@ export function NotificationsBell({
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: 10, height: 0 }}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleOpen(n)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleOpen(n);
+                        }
+                      }}
                       className={cn(
-                        "group relative flex items-start gap-2.5 p-3 transition-colors hover:bg-accent/30",
+                        "group relative flex cursor-pointer items-start gap-2.5 p-3 text-left transition-colors hover:bg-accent/30 focus:outline-none focus-visible:bg-accent/40",
                         !n.read && "bg-primary/5",
                       )}
                     >
@@ -189,9 +224,12 @@ export function NotificationsBell({
                       </div>
                       <button
                         type="button"
-                        onClick={() => onDismiss(n.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDismiss(n.id);
+                        }}
                         aria-label="Dismiss notification"
-                        className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                        className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
                       >
                         <Icon icon="ic:round-close" size={12} />
                       </button>

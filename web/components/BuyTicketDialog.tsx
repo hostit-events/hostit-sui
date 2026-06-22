@@ -4,6 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { EMAIL_ENABLED, ENOKI_ENABLED, EV_TICKET_MINTED, coinInfo, fmtAmount } from "@/lib/config";
 import { buyManyTx, claimFreeManyTx, totalWithFee } from "@/lib/ticketing";
@@ -16,7 +17,7 @@ import {
   useSponsorAndExecute,
   useSuiQuery,
 } from "@/lib/hooks";
-import type { CoinBalance, GetBalanceParams } from "@mysten/sui/jsonRpc";
+import type { CoinBalance, GetBalanceParams, SuiObjectResponse } from "@mysten/sui/jsonRpc";
 import { humanizeError } from "@/lib/moveErrors";
 import { Button } from "@/components/ui/button";
 import {
@@ -113,6 +114,49 @@ function parseMintResult(out: unknown, requestedQty: number): { count: number; s
 }
 
 /**
+ * Optimistically bump the cached `minted` counter for one event so the
+ * "X / Y left" badge (EventCard self-fetch + EventPageScreen) updates the instant
+ * a buy/claim confirms, before the slower on-chain refetch lands. Both consumers
+ * read the event via `useSuiQuery("getObject", { id, options: { showContent: true } })`,
+ * whose react-query key is exactly `["getObject", { id, options: { showContent: true } }]`
+ * (see lib/hooks.ts `useSuiQuery`). `remaining = max_tickets - minted`, so adding to
+ * `minted` decrements remaining. We update the entry in place (immutably) ONLY if it
+ * already exists — `setQueryData` no-ops when the key is absent (e.g. the Discover
+ * prefetch path, which keys on `multiGetObjects` and reconciles via `onRefetch`). The
+ * trailing `onSuccess()` refetch then reconciles to the authoritative chain value, so a
+ * slightly-stale optimistic number self-corrects.
+ */
+function bumpMintedOptimistically(
+  queryClient: ReturnType<typeof useQueryClient>,
+  eventId: string,
+  by: number,
+) {
+  if (!eventId || by <= 0) return;
+  const key = ["getObject", { id: eventId, options: { showContent: true } }] as const;
+  queryClient.setQueryData<SuiObjectResponse>(key, (prev) => {
+    if (!prev) return prev; // only touch an existing cache entry
+    const content = prev.data?.content as
+      | { dataType?: string; fields?: Record<string, unknown> }
+      | undefined;
+    const fields = content?.fields;
+    if (!content || !fields || fields.minted == null) return prev;
+    let next: bigint;
+    try {
+      next = BigInt(String(fields.minted)) + BigInt(by);
+    } catch {
+      return prev; // unexpected shape — leave the cache untouched, let refetch fix it
+    }
+    return {
+      ...prev,
+      data: {
+        ...prev.data!,
+        content: { ...content, fields: { ...fields, minted: next.toString() } },
+      },
+    } as unknown as SuiObjectResponse;
+  });
+}
+
+/**
  * One cohesive purchase dialog: `connect → review → minting → done`. Mirrors the
  * reference prototype's animated, single-dialog morph but fixes its overflow bug
  * (every step fits via a scrollable body + a sticky footer) and wires the REAL
@@ -136,6 +180,7 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
   const addr = account?.address ?? null;
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
+  const queryClient = useQueryClient();
 
   // Buyer's balance of the payment coin — for an airtight, coin-aware
   // affordability check. Only gas is sponsored, not the ticket price, so a
@@ -184,6 +229,10 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
     if (open && step === "connect" && addr) setStep("review");
   }, [open, step, addr]);
 
+  // Re-entry guard for handleConfirm — declared with the other hooks, before any
+  // early return, to satisfy rules-of-hooks.
+  const submittingRef = React.useRef(false);
+
   if (!payload) return null;
 
   const isFree = payload.kind === "free";
@@ -224,6 +273,10 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
 
   async function handleConfirm() {
     if (!payload || !addr) return;
+    // Synchronous re-entry guard: a fast double-click / Enter can fire handleConfirm
+    // twice before the footer re-renders to the disabled "minting" button, which
+    // would submit two buy/claim transactions (a double-spend).
+    if (submittingRef.current) return;
     if (payload.kind === "paid" && !affordable) {
       setError(
         `You need ${fmtAmount(grandTotal, ci!.decimals)} ${ci!.symbol} to buy ${
@@ -232,6 +285,7 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
       );
       return;
     }
+    submittingRef.current = true;
     setError(null);
     setStep("minting");
     try {
@@ -250,11 +304,23 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
         ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
         : await regular.mutateAsync({ transaction: tx });
       setDigest(out.digest);
-      setResult(parseMintResult(out, safeQty));
+      const minted = parseMintResult(out, safeQty);
+      setResult(minted);
       setStep("done");
       toast.success(isFree ? "Ticket claimed" : "Ticket purchased", {
         description: <TxLink digest={out.digest} chars={10} />,
+        // Onward nudge that survives even if the buyer taps "Done" (which just
+        // closes the dialog) — the core conversion shouldn't dead-end.
+        action: { label: "View tickets", onClick: () => router.push("/wallet") },
       });
+      // Optimistic counter bump: instantly reflect the mint in the "X/Y left"
+      // counter that EventCard (self-fetch) and EventPageScreen read from the
+      // `getObject` query — both key it as ["getObject", { id, options:{ showContent:true } }]
+      // and derive `remaining = max_tickets - minted`. We increment the cached
+      // `minted` by the count we actually minted, then let onSuccess()'s refetch
+      // reconcile. Only mutate an existing cache entry (no-op if absent, e.g. the
+      // Discover prefetch path which keys on multiGetObjects and uses onRefetch).
+      bumpMintedOptimistically(queryClient, payload.eventId, minted.count);
       onSuccess?.();
       // Opt-in: share email with this event's organizer (best-effort — never
       // fails the purchase). Only when the buyer enabled it and has an email.
@@ -272,6 +338,8 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
     } catch (e: unknown) {
       setError(humanizeError(e));
       setStep("review");
+    } finally {
+      submittingRef.current = false;
     }
   }
 
@@ -533,7 +601,11 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button className="flex-1" onClick={handleConfirm} disabled={!affordable}>
+              <Button
+                className="flex-1"
+                onClick={handleConfirm}
+                disabled={!affordable || sponsored.isPending || regular.isPending}
+              >
                 <Icon icon="ion:ticket" size={15} />
                 {!affordable
                   ? `Not enough ${ci!.symbol}`

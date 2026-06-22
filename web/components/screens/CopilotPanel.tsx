@@ -271,10 +271,21 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
     setMessages(history);
     setInput("");
     setBusy(true);
+    // Hard 30s timeout: the ONLY way `busy` releases is this function settling, so
+    // a hung Turnstile or a black-holed fetch would otherwise freeze the input,
+    // send button, and quick-prompt chips forever. The abort both cancels the
+    // fetch and rejects the Turnstile race.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    const onAbort = new Promise<never>((_, reject) =>
+      controller.signal.addEventListener("abort", () =>
+        reject(new DOMException("Co-pilot timed out", "AbortError")),
+      ),
+    );
     try {
       // Proof-of-browser so the server serves Groq rather than the free local
       // fallback; null when Turnstile is disabled. (#81)
-      const turnstileToken = await getTurnstileToken();
+      const turnstileToken = await Promise.race([getTurnstileToken(), onAbort]);
       const res = await fetch("/api/copilot", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -286,6 +297,7 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
           memory: recalled,
           turnstileToken,
         }),
+        signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Co-pilot request failed (${res.status})`);
       const j = (await res.json()) as { reply?: string; error?: string };
@@ -295,12 +307,18 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
         { id: nextMsgId(), role: "assistant", content: reply || "I couldn't generate a response. Try rephrasing." },
       ]);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      const msg = controller.signal.aborted
+        ? "The Co-pilot took too long to respond. Please try again."
+        : e instanceof Error
+          ? e.message
+          : String(e);
+      toast.error(msg);
       setMessages((prev) => [
         ...prev,
         { id: nextMsgId(), role: "assistant", content: "Something went wrong reaching the Co-pilot. Please try again." },
       ]);
     } finally {
+      clearTimeout(timer);
       setBusy(false);
     }
   }

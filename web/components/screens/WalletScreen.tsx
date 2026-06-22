@@ -19,6 +19,7 @@ import { AddressDisplay } from "@/components/AddressDisplay";
 import { EventPoster } from "@/components/EventPoster";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
+import { EmptyState } from "@/components/States";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -265,16 +266,6 @@ function WalletInner({ addr }: { addr: string }) {
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-function EmptyState({ icon, title, body }: { icon: string; title: string; body: React.ReactNode }) {
-  return (
-    <Card className="flex flex-col items-center text-center gap-2" style={{ padding: 40 }} role="status" aria-live="polite">
-      <span style={{ color: "var(--fg3)" }}><Icon icon={icon} size={38} /></span>
-      <div className="font-semibold" style={{ fontSize: 16 }}>{title}</div>
-      <p className="text-sm" style={{ color: "var(--fg2)", maxWidth: 380 }}>{body}</p>
-    </Card>
   );
 }
 

@@ -94,7 +94,7 @@ export function Header({
             >
               <Icon icon="ic:round-search" size={16} />
               <span>Search events…</span>
-              <kbd className="ml-auto font-mono text-[11px] opacity-70">⌘K</kbd>
+              <kbd className="ml-auto font-mono text-[11px] text-muted-foreground">⌘K</kbd>
             </button>
             <Tooltip>
               <TooltipTrigger asChild>

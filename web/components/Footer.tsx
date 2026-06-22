@@ -43,6 +43,14 @@ export function Footer() {
               </li>
               <li>
                 <Link
+                  href="/dashboard"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Dashboard
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/create"
                   className="text-muted-foreground transition-colors hover:text-foreground"
                 >
@@ -125,14 +133,14 @@ export function Footer() {
 
         <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t pt-6 text-xs text-muted-foreground sm:flex-row">
           <p>© {new Date().getFullYear()} HostIt. Built on Sui.</p>
-          <p className="text-muted-foreground/80">Permissionless ticketing — anyone can host.</p>
+          <p className="text-muted-foreground">Permissionless ticketing — anyone can host.</p>
         </div>
 
         {/* Bot-check disclosure (#81). Only shown when Turnstile is configured;
             it guards the gasless-sponsor + AI helpers, collects no personal data,
             and is never linked to a wallet. */}
         {TURNSTILE_ENABLED && (
-          <p className="mt-3 text-center text-[11px] text-muted-foreground/70">
+          <p className="mt-3 text-center text-[11px] text-muted-foreground">
             Gasless actions and AI helpers are protected by a Cloudflare bot-check
             — no personal data, never linked to your wallet.
           </p>

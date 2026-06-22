@@ -114,8 +114,8 @@ export function FeaturedCarousel({ events }: { events: DiscoverEvent[] }) {
                       </Badge>
                     )}
                     {status === "live" && (
-                      <Badge className="flex items-center gap-1 rounded-full border border-rose-400/40 bg-rose-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-100 backdrop-blur">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" />
+                      <Badge variant="live" className="gap-1 text-[10px] font-semibold uppercase tracking-wide backdrop-blur">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
                         Live
                       </Badge>
                     )}
@@ -125,7 +125,7 @@ export function FeaturedCarousel({ events }: { events: DiscoverEvent[] }) {
                   </div>
                   <div className="absolute inset-x-0 bottom-0 p-3">
                     {e.category && (
-                      <p className="text-[10px] font-medium uppercase tracking-widest text-white/70">
+                      <p className="text-[10px] font-medium uppercase tracking-widest text-white drop-shadow">
                         {e.category}
                       </p>
                     )}
