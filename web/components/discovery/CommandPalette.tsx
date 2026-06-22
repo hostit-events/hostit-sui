@@ -207,7 +207,10 @@ export function CommandPalette({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="top-[15vh] max-w-xl gap-0 overflow-hidden rounded-2xl p-0 sm:translate-y-0">
+      {/* Anchor at top-[15vh] on ALL sizes: cancel the dialog's base
+          -translate-y-1/2 unconditionally, else on mobile the tall palette is
+          pulled up by half its height and the search input clears the top. */}
+      <DialogContent className="top-[15vh] max-w-xl gap-0 overflow-hidden rounded-2xl p-0 translate-y-0">
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <DialogDescription className="sr-only">
           Search commands and events. Use arrow keys to navigate, Enter to select.
