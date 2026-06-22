@@ -68,6 +68,17 @@ export function Footer() {
             <ul className="space-y-2 text-sm">
               <li>
                 <a
+                  href="/pitch"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Icon icon="ph:projector-screen-fill" size={12} />
+                  Pitch deck
+                </a>
+              </li>
+              <li>
+                <a
                   href="https://docs.sui.io"
                   target="_blank"
                   rel="noreferrer"
