@@ -11,7 +11,7 @@ import { Logo } from "./Logo";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { openCommandPalette } from "@/components/discovery/DiscoveryCommand";
+import { openCommandPalette, openCalendar } from "@/components/discovery/DiscoveryCommand";
 
 const NAV = [
   { href: "/discover", label: "Discover", icon: "ic:round-explore" },
@@ -80,20 +80,37 @@ export function Header({
           </nav>
         </div>
 
-        {/* Center: search bar — absolutely centered (lg+). The wrapper ignores
-            pointer events so it never blocks the left/right clusters; only the
-            button itself is interactive. */}
+        {/* Center: search bar + calendar — absolutely centered (lg+). The wrapper
+            ignores pointer events so it never blocks the left/right clusters;
+            only the buttons themselves are interactive. The calendar sits to the
+            right of the search bar and opens the app-level calendar dialog. */}
         <div className="pointer-events-none absolute left-1/2 hidden w-full max-w-md -translate-x-1/2 px-4 lg:block">
-          <button
-            type="button"
-            onClick={openCommandPalette}
-            aria-label="Search events and commands"
-            className="pointer-events-auto flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
-          >
-            <Icon icon="ic:round-search" size={16} />
-            <span>Search events…</span>
-            <kbd className="ml-auto font-mono text-[11px] opacity-70">⌘K</kbd>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openCommandPalette}
+              aria-label="Search events and commands"
+              className="pointer-events-auto flex grow items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+            >
+              <Icon icon="ic:round-search" size={16} />
+              <span>Search events…</span>
+              <kbd className="ml-auto font-mono text-[11px] opacity-70">⌘K</kbd>
+            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={openCalendar}
+                  aria-label="Calendar"
+                  className="pointer-events-auto flex-none"
+                >
+                  <Icon icon="proicons:calendar" size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Calendar</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
         {/* Right: actions */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDiscoverEvents } from "@/lib/events";
 import { useKeyboardShortcuts } from "@/lib/useKeyboardShortcuts";
@@ -8,13 +8,21 @@ import { CommandPalette } from "./CommandPalette";
 import { CalendarViewDialog } from "./CalendarViewDialog";
 import { ShortcutsHelpDialog } from "./ShortcutsHelpDialog";
 
-/** Custom DOM event other components dispatch to open the palette (Header button,
- *  mobile search affordance) without prop drilling through the layout. */
+/** Custom DOM events other components dispatch to open the palette / calendar
+ *  (Header buttons, mobile search affordance) without prop drilling through the
+ *  layout. The calendar dialog lives here in the island, so the global Header
+ *  opens it via this event rather than owning its own state. */
 export const OPEN_COMMAND_EVENT = "hostit:open-command";
+export const OPEN_CALENDAR_EVENT = "hostit:open-calendar";
 
 /** Dispatch from anywhere (e.g. the Header Cmd+K button) to open the palette. */
 export function openCommandPalette() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(OPEN_COMMAND_EVENT));
+}
+
+/** Dispatch from anywhere (e.g. the Header Calendar button) to open the calendar. */
+export function openCalendar() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(OPEN_CALENDAR_EVENT));
 }
 
 /**
@@ -32,24 +40,20 @@ export function DiscoveryCommand() {
   const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
-    const open = () => setPaletteOpen(true);
-    window.addEventListener(OPEN_COMMAND_EVENT, open);
-    return () => window.removeEventListener(OPEN_COMMAND_EVENT, open);
+    const openCmd = () => setPaletteOpen(true);
+    const openCal = () => setCalendarOpen(true);
+    window.addEventListener(OPEN_COMMAND_EVENT, openCmd);
+    window.addEventListener(OPEN_CALENDAR_EVENT, openCal);
+    return () => {
+      window.removeEventListener(OPEN_COMMAND_EVENT, openCmd);
+      window.removeEventListener(OPEN_CALENDAR_EVENT, openCal);
+    };
   }, []);
-
-  const focusSearch = useCallback(() => {
-    const el = document.getElementById("discover-search");
-    if (el instanceof HTMLInputElement) {
-      el.focus();
-      el.select();
-    } else {
-      router.push("/discover");
-    }
-  }, [router]);
 
   useKeyboardShortcuts({
     onCommandPalette: () => setPaletteOpen((v) => !v),
-    onFocusSearch: focusSearch,
+    // "/" — no inline search bar anymore, so open the command palette (search).
+    onFocusSearch: () => setPaletteOpen(true),
     onGoDiscover: () => router.push("/discover"),
     onGoTickets: () => router.push("/wallet"),
     onGoDashboard: () => router.push("/dashboard"),
