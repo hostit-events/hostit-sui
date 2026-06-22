@@ -4,11 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { getSuiNSClient, SUINS_NETWORK } from "./suinsClient";
 
 /**
- * Reverse-look up a Sui address → its default/primary suiNS name, or null.
- * Resolves on the MAINNET suiNS client (see lib/suinsClient.ts) — names don't
- * exist on testnet. Returns null for an address with no default name (the common
- * case, not an error); genuine RPC failures surface as a query error (one retry)
- * so they aren't masked as "no name forever" — consumers fall back to hex.
+ * Reverse-look up a Sui address → its primary suiNS name, or null. Resolves on
+ * the app's active network (see lib/suinsClient.ts `SUINS_NETWORK`, testnet by
+ * default), so a testnet wallet's `.sui` name resolves. Returns null for an
+ * address with no name (the common case, not an error); genuine RPC failures
+ * surface as a query error (one retry) so they aren't masked as "no name
+ * forever" — consumers fall back to hex.
  */
 export function useSuiNSName(address: string | null | undefined) {
   const client = getSuiNSClient();
@@ -28,7 +29,8 @@ export function useSuiNSName(address: string | null | undefined) {
 
 /**
  * Forward-resolve a suiNS name → address (for search by name). Accepts a bare
- * label or a `.sui` name; resolves on mainnet. Returns null if unregistered.
+ * label or a `.sui` name; resolves on the app's active network. Returns null if
+ * unregistered.
  */
 export function useResolveSuiNSAddress(name: string | null | undefined) {
   const client = getSuiNSClient();

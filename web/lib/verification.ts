@@ -7,8 +7,9 @@ import { getSuiNSClient, SUINS_NETWORK } from "./suinsClient";
  * Batched suiNS reverse-lookup for many addresses at once. Each lookup is
  * keyed individually in tanstack-query so the cache survives address-list
  * changes (an additional address just fires one new query). Resolves on the
- * MAINNET suiNS client (names don't exist on testnet) — shares the same
- * network-scoped cache key as `useSuiNSName`, so single + batch lookups dedupe.
+ * app's active network (see `SUINS_NETWORK`, testnet by default), so testnet
+ * `.sui` names resolve — shares the same network-scoped cache key as
+ * `useSuiNSName`, so single + batch lookups dedupe.
  */
 export function useSuiNSNames(addresses: string[]): Map<string, string | null> {
   const client = getSuiNSClient();

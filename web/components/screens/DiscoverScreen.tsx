@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useDeferredValue, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useCurrentAccount } from "@/lib/hooks";
 import { useEventList, useEventObjects, useActivityFeed, buildDiscoverEvents } from "@/lib/events";
@@ -14,11 +14,9 @@ import { TrendingRow } from "@/components/discovery/TrendingRow";
 import { FeaturedCarousel } from "@/components/discovery/FeaturedCarousel";
 import { RecentlyViewedRow } from "@/components/discovery/RecentlyViewedRow";
 import { RecommendedRow } from "@/components/discovery/RecommendedRow";
-import { CalendarViewDialog } from "@/components/discovery/CalendarViewDialog";
 import { openCommandPalette } from "@/components/discovery/DiscoveryCommand";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export function DiscoverScreen() {
@@ -36,9 +34,7 @@ export function DiscoverScreen() {
 
   const { mints } = useActivityFeed();
 
-  const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
-  const [calendarOpen, setCalendarOpen] = useState(false);
   // event_id -> searchable metadata (from Walrus metadata, fetched lazily by cards)
   const [eventMeta, setEventMeta] = useState<
     Record<string, { category?: string; city?: string; venue?: string }>
@@ -61,31 +57,15 @@ export function DiscoverScreen() {
     [],
   );
 
-  // Defer the heavy filter so typing stays responsive — the <Input> tracks `q`
-  // immediately while the full-list filter recomputes off the deferred value.
-  const deferredQ = useDeferredValue(q);
+  // Text search lives in the Cmd+K palette now; the page filters by category.
+  // Events with no category metadata yet are kept under any active category.
   const filtered = useMemo(() => {
-    const ql = deferredQ.trim().toLowerCase();
+    if (cat === "all") return events;
     return events.filter((e) => {
       const meta = eventMeta[e.eventId];
-      const organizerName = names.get(e.organizer) ?? "";
-      const searchable = [
-        e.name,
-        e.organizer,
-        organizerName,
-        meta?.category,
-        meta?.city,
-        meta?.venue,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      if (ql && !searchable.includes(ql)) return false;
-      if (cat !== "all" && meta?.category && meta.category !== cat) return false;
-      return true;
+      return !meta?.category || meta.category === cat;
     });
-  }, [events, deferredQ, cat, eventMeta, names]);
+  }, [events, cat, eventMeta]);
 
   // Flattened, on-chain-derived events for the curated discovery rows + calendar.
   // Reuses the data already fetched here (list + objects + prices + lazy meta) —
@@ -95,9 +75,9 @@ export function DiscoverScreen() {
     [events, eventObjects, pricesBySeq, eventMeta],
   );
 
-  // Curated rows only show in the default browse view (no active search/filter),
-  // above the grid. Searching/filtering collapses straight to the grid.
-  const browsing = q.trim() === "" && cat === "all";
+  // Curated rows only show in the default browse view (no active category
+  // filter), above the grid. Filtering by category collapses straight to the grid.
+  const browsing = cat === "all";
   const showRows = browsing && !isLoading && !isError && events.length > 0;
 
   return (
@@ -110,35 +90,17 @@ export function DiscoverScreen() {
 
       <ActivityTicker mints={mints} />
 
-      <div className="flex gap-2 flex-wrap items-center">
-        <div className="grow" style={{ position: "relative", minWidth: 240 }}>
-          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg3)", zIndex: 1 }}>
-            <Icon icon="ic:round-search" size={18} />
-          </span>
-          <Input
-            id="discover-search"
-            name="discover-search"
-            aria-label="Search events"
-            placeholder="Search events, cities, organizers…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setCalendarOpen(true)}>
-          <Icon icon="proicons:calendar" size={16} /> Calendar
-        </Button>
-        {/* Mobile palette affordance (Header Cmd+K button is desktop-only). */}
-        <Button
-          variant="outline"
-          size="icon-sm"
-          aria-label="Open command palette"
-          className="md:hidden"
-          onClick={openCommandPalette}
-        >
-          <Icon icon="ic:round-bolt" size={16} />
-        </Button>
-      </div>
+      {/* Mobile search + commands — the header search/calendar is desktop-only
+          (md+). Opens the Cmd+K palette, which also has the calendar action. */}
+      <button
+        type="button"
+        onClick={openCommandPalette}
+        aria-label="Search events and commands"
+        className="md:hidden flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+      >
+        <Icon icon="ic:round-search" size={16} />
+        <span>Search events…</span>
+      </button>
 
       <ToggleGroup
         type="single"
@@ -180,7 +142,7 @@ export function DiscoverScreen() {
           <CardContent>
             <div className="font-semibold">No events found.</div>
             <p className="text-sm" style={{ color: "var(--fg2)", marginTop: 4 }}>
-              Try a different search, or{" "}
+              Try a different category, or{" "}
               <Link href="/create" style={{ color: "var(--hi-blue)" }}>host your own</Link>.
             </p>
           </CardContent>
@@ -206,13 +168,11 @@ export function DiscoverScreen() {
           </div>
           {truncated && (
             <p className="mono text-sm" style={{ color: "var(--fg3)", textAlign: "center" }}>
-              Search covers the {events.length} most recent events — older ones aren&apos;t loaded yet.
+              Showing the {events.length} most recent events — older ones aren&apos;t loaded yet.
             </p>
           )}
         </>
       )}
-
-      <CalendarViewDialog open={calendarOpen} onOpenChange={setCalendarOpen} events={discoverEvents} />
     </div>
   );
 }

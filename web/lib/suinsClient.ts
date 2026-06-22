@@ -1,13 +1,17 @@
-// suiNS names live on Sui **mainnet**, even though HostIt runs on testnet. The
-// app's dapp-kit client is the active (testnet) client, so resolving names there
-// always returned `[]` — the bug where a connected wallet's `.sui` name never
-// rendered. This is a dedicated read-only MAINNET client used ONLY for suiNS
-// reverse/forward resolution, independent of the app's active network.
+// suiNS resolution runs on the app's ACTIVE network (lib/config `NETWORK`,
+// testnet by default). suiNS is live on Sui testnet, so a testnet wallet's
+// `.sui` name resolves on the testnet fullnode — names resolve on the same
+// network the app and all its addresses live on. (Previously hard-coded to
+// mainnet on the false premise that "names don't exist on testnet", so every
+// lookup returned [] and no `.sui` name ever rendered — GH#113.) Dedicated
+// read-only client for reverse/forward resolution; names only resolve where a
+// name service exists (testnet/mainnet), not on localnet.
 
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
+import { NETWORK } from "./config";
 
 /** The network suiNS names are resolved against (part of every cache key). */
-export const SUINS_NETWORK = "mainnet" as const;
+export const SUINS_NETWORK = NETWORK;
 
 interface SuiNSResolver {
   resolveNameServiceNames: (input: { address: string; limit?: number }) => Promise<{
@@ -19,7 +23,7 @@ interface SuiNSResolver {
 
 let cached: SuiNSResolver | null = null;
 
-/** Singleton read-only mainnet client for suiNS resolution (lazy; never at module load). */
+/** Singleton read-only client for suiNS resolution on the app network (lazy; never at module load). */
 export function getSuiNSClient(): SuiNSResolver {
   if (!cached) {
     cached = new SuiJsonRpcClient({
