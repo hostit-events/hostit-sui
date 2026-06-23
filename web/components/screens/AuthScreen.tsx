@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuthCallback } from "@mysten/enoki/react";
 import { useCurrentAccount } from "@/lib/hooks";
+import { RETURN_TO_KEY } from "@/lib/auth";
 import { ENOKI_ENABLED } from "@/lib/config";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { Icon } from "@/components/Icon";
@@ -39,7 +40,13 @@ export function AuthScreen() {
   // Read once from the URL search params so a Suspense boundary isn't required.
   const [nextPath] = useState(() => {
     if (typeof window === "undefined") return null;
-    const raw = new URLSearchParams(window.location.search).get("next");
+    // `next` now rides in sessionStorage (survives the Google round-trip) so the
+    // redirect_uri stays the single registered `/auth` with no query — see
+    // useGoogleSignIn. Consume it (clear) so a stale value can't bounce a later
+    // sign-in; fall back to the legacy `?next=` param for any in-flight links.
+    let raw = sessionStorage.getItem(RETURN_TO_KEY);
+    sessionStorage.removeItem(RETURN_TO_KEY);
+    if (!raw) raw = new URLSearchParams(window.location.search).get("next");
     // Only allow same-origin app paths — never an absolute/protocol-relative URL.
     return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
   });

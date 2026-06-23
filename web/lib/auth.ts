@@ -5,6 +5,15 @@ import { useEnokiFlow, useZkLogin } from "@mysten/enoki/react";
 import { useDAppKit } from "@mysten/dapp-kit-react";
 import { GOOGLE_CLIENT_ID, NETWORK } from "./config";
 
+/**
+ * sessionStorage key carrying the in-app return target across the Google
+ * redirect. It travels OUT-OF-BAND (not in the redirect_uri) because Google
+ * matches redirect_uri EXACTLY including the query string — a varying `?next=`
+ * breaks the single registered `/auth` URI with `redirect_uri_mismatch`.
+ * sessionStorage survives the same-tab round-trip to Google and back to /auth.
+ */
+export const RETURN_TO_KEY = "hostit:next";
+
 /** Enoki only knows mainnet/testnet/devnet; map localnet → testnet. */
 export const ENOKI_NETWORK = (
   NETWORK === "mainnet" ? "mainnet" : NETWORK === "devnet" ? "devnet" : "testnet"
@@ -22,21 +31,27 @@ export function useIsGoogleSession(): boolean {
  * survives the round-trip to Google and back to `/auth`.
  *
  * Google ALWAYS returns to `/auth` — the only page that mounts `useAuthCallback`
- * to complete the id_token in the URL hash, and the origin allowlisted in the
- * Google OAuth client. Pass `returnTo` (e.g. the current `/event/[id]` URL) to
- * have `/auth` bounce there once the session lands, so a buyer who signs in
- * mid-purchase returns to the event they were buying.
+ * to complete the id_token in the URL hash, and the EXACT redirect_uri
+ * allowlisted in the Google OAuth client (no query string — see RETURN_TO_KEY).
+ * Pass `returnTo` (e.g. the current `/event/[id]` URL) to have `/auth` bounce
+ * there once the session lands, so a buyer who signs in mid-purchase returns to
+ * the event they were buying. `returnTo` rides in sessionStorage, never the
+ * redirect_uri, so the registered `/auth` URI keeps matching.
  */
 export function useGoogleSignIn() {
   const enokiFlow = useEnokiFlow();
   return useCallback(
     async (returnTo?: string) => {
-      const authUrl = new URL("/auth", window.location.origin);
-      if (returnTo) authUrl.searchParams.set("next", returnTo);
+      // Stash the return target out-of-band. Only same-origin app paths (AuthScreen
+      // re-validates on read); an absolute/protocol-relative URL is dropped.
+      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        sessionStorage.setItem(RETURN_TO_KEY, returnTo);
+      }
       const url = await enokiFlow.createAuthorizationURL({
         provider: "google",
         clientId: GOOGLE_CLIENT_ID,
-        redirectUrl: authUrl.toString(),
+        // Constant, query-less, and exactly registered → no redirect_uri_mismatch.
+        redirectUrl: new URL("/auth", window.location.origin).toString(),
         network: ENOKI_NETWORK,
         // Ask for the `email` scope so Google puts `email` + `email_verified`
         // in the id_token. Enoki defaults to "openid" only; without this the
