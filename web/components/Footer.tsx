@@ -67,6 +67,15 @@ export function Footer() {
             </h3>
             <ul className="space-y-2 text-sm">
               <li>
+                <Link
+                  href="/support"
+                  className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Icon icon="ic:round-mail" size={12} />
+                  Support
+                </Link>
+              </li>
+              <li>
                 <a
                   href="/pitch"
                   target="_blank"
