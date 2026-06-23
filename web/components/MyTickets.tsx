@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -12,7 +12,7 @@ import {
   coinInfo,
   matchesCoinType,
 } from "@/lib/config";
-import { refundTx, selfCheckInTx, getFields } from "@/lib/ticketing";
+import { refundTx, selfCheckInTx, transferTicketTx, getFields } from "@/lib/ticketing";
 import { useEventObjects } from "@/lib/events";
 import { humanizeError } from "@/lib/moveErrors";
 import { useSignAndExecute, useSponsorAndExecute, useSuiQuery } from "@/lib/hooks";
@@ -26,6 +26,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { isValidSuiAddress } from "@mysten/sui/utils";
 import type {
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
@@ -167,6 +178,9 @@ function TicketStub({
   const sponsored = useSponsorAndExecute();
   const isPending = regular.isPending || sponsored.isPending;
   const [open, setOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [recipient, setRecipient] = useState("");
+  const sendingRef = useRef(false);
 
   const issued = status === TICKET_STATUS.ISSUED;
   const checkedIn = status === TICKET_STATUS.CHECKED_IN;
@@ -200,10 +214,53 @@ function TicketStub({
     }
   }
 
+  // "Send ticket" — a bare public_transfer (gift) to another address. Irreversible
+  // and forfeits refund, so it's gated behind an explicit recipient + confirm.
+  const sendTo = recipient.trim();
+  const recipientValid = isValidSuiAddress(sendTo);
+  const isSelfSend = recipientValid && sendTo.toLowerCase() === address.toLowerCase();
+  const canSend = recipientValid && !isSelfSend;
+
+  function closeSend() {
+    setSendOpen(false);
+    setRecipient("");
+  }
+
+  async function confirmSend() {
+    if (!canSend || isPending || sendingRef.current) return;
+    sendingRef.current = true;
+    try {
+      const tx = transferTicketTx({ ticketId, recipient: sendTo });
+      // Gasless first, but a bare public_transfer has no move call, so the Enoki
+      // sponsor allowlist (move-call-only) can reject it — fall back to self-paid
+      // signing so a funded wallet still goes through. Fully-gasless transfer for a
+      // zero-SUI zkLogin wallet would need a Move `gift` entry fn in
+      // SPONSORED_TARGETS (deferred — a redeploy would orphan live testnet state).
+      let out;
+      if (ENOKI_ENABLED) {
+        try {
+          out = await sponsored.mutateAsync({ transaction: tx, sender: address });
+        } catch {
+          out = await regular.mutateAsync({ transaction: tx });
+        }
+      } else {
+        out = await regular.mutateAsync({ transaction: tx });
+      }
+      toast.success("Ticket sent", { description: <TxLink digest={out.digest} chars={10} /> });
+      setOpen(false);
+      closeSend();
+      onChange();
+    } catch (e: unknown) {
+      toast.error(humanizeError(e));
+    } finally {
+      sendingRef.current = false;
+    }
+  }
+
   // Check-in + refund controls — shared between the card face and the dialog so
   // the logic lives in one place. Each interactive control stops propagation so
   // tapping it doesn't also open the dialog.
-  function renderActions() {
+  function renderActions(inDialog = false) {
     return (
       <>
         {(issued || checkedIn) && (
@@ -256,6 +313,19 @@ function TicketStub({
               Refund window closed
             </Badge>
           )
+        )}
+        {inDialog && issued && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSendOpen(true);
+            }}
+          >
+            <Icon icon="ic:round-send" size={15} /> Send
+          </Button>
         )}
       </>
     );
@@ -331,8 +401,44 @@ function TicketStub({
         checkedIn={checkedIn}
         startMs={startMs}
         uri={eventUri}
-        actions={renderActions()}
+        actions={renderActions(true)}
       />
+
+      <Dialog open={sendOpen} onOpenChange={(o) => (o ? setSendOpen(true) : closeSend())}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send ticket</DialogTitle>
+            <DialogDescription>
+              Transfer “{name}” #{serial} to another Sui address. This is
+              irreversible — once sent you can’t check in or refund it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor={`send-${ticketId}`}>Recipient address</Label>
+            <Input
+              id={`send-${ticketId}`}
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
+              placeholder="0x…"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono"
+            />
+            {sendTo.length > 0 && !recipientValid && (
+              <p className="text-xs text-destructive">Enter a valid Sui address.</p>
+            )}
+            {isSelfSend && <p className="text-xs text-destructive">That’s your own address.</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={closeSend}>
+              Cancel
+            </Button>
+            <Button disabled={!canSend || isPending} onClick={confirmSend}>
+              <Icon icon="ic:round-send" size={15} /> Send ticket
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

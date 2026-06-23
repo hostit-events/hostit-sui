@@ -231,6 +231,25 @@ export function refundTx(args: RefundArgs): Transaction {
   return tx;
 }
 
+// === Transfer (gift) ===
+
+export interface TransferTicketArgs {
+  ticketId: string;
+  recipient: string;
+}
+
+/**
+ * Send (gift) an owned Ticket to another address — a bare `public_transfer`.
+ * It does NOT route through the Kiosk `TransferPolicy<Ticket>`, so no royalty /
+ * not-used / lock rules apply (those bind only the Kiosk resale path). The
+ * caller MUST validate `recipient` is a real Sui address before building.
+ */
+export function transferTicketTx(args: TransferTicketArgs): Transaction {
+  const tx = new Transaction();
+  tx.transferObjects([tx.object(args.ticketId)], args.recipient);
+  return tx;
+}
+
 // === Check-in ===
 
 export interface SelfCheckInArgs {
