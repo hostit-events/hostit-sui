@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/Icon";
 import { TxLink } from "@/components/TxLink";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { stashPendingBuy } from "@/lib/pendingBuy";
 
 // The dapp-kit connect button is a window-touching web component — load it
 // client-only (mirrors AuthScreen) so its polyfill isn't evaluated during SSR.
@@ -391,6 +392,9 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
                   <div className="space-y-2">
                     <GoogleSignInButton
                       returnTo={returnTo}
+                      // Stash the purchase so it resumes after the Google round-trip
+                      // (the full-page redirect wipes this dialog's state) — <ResumeBuy/>.
+                      onBeforeRedirect={() => stashPendingBuy(payload)}
                       style={{ width: "100%", justifyContent: "center", minHeight: 44 }}
                     />
                     <div className="flex items-center gap-3 text-[11px] text-muted-foreground">

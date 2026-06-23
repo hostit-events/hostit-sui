@@ -4,6 +4,7 @@ import { MobileTabBar } from "@/components/MobileTabBar";
 import { TestnetBanner } from "@/components/TestnetBanner";
 import { DiscoveryCommand } from "@/components/discovery/DiscoveryCommand";
 import { ProfileGate } from "@/components/EmailCaptureDialog";
+import { ResumeBuy } from "@/components/ResumeBuy";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -18,6 +19,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <DiscoveryCommand />
       {/* One-time email-binding prompt (GH#96) — no-ops unless EMAIL_ENABLED + connected + unbound. */}
       <ProfileGate />
+      {/* Re-opens the buy dialog after the Google sign-in redirect so a purchase
+          started signed-out continues instead of resetting (no-ops otherwise). */}
+      <ResumeBuy />
     </div>
   );
 }

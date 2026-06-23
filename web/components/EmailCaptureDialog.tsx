@@ -19,6 +19,7 @@ import {
   useSponsorAndExecute,
 } from "@/lib/hooks";
 import { useIsGoogleSession } from "@/lib/auth";
+import { useBuyResuming } from "@/lib/pendingBuy";
 import { useZkLoginSession } from "@mysten/enoki/react";
 import { useProfile, type ProfileEnvelope } from "@/lib/profile";
 import {
@@ -41,6 +42,7 @@ export function ProfileGate() {
   const addr = account?.address ?? null;
   const prof = useProfile(addr);
   const isGoogle = useIsGoogleSession();
+  const buyResuming = useBuyResuming();
   const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
@@ -56,6 +58,8 @@ export function ProfileGate() {
   // empty baseProfile and overwrite the user's username/avatar/emailHash.
   if (!EMAIL_ENABLED || !addr || prof.isLoading || prof.isError) return null;
   if (Boolean(prof.data?.emailBlobId) || dismissed) return null;
+  // Yield to a purchase being resumed after sign-in — prompt once it closes.
+  if (buyResuming) return null;
 
   return (
     <EmailCaptureDialog

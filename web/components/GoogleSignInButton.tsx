@@ -15,12 +15,16 @@ export function GoogleSignInButton({
   label = "Continue with Google",
   style,
   returnTo,
+  onBeforeRedirect,
 }: {
   className?: string;
   label?: string;
   style?: React.CSSProperties;
   /** Where `/auth` should bounce after the session lands (e.g. the current event URL). */
   returnTo?: string;
+  /** Fired synchronously right before the redirect — stash any state to resume
+   *  after the round-trip (e.g. the in-progress purchase). */
+  onBeforeRedirect?: () => void;
 }) {
   const signIn = useGoogleSignIn();
   const [busy, setBusy] = useState(false);
@@ -34,6 +38,7 @@ export function GoogleSignInButton({
       onClick={async () => {
         setBusy(true);
         try {
+          onBeforeRedirect?.();
           await signIn(returnTo);
         } catch {
           setBusy(false);
