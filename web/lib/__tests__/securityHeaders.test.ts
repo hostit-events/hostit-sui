@@ -31,7 +31,7 @@ describe("Content-Security-Policy", () => {
     expect(prod).not.toContain("api.groq.com");
   });
 
-  it("allows Cloudflare Turnstile (bot-wall) in script-src AND frame-src (#81)", () => {
+  it("allows Cloudflare Turnstile (bot-wall) in script-src, frame-src AND connect-src (#81)", () => {
     const directive = (name: string) =>
       prod
         .split(";")
@@ -39,11 +39,16 @@ describe("Content-Security-Policy", () => {
         .find((s) => s.startsWith(`${name} `));
     const scriptSrc = directive("script-src");
     const frameSrc = directive("frame-src");
+    const connectSrc = directive("connect-src");
     // The Turnstile api.js loads under script-src; its challenge iframe needs a
-    // frame-src (distinct from frame-ancestors, which stays 'none').
+    // frame-src (distinct from frame-ancestors, which stays 'none'); and the
+    // widget XHRs its challenge-platform payload, which needs connect-src — the
+    // missing connect-src entry is what made the widget never load and every
+    // sponsored call 403.
     expect(scriptSrc).toContain("https://challenges.cloudflare.com");
     expect(frameSrc).toBeDefined();
     expect(frameSrc).toContain("https://challenges.cloudflare.com");
+    expect(connectSrc).toContain("https://challenges.cloudflare.com");
     expect(prod).toContain("frame-ancestors 'none'");
   });
 

@@ -18,6 +18,11 @@ const CONNECT_SRC = [
   "https://seal-aggregator-testnet.mystenlabs.com",
   "https://api.iconify.design",
   "https://accounts.google.com",
+  // Turnstile (#81): besides loading api.js (script-src) and the challenge iframe
+  // (frame-src), the widget fetches its `cdn-cgi/challenge-platform` payload from
+  // here via XHR — WITHOUT this in connect-src the challenge can't complete, so
+  // no token is ever minted and every sponsored call 403s ("Turnstile not loaded").
+  "https://challenges.cloudflare.com",
 ];
 
 const IMG_SRC = [
