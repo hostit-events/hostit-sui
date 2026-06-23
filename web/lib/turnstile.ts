@@ -72,10 +72,16 @@ export async function verifyTurnstile(
       console.warn(`[turnstile] siteverify ${res.status} — failing OPEN (check TURNSTILE_SECRET_KEY)`);
       return { ok: false, reason: "unreachable" };
     }
-    const data = (await res.json()) as { success?: boolean };
-    return data.success === true
-      ? { ok: true, skipped: false }
-      : { ok: false, reason: "failed" };
+    const data = (await res.json()) as { success?: boolean; "error-codes"?: string[] };
+    if (data.success === true) return { ok: true, skipped: false };
+    // Log Cloudflare's precise reason so a PERSISTENT failure is diagnosable:
+    //   invalid-input-secret  → the secret doesn't match the site key (wrong/
+    //                           mismatched widget keys)
+    //   timeout-or-duplicate  → token reused or expired
+    //   invalid/missing-input-response → client produced no/forged token
+    // (no PII — just CF codes.)
+    console.warn("[turnstile] siteverify rejected", { errorCodes: data["error-codes"] });
+    return { ok: false, reason: "failed" };
   } catch (e) {
     console.warn("[turnstile] siteverify unreachable — failing OPEN", e);
     return { ok: false, reason: "unreachable" }; // network error → fail-open

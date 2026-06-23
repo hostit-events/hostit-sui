@@ -102,7 +102,13 @@ export function TurnstileGate() {
             onBeforeInteractive={() => setInteractive(true)}
             onAfterInteractive={() => setInteractive(false)}
             onSuccess={() => setInteractive(false)}
-            onError={() => setInteractive(false)}
+            onError={(code) => {
+              // Surface the Cloudflare client error code — e.g. 110200 means
+              // this hostname isn't in the widget's allowed domains (the usual
+              // cause of "no token ever issued"). Check the browser console.
+              console.warn("[turnstile] widget error", code);
+              setInteractive(false);
+            }}
             onExpire={() => setInteractive(false)}
             options={{ appearance: "interaction-only", execution: "execute" }}
           />
