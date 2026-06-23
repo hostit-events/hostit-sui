@@ -84,8 +84,12 @@
 }
 .lv-nav-burger:hover { border-color: var(--paper); }
 
-/* Mobile menu sheet — fixed full-screen scrim + panel pinned below the nav bar. */
-.lv-nav-sheet { position: fixed; inset: 0; z-index: 130; }
+/* Mobile menu sheet — fixed full-screen scrim + panel pinned below the nav bar.
+   Stays mounted (no `hidden`) so BOTH the open and close transitions play; a
+   delayed visibility flip keeps it interactive only while open and hides it
+   only after the child fade/slide finishes on close. */
+.lv-nav-sheet { position: fixed; inset: 0; z-index: 130; visibility: hidden; transition: visibility 0s linear .42s; }
+.lv-nav-sheet.open { visibility: visible; transition-delay: 0s; }
 .lv-nav-scrim {
   position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; margin: 0;
   border: none; cursor: pointer; background: rgba(7,9,18,0.6);
@@ -245,6 +249,7 @@
 @media (max-width: 880px) {
   .lv-nav-links { display: none; }
   .lv-nav-burger { display: inline-flex; }
+  .lv-nav-cta .lv-btn { display: none; } /* "Explore events" lives inside the menu on mobile */
   .lv-nav-in { height: 64px; }
   .lv-hero { align-items: center; padding-top: 100px; }
   .lv-hero-foot { flex-direction: column; align-items: flex-start; gap: 30px; }

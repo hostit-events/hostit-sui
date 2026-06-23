@@ -206,10 +206,7 @@ export function LandingV2() {
       </header>
 
       {/* MOBILE MENU — section links + Explore events, shown where inline links hide */}
-      <div
-        className={`lv-nav-sheet${menuOpen ? " open" : ""}`}
-        hidden={!menuOpen}
-      >
+      <div className={`lv-nav-sheet${menuOpen ? " open" : ""}`}>
         <button
           type="button"
           className="lv-nav-scrim"
