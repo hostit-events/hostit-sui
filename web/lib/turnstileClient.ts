@@ -26,6 +26,13 @@ export function registerTurnstileGetter(fn: Getter): void {
   getter = fn;
 }
 
+/** True once the single widget has registered its getter (i.e. a token can be
+ *  minted). Lets the app-entry warm-up wait out the hard-load mount race instead
+ *  of misreading a not-ready null as a failed challenge. */
+export function isTurnstileReady(): boolean {
+  return getter !== null;
+}
+
 /** Identity-safe clear: only nulls the slot if `fn` is still the live getter, so
  *  a Strict-Mode mount→unmount→mount can't have the old cleanup clobber the new
  *  registration. */

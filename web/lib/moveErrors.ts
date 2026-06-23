@@ -142,6 +142,11 @@ export function humanizeError(e: unknown): string {
   if (/insufficient balance of|no valid coins|coinwithbalance|insufficient.*coin/i.test(raw))
     return "You don’t have enough of the selected coin to cover the price + 3% fee — add more of that coin and try again.";
   if (/insufficient.*gas|gasbalance/i.test(raw)) return "Not enough SUI for gas.";
+  // Bot-check (Turnstile) failure — distinct, actionable, and matched BEFORE the
+  // generic /api/sponsor catch-all (the 403 body travels as "/api/sponsor 403:
+  // Bot check failed"). Tells the user to complete the corner checkbox.
+  if (/bot check failed|turnstile/i.test(raw))
+    return "Quick verification needed — complete the check at the bottom-right corner, then try again.";
   if (/\/api\/sponsor|dry_run_failed|enoki/i.test(raw))
     return "Couldn’t sponsor this transaction — please retry.";
   return raw.length > 220 ? raw.slice(0, 220) + "…" : raw;

@@ -8,9 +8,11 @@ import {
   unregisterTurnstileGetter,
 } from "@/lib/turnstileClient";
 
-// Bound the wait for a (re)solve so a slow/stuck challenge fails fast to null
-// rather than hanging the user — far below the library's 30s default.
-const TOKEN_TIMEOUT_MS = 8000;
+// Bound the wait for a (re)solve so a stuck challenge fails to null rather than
+// hanging forever — but long enough that, on the rare action-time interactive
+// challenge, a human can actually find and click the corner checkbox (8s wasn't).
+// The app-entry <TurnstileWarmup/> means most action-time mints are silent/fast.
+const TOKEN_TIMEOUT_MS = 20000;
 
 /**
  * One Cloudflare Turnstile widget for the whole app (mounted in ClientProviders).

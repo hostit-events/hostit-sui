@@ -5,6 +5,7 @@ import { TestnetBanner } from "@/components/TestnetBanner";
 import { DiscoveryCommand } from "@/components/discovery/DiscoveryCommand";
 import { ProfileGate } from "@/components/EmailCaptureDialog";
 import { ResumeBuy } from "@/components/ResumeBuy";
+import { TurnstileWarmup } from "@/components/TurnstileWarmup";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -22,6 +23,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Re-opens the buy dialog after the Google sign-in redirect so a purchase
           started signed-out continues instead of resetting (no-ops otherwise). */}
       <ResumeBuy />
+      {/* Runs the bot-check once on app entry (never the landing page) so the
+          gasless purchase mints its token silently — no mid-checkout checkbox. */}
+      <TurnstileWarmup />
     </div>
   );
 }
