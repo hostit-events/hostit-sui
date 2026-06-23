@@ -68,14 +68,16 @@ export function TurnstileGate() {
       {interactive && (
         <div aria-hidden className="fixed inset-0 z-[70] bg-background/70 backdrop-blur-md" />
       )}
-      {/* The single persistent widget: centered modal while interactive, parked
-          (invisible — interaction-only) bottom-right otherwise. NEVER unmounted,
-          so the ref + token getter survive the promotion. */}
+      {/* The single persistent widget: centered modal while interactive, fully
+          HIDDEN otherwise — opacity-0 + pointer-events-none (not display:none,
+          which stops Turnstile issuing tokens; not unmounted, which loses the
+          getter/ref). This also hides Turnstile's lingering post-success badge,
+          so after verifying nothing reappears in the corner. */}
       <div
         className={
           interactive
             ? "fixed inset-0 z-[71] grid place-items-center p-4"
-            : "fixed bottom-3 right-3 z-[60]"
+            : "pointer-events-none fixed bottom-3 right-3 z-[60] opacity-0"
         }
         role={interactive ? "dialog" : undefined}
         aria-modal={interactive || undefined}
