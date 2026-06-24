@@ -181,7 +181,7 @@ function RememberButton({
           size="sm"
           onClick={onClick}
           disabled={saving || saved}
-          className="h-7 self-start px-2 text-[11.5px]"
+          className="h-7 self-start px-2 text-[11.5px] min-h-11 sm:min-h-0"
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
@@ -448,7 +448,7 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
             key={p.label}
             variant="outline"
             size="sm"
-            className="shrink-0 rounded-full"
+            className="shrink-0 rounded-full min-h-11 sm:min-h-0"
             disabled={busy}
             onClick={() => send(p.prompt)}
           >
@@ -474,7 +474,7 @@ export function CopilotPanel({ event }: { event: CopilotEvent }) {
           onChange={(e) => setInput(e.target.value)}
           disabled={busy}
         />
-        <Button type="submit" size="icon" disabled={busy || !input.trim()} aria-label="Send">
+        <Button type="submit" size="icon" className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0" disabled={busy || !input.trim()} aria-label="Send">
           <Icon icon="ph:paper-plane-right-fill" size={16} />
         </Button>
       </form>

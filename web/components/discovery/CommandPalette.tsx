@@ -237,7 +237,7 @@ export function CommandPalette({
             type="button"
             onClick={() => onOpenChange(false)}
             aria-label="Close search"
-            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96] sm:hidden"
+            className="grid size-11 sm:size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96] sm:hidden"
           >
             <Icon icon="ic:round-close" size={18} />
           </button>

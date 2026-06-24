@@ -593,7 +593,7 @@ export function EventPageScreen({ id }: { id: string }) {
 
             {/* Buy / claim actions — open BuyTicketDialog (connect + submit live there) */}
             {isFree ? (
-              <Button className="w-full" disabled={!canPurchase} onClick={openClaim}>
+              <Button className="w-full min-h-11 sm:min-h-0" disabled={!canPurchase} onClick={openClaim}>
                 <Icon icon="ion:ticket" size={16} />
                 {!canPurchase ? statusLabel() : addr ? "Claim free ticket" : "Connect to claim"}
               </Button>
@@ -614,7 +614,7 @@ export function EventPageScreen({ id }: { id: string }) {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
-                            className="w-full"
+                            className="w-full min-h-11 sm:min-h-0"
                             disabled={!canPurchase || !affordable}
                             onClick={() => openBuy(p.coinType, BigInt(p.price))}
                           >
@@ -647,7 +647,7 @@ export function EventPageScreen({ id }: { id: string }) {
             )}
 
             {isOrganizer && (
-              <Button asChild variant="outline" className="w-full">
+              <Button asChild variant="outline" className="w-full min-h-11 sm:min-h-0">
                 <Link href={`/manage/${id}`}>
                   <Icon icon="material-symbols-light:settings-rounded" size={16} /> Manage event
                 </Link>

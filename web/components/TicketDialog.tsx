@@ -211,7 +211,7 @@ export function TicketDialog(props: TicketDialogProps) {
         <div className="flex flex-wrap items-center gap-2">
           {actions}
           {eventId && (
-            <Button asChild variant="outline" size="sm">
+            <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-0">
               <Link href={`/event/${eventId}`}>
                 <Icon icon="ic:round-open-in-new" size={15} /> View event
               </Link>
@@ -222,10 +222,10 @@ export function TicketDialog(props: TicketDialogProps) {
 
       {/* QR tools */}
       <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-        <Button variant="outline" size="sm" onClick={downloadQr} disabled={busy === "qr"} aria-busy={busy === "qr"}>
+        <Button variant="outline" size="sm" className="min-h-11 sm:min-h-0" onClick={downloadQr} disabled={busy === "qr"} aria-busy={busy === "qr"}>
           <Icon icon="ic:round-download" size={15} /> Download QR
         </Button>
-        <Button variant="outline" size="sm" onClick={shareQr} disabled={busy === "qr"} aria-busy={busy === "qr"}>
+        <Button variant="outline" size="sm" className="min-h-11 sm:min-h-0" onClick={shareQr} disabled={busy === "qr"} aria-busy={busy === "qr"}>
           <Icon icon="ic:round-ios-share" size={15} /> Share
         </Button>
       </div>
@@ -234,12 +234,12 @@ export function TicketDialog(props: TicketDialogProps) {
       {caps && (caps.apple || caps.google) && (
         <div className="flex flex-wrap items-center gap-2">
           {caps.apple && (
-            <Button variant="outline" size="sm" onClick={() => addToWallet("apple")} disabled={busy === "apple"} aria-busy={busy === "apple"}>
+            <Button variant="outline" size="sm" className="min-h-11 sm:min-h-0" onClick={() => addToWallet("apple")} disabled={busy === "apple"} aria-busy={busy === "apple"}>
               <Icon icon="mdi:apple" size={16} /> Add to Apple Wallet
             </Button>
           )}
           {caps.google && (
-            <Button variant="outline" size="sm" onClick={() => addToWallet("google")} disabled={busy === "google"} aria-busy={busy === "google"}>
+            <Button variant="outline" size="sm" className="min-h-11 sm:min-h-0" onClick={() => addToWallet("google")} disabled={busy === "google"} aria-busy={busy === "google"}>
               <Icon icon="logos:google-icon" size={14} /> Add to Google Wallet
             </Button>
           )}

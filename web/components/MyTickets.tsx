@@ -272,6 +272,7 @@ function TicketStub({
             <TooltipTrigger asChild>
               <Button
                 size="sm"
+                className="min-h-11 sm:min-h-0"
                 disabled={isPending}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -293,6 +294,7 @@ function TicketStub({
                 <Button
                   variant="outline"
                   size="sm"
+                  className="min-h-11 sm:min-h-0"
                   disabled={isPending}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -322,6 +324,7 @@ function TicketStub({
           <Button
             variant="outline"
             size="sm"
+            className="min-h-11 sm:min-h-0"
             disabled={isPending}
             onClick={(e) => {
               e.stopPropagation();

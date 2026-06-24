@@ -309,7 +309,7 @@ export function SettingsScreen() {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Button onClick={savePublicProfile} disabled={profileBusy}>
+                    <Button className="min-h-11 sm:min-h-0" onClick={savePublicProfile} disabled={profileBusy}>
                       <Icon icon="ic:round-save" size={16} /> {profileBusy ? "Saving…" : "Save public profile"}
                     </Button>
                   </div>
@@ -337,7 +337,7 @@ export function SettingsScreen() {
                   ) : !emailBound ? (
                     <div className="space-y-3">
                       <p className="text-sm text-muted-foreground">No email linked yet.</p>
-                      <Button onClick={() => setBindOpen(true)}>
+                      <Button className="min-h-11 sm:min-h-0" onClick={() => setBindOpen(true)}>
                         <Icon icon="ic:round-mail" size={16} /> Add email
                       </Button>
                     </div>

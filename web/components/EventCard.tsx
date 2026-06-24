@@ -159,7 +159,7 @@ export function EventCard({
 
         <div className="flex flex-wrap items-center justify-between gap-2.5 border-t pt-3">
           {isFree ? (
-            <Button size="sm" disabled={!canPurchase} onClick={openClaim}>
+            <Button size="sm" className="min-h-11 sm:min-h-0" disabled={!canPurchase} onClick={openClaim}>
               <Icon icon="ion:ticket" size={15} />
               {!canPurchase ? statusLabel() : buyerAddress ? "Claim free" : "Connect to claim"}
             </Button>
@@ -176,6 +176,7 @@ export function EventCard({
                       <TooltipTrigger asChild>
                         <Button
                           size="sm"
+                          className="min-h-11 sm:min-h-0"
                           disabled={!canPurchase}
                           onClick={() => openBuy(p.coinType, BigInt(p.price))}
                         >

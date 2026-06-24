@@ -908,7 +908,7 @@ function OrganizerEmailCheckinCard({ ctx }: { ctx: DeckCtx }) {
             }}
           />
         </div>
-        <Button disabled={busy || ctx.isPending} onClick={checkIn}>
+        <Button className="min-h-11 sm:min-h-0" disabled={busy || ctx.isPending} onClick={checkIn}>
           {busy ? "Checking in…" : "Check in"}
         </Button>
       </div>
@@ -1058,7 +1058,7 @@ function DoorPrepPanel({
               onChange={(e) => setHex(e.target.value)}
             />
           </div>
-          <Button disabled={ctx.isPending} onClick={addSigner}>
+          <Button className="min-h-11 sm:min-h-0" disabled={ctx.isPending} onClick={addSigner}>
             {ctx.isPending ? "Adding…" : "Add signer"}
           </Button>
         </div>
@@ -1339,7 +1339,7 @@ function OrganizerRecapPanel({ ctx }: { ctx: DeckCtx }) {
         onChange={(e) => setText(e.target.value)}
       />
       <div className="flex justify-end">
-        <Button disabled={ctx.isPending || busy} onClick={post}>
+        <Button className="min-h-11 sm:min-h-0" disabled={ctx.isPending || busy} onClick={post}>
           {busy ? "Posting…" : "Post to event chat"}
         </Button>
       </div>
@@ -1431,7 +1431,7 @@ function EndTimePanel({ ctx, startMs, endMs }: { ctx: DeckCtx; startMs: number; 
           <Label htmlFor="ee-end-extend">New end</Label>
           <DateTimePicker id="ee-end-extend" value={end} min={msToLocal(Date.now())} onChange={setEnd} />
         </div>
-        <Button disabled={ctx.isPending} onClick={save}>
+        <Button className="min-h-11 sm:min-h-0" disabled={ctx.isPending} onClick={save}>
           {ctx.isPending ? "Saving…" : "Extend"}
         </Button>
       </div>
@@ -1583,11 +1583,11 @@ function AttendeeEmailsCard({ ctx }: { ctx: DeckCtx }) {
         </div>
         <div className="flex gap-2">
           {Object.keys(emails).length > 0 && (
-            <Button size="sm" variant="outline" onClick={exportCsv}>
+            <Button size="sm" variant="outline" className="min-h-11 sm:min-h-0" onClick={exportCsv}>
               <Icon icon="ph:download-simple" size={14} /> Export CSV
             </Button>
           )}
-          <Button size="sm" disabled={busy} onClick={reveal}>
+          <Button size="sm" className="min-h-11 sm:min-h-0" disabled={busy} onClick={reveal}>
             {busy ? "Decrypting…" : Object.keys(emails).length ? "Re-decrypt" : "Reveal emails"}
           </Button>
         </div>
@@ -2155,7 +2155,7 @@ function EditDetailsPanel({
       )}
 
       <div className="flex justify-end">
-        <Button disabled={isPending || Boolean(busy)} onClick={save}>
+        <Button className="min-h-11 sm:min-h-0" disabled={isPending || Boolean(busy)} onClick={save}>
           {busy || isPending ? "Saving…" : "Save details"}
         </Button>
       </div>
@@ -2258,7 +2258,7 @@ function EditSchedulePanel({
           )}
 
           <div className="flex justify-end">
-            <Button disabled={isPending} onClick={save}>
+            <Button className="min-h-11 sm:min-h-0" disabled={isPending} onClick={save}>
               {isPending ? "Saving…" : "Save schedule"}
             </Button>
           </div>
@@ -2329,7 +2329,7 @@ function EditCapacityPanel({
         <Label htmlFor="ee-max-tickets">Max tickets</Label>
         <div className="flex items-end gap-2">
           <Input id="ee-max-tickets" type="number" min={ticketFloor} step="1" value={maxTicketsStr} onChange={(e) => setMaxTicketsStr(e.target.value)} />
-          <Button variant="outline" disabled={isPending} onClick={saveMaxTickets}>
+          <Button variant="outline" className="min-h-11 sm:min-h-0" disabled={isPending} onClick={saveMaxTickets}>
             {isPending ? "Saving…" : "Save"}
           </Button>
         </div>
@@ -2342,7 +2342,7 @@ function EditCapacityPanel({
         <Label htmlFor="ee-max-per-user">Max per attendee</Label>
         <div className="flex items-end gap-2">
           <Input id="ee-max-per-user" type="number" min={1} step="1" value={maxPerUserStr} onChange={(e) => setMaxPerUserStr(e.target.value)} />
-          <Button variant="outline" disabled={isPending} onClick={saveMaxPerUser}>
+          <Button variant="outline" className="min-h-11 sm:min-h-0" disabled={isPending} onClick={saveMaxPerUser}>
             {isPending ? "Saving…" : "Save"}
           </Button>
         </div>
@@ -2408,7 +2408,7 @@ function PricePanel({ ctx, stats }: { ctx: DeckCtx; stats?: Record<string, CoinS
             onChange={(e) => setPriceStr(e.target.value)}
           />
         </div>
-        <Button disabled={ctx.isPending} onClick={setPrice}>
+        <Button className="min-h-11 sm:min-h-0" disabled={ctx.isPending} onClick={setPrice}>
           {ctx.isPending ? "Setting…" : "Set price"}
         </Button>
       </div>

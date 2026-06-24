@@ -268,7 +268,7 @@ function SelloutMarketCard({
             Will this event sell out (reach {String(maxTickets)} tickets) before doors?
           </div>
           <Button
-            className="w-full"
+            className="w-full min-h-11 sm:min-h-0"
             disabled={!addr || isPending}
             onClick={() => run(createSelloutMarketTx(eventId, USDC_COIN_TYPE))}
           >
@@ -368,7 +368,7 @@ function SelloutMarketCard({
             )}
             <div className="flex gap-2">
               <Button
-                className="flex-1"
+                className="flex-1 min-h-11 sm:min-h-0"
                 disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
                 onClick={() => {
                   const units = parseUsdcUnits(amount);
@@ -387,7 +387,7 @@ function SelloutMarketCard({
               </Button>
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 min-h-11 sm:min-h-0"
                 disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
                 onClick={() => {
                   const units = parseUsdcUnits(amount);
@@ -436,7 +436,7 @@ function SelloutMarketCard({
               </span>
             </div>
             <Button
-              className="w-full"
+              className="w-full min-h-11 sm:min-h-0"
               disabled={!addr || isPending}
               onClick={() => run(settleTx({ marketId: marketId!, eventId, coinType: USDC_COIN_TYPE }))}
             >
@@ -492,7 +492,7 @@ function SelloutMarketCard({
               ) : hasWinningStake ? (
                 <>
                   <Button
-                    className="w-full"
+                    className="w-full min-h-11 sm:min-h-0"
                     disabled={isPending}
                     onClick={() =>
                       run(claimTx({ marketId: marketId!, coinType: USDC_COIN_TYPE, recipient: addr! }))
@@ -675,7 +675,7 @@ function RangeMarketCard({
             ))}
           </div>
           <Button
-            className="w-full"
+            className="w-full min-h-11 sm:min-h-0"
             disabled={!addr || isPending}
             onClick={() => run(createRangeMarketTx(eventId, USDC_COIN_TYPE, cutoffs))}
           >
@@ -844,7 +844,7 @@ function RangeMarketCard({
               </div>
             )}
             <Button
-              className="w-full"
+              className="w-full min-h-11 sm:min-h-0"
               disabled={!addr || isPending || usdcZero || parseUsdcUnits(amount) === null}
               onClick={() => {
                 const units = parseUsdcUnits(amount);
@@ -893,7 +893,7 @@ function RangeMarketCard({
               </span>
             </div>
             <Button
-              className="w-full"
+              className="w-full min-h-11 sm:min-h-0"
               disabled={!addr || isPending}
               onClick={() =>
                 run(settleRangeTx({ marketId: marketId!, eventId, coinType: USDC_COIN_TYPE }))
@@ -957,7 +957,7 @@ function RangeMarketCard({
               ) : canClaim ? (
                 <>
                   <Button
-                    className="w-full"
+                    className="w-full min-h-11 sm:min-h-0"
                     disabled={isPending}
                     onClick={() =>
                       run(claimRangeTx({ marketId: marketId!, coinType: USDC_COIN_TYPE, recipient: addr! }))

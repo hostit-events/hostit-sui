@@ -270,7 +270,7 @@ export function EventQuickViewModal({ id }: { id: string }) {
               </Button>
 
               {isFree ? (
-                <Button disabled={!canPurchase} onClick={() => openClaim(name)}>
+                <Button className="min-h-11 sm:min-h-0" disabled={!canPurchase} onClick={() => openClaim(name)}>
                   <Icon icon="ion:ticket" size={15} />
                   {!canPurchase ? statusLabel() : addr ? "Claim free" : "Connect to claim"}
                 </Button>
@@ -285,6 +285,7 @@ export function EventQuickViewModal({ id }: { id: string }) {
                   const total = totalWithFee(BigInt(p.price));
                   return (
                     <Button
+                      className="min-h-11 sm:min-h-0"
                       disabled={!canPurchase}
                       onClick={() => openBuy(name, p.coinType, BigInt(p.price))}
                     >

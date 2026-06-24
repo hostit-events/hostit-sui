@@ -55,7 +55,7 @@ export function SocialShare({ title, url, variant = "icon", className }: SocialS
             type="button"
             aria-label="Share event"
             className={cn(
-              "grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur transition-[color,background-color,transform] hover:bg-black/55 active:scale-[0.96]",
+              "grid h-11 w-11 sm:h-9 sm:w-9 place-items-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur transition-[color,background-color,transform] hover:bg-black/55 active:scale-[0.96]",
               className,
             )}
           >

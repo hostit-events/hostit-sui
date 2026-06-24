@@ -106,7 +106,7 @@ export function ReviewsSection({
                 onMouseEnter={() => setHoverRating(s)}
                 onMouseLeave={() => setHoverRating(0)}
                 aria-label={`${s} star${s > 1 ? "s" : ""}`}
-                className="rounded p-0.5 transition-transform hover:scale-110 active:scale-[0.95] disabled:cursor-not-allowed"
+                className="inline-flex items-center justify-center min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 rounded p-0.5 transition-transform hover:scale-110 active:scale-[0.95] disabled:cursor-not-allowed"
               >
                 <Star
                   className={cn(
@@ -138,7 +138,7 @@ export function ReviewsSection({
               size="sm"
               onClick={handleSubmit}
               disabled={rating === 0 || !comment.trim() || submitting}
-              className="gap-1.5 rounded-lg"
+              className="gap-1.5 rounded-lg min-h-11 sm:min-h-0"
             >
               {submitting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

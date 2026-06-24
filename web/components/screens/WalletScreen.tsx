@@ -352,7 +352,7 @@ function ClaimPoapRow({
         {done ? (
           <Badge variant="secondary"><Icon icon="ph:seal-check-fill" size={12} /> Claimed</Badge>
         ) : (
-          <Button size="sm" disabled={isPending} onClick={claim}>
+          <Button size="sm" className="min-h-11 sm:min-h-0" disabled={isPending} onClick={claim}>
             <Icon icon="ph:medal-fill" size={14} /> {isPending ? "Claiming…" : "Claim POAP"}
           </Button>
         )}

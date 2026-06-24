@@ -629,6 +629,7 @@ export function ForumScreen({ id }: { id: string }) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
+                    className="min-h-11 sm:min-h-0"
                     disabled={posting || !draft.trim()}
                     onClick={() => void sendMessage()}
                   >
@@ -783,7 +784,7 @@ function MessageRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
+                  className="inline-flex items-center justify-center min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
                   aria-label={pinned ? "Unpin" : "Pin"}
                   onClick={() => onModerate(msg.blobId, pinned ? MOD_UNPIN : MOD_PIN)}
                 >
@@ -795,7 +796,7 @@ function MessageRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
+                  className="inline-flex items-center justify-center min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
                   aria-label={hidden ? "Unhide" : "Hide"}
                   onClick={() => onModerate(msg.blobId, hidden ? MOD_UNHIDE : MOD_HIDE)}
                 >

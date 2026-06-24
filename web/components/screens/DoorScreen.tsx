@@ -586,6 +586,7 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
               <Button
                 variant={useCamera ? "default" : "outline"}
                 size="sm"
+                className="min-h-11 sm:min-h-0"
                 onClick={() => {
                   setCamErr(null);
                   setUseCamera((v) => !v);
@@ -642,7 +643,7 @@ function AdmitPanel({ eventId, onAdmitted }: { eventId: string; onAdmitted: () =
           />
         </div>
         <Button
-          className="w-full"
+          className="w-full min-h-11 sm:min-h-0"
           disabled={busy || !ticketInput.trim() || !keypair}
           onClick={() => admit(ticketInput)}
         >
@@ -794,6 +795,7 @@ function StaffKeyManager({
         <div className="flex gap-2 flex-wrap">
           <Button
             size="sm"
+            className="min-h-11 sm:min-h-0"
             onClick={() => {
               setErr(null);
               onChange(generateStaffKeypair());
@@ -801,7 +803,7 @@ function StaffKeyManager({
           >
             <Icon icon="ic:round-add" size={15} /> Generate key
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+          <Button variant="outline" size="sm" className="min-h-11 sm:min-h-0" onClick={() => setImporting(true)}>
             Import existing
           </Button>
         </div>

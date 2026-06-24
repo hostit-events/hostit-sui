@@ -93,7 +93,7 @@ export function CopilotLauncher({ event }: { event: CopilotEvent }) {
               variant="ghost"
               size="icon"
               data-cp-close
-              className="cp-close"
+              className="cp-close min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
               aria-label="Close AI Co-pilot"
             >
               <Icon icon="ic:round-close" size={18} />

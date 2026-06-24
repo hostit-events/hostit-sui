@@ -52,7 +52,7 @@ export function RecentlyViewedRow({ events }: { events: DiscoverEvent[] }) {
         <button
           type="button"
           onClick={clear}
-          className="text-[11px] text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96]"
+          className="inline-flex items-center min-h-11 -my-3 px-1 sm:min-h-0 sm:my-0 sm:px-0 text-[11px] text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96]"
           aria-label="Clear recently viewed history"
         >
           Clear

@@ -146,7 +146,7 @@ export function DiscoverScreen() {
         value={cat}
         onValueChange={(v) => v && setCat(v)}
         variant="outline"
-        className="flex-wrap pb-1"
+        className="flex-wrap pb-1 [&_button]:min-h-11 sm:[&_button]:min-h-0"
         aria-label="Categories"
       >
         {CATEGORIES.map((c) => (

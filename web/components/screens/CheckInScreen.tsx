@@ -424,6 +424,7 @@ function SignerManager({
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <Button
+          className="min-h-11 sm:min-h-0"
           disabled={!capId || !valid || busy || isPending}
           onClick={add}
         >
@@ -533,7 +534,7 @@ function Attendance({ eventId }: { eventId: string }) {
               QR scanning happens in the full-screen door view, which runs the
               camera scanner and signs the staff voucher on each scan.
             </div>
-            <Button asChild className="mt-3">
+            <Button asChild className="mt-3 min-h-11 sm:min-h-0">
               <Link href={`/door/${eventId}`}>
                 <Icon icon="ic:round-meeting-room" size={15} /> Open door view to scan
               </Link>

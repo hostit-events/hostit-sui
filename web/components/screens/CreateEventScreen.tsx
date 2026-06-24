@@ -1511,7 +1511,7 @@ function AdvancedCreate({
 
           {/* nav */}
           <div className="flex items-center justify-between gap-3 pt-1">
-            <Button variant="outline" onClick={back} disabled={step === 0 || !!busy}>
+            <Button variant="outline" className="min-h-11 sm:min-h-0" onClick={back} disabled={step === 0 || !!busy}>
               <Icon icon="ph:arrow-left-bold" size={14} /> Back
             </Button>
             <div className="flex items-center gap-2">
@@ -1523,6 +1523,7 @@ function AdvancedCreate({
                     <Button
                       type="button"
                       variant="outline"
+                      className="min-h-11 sm:min-h-0"
                       onClick={saveAsDraft}
                       disabled={!addr || savingDraft || !!busy || txPending}
                     >
@@ -1546,7 +1547,7 @@ function AdvancedCreate({
               </Tooltip>
               {step < 3 ? (
                 <AnimateIcon asChild animateOnHover>
-                  <Button onClick={next}>
+                  <Button className="min-h-11 sm:min-h-0" onClick={next}>
                     Next <ArrowRight size={14} />
                   </Button>
                 </AnimateIcon>

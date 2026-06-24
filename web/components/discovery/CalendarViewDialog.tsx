@@ -148,7 +148,7 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8 rounded-lg"
+              className="h-8 w-8 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 rounded-lg"
               onClick={prevMonth}
               aria-label="Previous month"
             >
@@ -157,7 +157,7 @@ export function CalendarViewDialog({ open, onOpenChange, events }: CalendarViewD
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8 rounded-lg"
+              className="h-8 w-8 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 rounded-lg"
               onClick={nextMonth}
               aria-label="Next month"
             >
