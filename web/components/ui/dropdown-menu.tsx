@@ -7,9 +7,15 @@ import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronRightIcon } from "lucide-react"
 
 function DropdownMenu({
+  modal = false,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+  // Default NON-modal. Radix's modal default applies react-remove-scroll, which
+  // sets `body { overflow: hidden }` to lock scroll — that turns the body into a
+  // scroll container and breaks our `position: sticky` header: opening a menu
+  // while the page is scrolled flings the header off-screen (top jumps to
+  // -scrollY). A dropdown menu doesn't need scroll-lock. Pass `modal` to override.
+  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" modal={modal} {...props} />
 }
 
 function DropdownMenuPortal({
