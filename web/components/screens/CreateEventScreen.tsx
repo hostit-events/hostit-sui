@@ -401,10 +401,14 @@ function AdvancedCreate({
   );
 
   // ── Step 3: Promote ──
-  const [poap, setPoap] = useState(initial?.poap ?? true);
+  const [poap, setPoap] = useState(initial?.poap ?? false);
   const [refundable, setRefundable] = useState(initial?.refundable ?? false);
   const [isFree, setIsFree] = useState(initial?.isFree ?? false);
   const [web3, setWeb3] = useState(initial?.web3 ?? category === "web3");
+  // A free ticket has nothing to refund, so never surface/persist "refundable"
+  // for one. Keep the raw `refundable` toggle state intact (preserves intent if
+  // the organizer flips back to paid) but gate what reaches metadata/on-chain.
+  const effectiveRefundable = refundable && !isFree;
 
   // ── Step 4: Publish ──
   const [agreed, setAgreed] = useState(false);
@@ -669,13 +673,8 @@ function AdvancedCreate({
     setVenue(s.venue ?? "");
     setCity(s.city ?? "");
     setDescription(s.description);
-    setIsFree(s.free);
-    if (!s.free) {
-      setBasePrice(s.price != null ? String(s.price) : "");
-      setCoinType(COINS.find((c) => c.symbol === s.coin)?.type ?? COINS[0].type);
-    }
-    if (s.capacity != null) setMaxTickets(String(s.capacity));
-    if (s.maxPerUser != null) setMaxPerUser(String(s.maxPerUser));
+    // Ticket settings (free/price/coin/capacity) are the organizer's call — the
+    // suggestion only seeds the event *details*, never pricing or limits.
     setSuggestDismissed(true); // hide the past-events suggestion banner if shown
   }
 
@@ -769,7 +768,7 @@ function AdvancedCreate({
         ...(metaTiers.length ? { tiers: metaTiers } : {}),
         poap,
         web3,
-        refundable,
+        refundable: effectiveRefundable,
       };
       // Reuse the cached metadata blob on retry when the JSON is byte-identical.
       const metaKey = JSON.stringify(metadata);
@@ -806,7 +805,7 @@ function AdvancedCreate({
           maxTickets: BigInt(Math.trunc(Number(maxTickets))),
           maxPerUser: BigInt(Math.trunc(Number(maxPerUser))),
           isFree,
-          isRefundable: refundable,
+          isRefundable: effectiveRefundable,
           coinType,
           price: priceUnits ?? 0n,
         },
@@ -1442,13 +1441,15 @@ function AdvancedCreate({
                 title="Proof-of-Attendance (POAP)"
                 desc="Attendees can claim a commemorative POAP NFT after check-in."
               />
-              <Toggle
-                on={refundable}
-                set={setRefundable}
-                icon="ph:arrow-u-up-left-bold"
-                title="Refundable"
-                desc="Holders can refund within 3 days after the event ends."
-              />
+              {!isFree && (
+                <Toggle
+                  on={refundable}
+                  set={setRefundable}
+                  icon="ph:arrow-u-up-left-bold"
+                  title="Refundable"
+                  desc="Holders can refund within 3 days after the event ends."
+                />
+              )}
               <Toggle
                 on={web3}
                 set={setWeb3}
@@ -1478,7 +1479,7 @@ function AdvancedCreate({
                 <Review
                   label="Perks"
                   value={
-                    [poap && "POAP", refundable && "Refundable", web3 && "Web3"]
+                    [poap && "POAP", effectiveRefundable && "Refundable", web3 && "Web3"]
                       .filter(Boolean)
                       .join(" · ") || "None"
                   }
