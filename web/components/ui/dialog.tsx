@@ -107,7 +107,10 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        // min-h-11 (44px) gives footer CTAs a proper mobile tap target / presence
+        // — the compact h-8 default looks cramped on phones; reset at sm+ so
+        // desktop density is unchanged.
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 [&_button]:min-h-11 sm:flex-row sm:justify-end sm:[&_button]:min-h-0",
         className
       )}
       {...props}

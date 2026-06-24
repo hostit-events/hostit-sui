@@ -442,6 +442,7 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
                       type="button"
                       variant="outline"
                       size="icon-sm"
+                      className="min-h-10 min-w-10 sm:min-h-0 sm:min-w-0"
                       aria-label="Decrease quantity"
                       disabled={safeQty <= 1}
                       onClick={() => setQty((q) => Math.max(1, q - 1))}
@@ -455,6 +456,7 @@ export function BuyTicketDialog({ open, onOpenChange, payload, onSuccess, onDone
                       type="button"
                       variant="outline"
                       size="icon-sm"
+                      className="min-h-10 min-w-10 sm:min-h-0 sm:min-w-0"
                       aria-label="Increase quantity"
                       disabled={safeQty >= qtyMax}
                       onClick={() => setQty((q) => Math.min(qtyMax, q + 1))}
