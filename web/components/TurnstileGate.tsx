@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
-import { TURNSTILE_SITE_KEY } from "@/lib/config";
+import { TURNSTILE_SITE_KEY, TURNSTILE_ENABLED } from "@/lib/config";
 import {
   registerTurnstileGetter,
   unregisterTurnstileGetter,
@@ -39,7 +39,7 @@ export function TurnstileGate() {
   const [interactive, setInteractive] = useState(false);
 
   useEffect(() => {
-    if (!TURNSTILE_SITE_KEY) return;
+    if (!TURNSTILE_ENABLED) return; // off → never register the getter
     const fn = async () => {
       const inst = ref.current;
       if (!inst) return null;
@@ -59,7 +59,7 @@ export function TurnstileGate() {
     return () => unregisterTurnstileGetter(fn);
   }, []);
 
-  if (!TURNSTILE_SITE_KEY) return null;
+  if (!TURNSTILE_ENABLED) return null; // off (kill switch or no key) → render nothing
   return (
     <>
       {/* Blur + dim the whole site behind the challenge so focus lands on it.
