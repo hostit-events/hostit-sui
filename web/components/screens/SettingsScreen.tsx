@@ -20,7 +20,6 @@ import { EmailCaptureDialog } from "@/components/EmailCaptureDialog";
 import { Icon } from "@/components/Icon";
 import { AddressDisplay } from "@/components/AddressDisplay";
 import { AuthControl } from "@/components/AuthControl";
-import { PageHeader } from "@/components/PageHeader";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ErrorState } from "@/components/States";
 import { TxLink } from "@/components/TxLink";
@@ -70,10 +69,10 @@ const NOTIF_ROWS: { id: keyof Notifs; label: string; sub: string; icon: string }
 ];
 
 const NAV = [
-  { id: "account", label: "Account", icon: "ic:round-person" },
-  { id: "interests", label: "Interests", icon: "ic:round-favorite" },
-  { id: "notifications", label: "Notifications", icon: "ic:round-notifications" },
-  { id: "security", label: "Security", icon: "ic:round-shield" },
+  { id: "account", label: "Account", icon: "ic:round-person", desc: "Your public profile and linked email." },
+  { id: "interests", label: "Interests", icon: "ic:round-favorite", desc: "Categories that personalise Discover." },
+  { id: "notifications", label: "Notifications", icon: "ic:round-notifications", desc: "What HostIt notifies you about." },
+  { id: "security", label: "Security", icon: "ic:round-shield", desc: "Your connected wallet and on-chain identity." },
 ] as const;
 
 type Tab = (typeof NAV)[number]["id"];
@@ -86,6 +85,11 @@ export function SettingsScreen() {
   const suiNS = addr ? names.get(addr) ?? null : null;
 
   const [tab, setTab] = useState<Tab>("account");
+  const [navQuery, setNavQuery] = useState("");
+  const filteredNav = NAV.filter((n) =>
+    n.label.toLowerCase().includes(navQuery.trim().toLowerCase()),
+  );
+  const current = NAV.find((n) => n.id === tab) ?? NAV[0];
 
   // ── Interests ──
   const [interests, setInterests] = useState<string[]>([]);
@@ -217,33 +221,64 @@ export function SettingsScreen() {
   }
 
   return (
-    <div className="space-y-8 screen-in">
-      <PageHeader title="Settings" sub="Profile, email, interests and notifications." />
-
+    <div className="screen-in mx-auto w-full max-w-5xl">
       {/* Mobile: the header is hidden, so the account sign-in/out lives here
           (this is the "Account" bottom-tab destination). */}
-      <Card className="md:hidden flex flex-row items-center justify-between gap-3 px-3.5 py-3.5">
+      <Card className="md:hidden mb-4 flex flex-row items-center justify-between gap-3 px-3.5 py-3.5">
         <span className="section-label" style={{ margin: 0 }}>Wallet</span>
         <AuthControl />
       </Card>
 
+      {/* Contained settings panel: nav rail + content pane. */}
       <Tabs
         value={tab}
         onValueChange={(v) => setTab(v as Tab)}
         orientation="vertical"
-        className="grid gap-6 grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)] md:flex-row"
+        className="grid grid-cols-1 overflow-hidden rounded-2xl border bg-card/30 md:grid-cols-[220px_minmax(0,1fr)]"
       >
-        {/* left nav */}
-        <TabsList variant="line" className="flex h-fit w-full flex-col items-stretch gap-1.5 self-start bg-transparent p-0">
-          {NAV.map((n) => (
-            <TabsTrigger key={n.id} value={n.id} className="justify-start gap-2.5 px-3.5 py-2.5">
-              <Icon icon={n.icon} size={16} /> {n.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {/* left nav rail */}
+        <div className="space-y-3 border-b p-3 md:border-b-0 md:border-r">
+          <div className="relative">
+            <Icon
+              icon="ic:round-search"
+              size={15}
+              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={navQuery}
+              onChange={(e) => setNavQuery(e.target.value)}
+              placeholder="Search"
+              aria-label="Search settings"
+              className="h-9 pl-8"
+            />
+          </div>
+          <div className="px-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+            Settings
+          </div>
+          <TabsList variant="default" className="flex h-fit w-full flex-col items-stretch gap-1 bg-transparent p-0">
+            {filteredNav.map((n) => (
+              <TabsTrigger
+                key={n.id}
+                value={n.id}
+                className="justify-start gap-2.5 rounded-lg px-3 py-2 hover:bg-muted/50"
+              >
+                <Icon icon={n.icon} size={16} /> {n.label}
+              </TabsTrigger>
+            ))}
+            {filteredNav.length === 0 && (
+              <p className="px-3 py-2 text-[13px] text-muted-foreground">No matches.</p>
+            )}
+          </TabsList>
+        </div>
 
-        {/* panel */}
-        <div className="space-y-6" style={{ minWidth: 0 }}>
+        {/* content pane */}
+        <div className="min-w-0 space-y-6 p-5 sm:p-6">
+          {/* Per-section header — title + one-line description (reference structure). */}
+          <div>
+            <h2 className="font-heading text-lg font-medium">{current.label}</h2>
+            <p className="page-sub text-[13px]">{current.desc}</p>
+          </div>
+
           <TabsContent value="account">
             {!addr ? (
               <Card className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -382,22 +417,14 @@ export function SettingsScreen() {
           </TabsContent>
 
           <TabsContent value="interests">
-            <Card className="space-y-5 px-4">
-              <div>
-                <div className="section-label" id="settings-interests-label">
-                  Interests
-                </div>
-                <p className="page-sub" style={{ fontSize: 13 }}>
-                  Pick categories to personalise Discover. Saved on this device.
-                </p>
-              </div>
+            <div className="space-y-5">
               <ToggleGroup
                 type="multiple"
                 variant="outline"
                 value={interests}
                 onValueChange={toggleInterest}
                 className="flex w-full flex-wrap"
-                aria-labelledby="settings-interests-label"
+                aria-label="Interests"
               >
                 {CATEGORIES.filter((c) => c.id !== "all").map((c) => (
                   <ToggleGroupItem key={c.id} value={c.id} aria-label={c.label} className="gap-1.5">
@@ -408,17 +435,11 @@ export function SettingsScreen() {
               <div className="mono">
                 {interests.length} selected{interests.length > 0 ? ` · ${interests.join(", ")}` : ""}
               </div>
-            </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="notifications">
-            <Card className="space-y-1 px-4">
-              <div style={{ marginBottom: 12 }}>
-                <div className="section-label">Notifications</div>
-                <p className="page-sub" style={{ fontSize: 13 }}>
-                  Preferences saved on this device.
-                </p>
-              </div>
+            <div className="space-y-1">
               {NOTIF_ROWS.map((row, i) => (
                 <div
                   key={row.id}
@@ -448,17 +469,11 @@ export function SettingsScreen() {
                   />
                 </div>
               ))}
-            </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="security">
-            <Card className="space-y-5 px-4">
-              <div>
-                <div className="section-label">Security</div>
-                <p className="page-sub" style={{ fontSize: 13 }}>
-                  Your connected wallet and on-chain identity.
-                </p>
-              </div>
+            <div className="space-y-5">
               {!addr ? (
                 <div className="mono">No wallet connected.</div>
               ) : (
@@ -498,7 +513,7 @@ export function SettingsScreen() {
                   </Card>
                 </>
               )}
-            </Card>
+            </div>
           </TabsContent>
         </div>
       </Tabs>
