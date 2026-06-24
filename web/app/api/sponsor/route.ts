@@ -140,13 +140,29 @@ export async function POST(req: Request) {
     });
     return Response.json(sponsored);
   } catch (err: unknown) {
-    const e = err as { message?: string; status?: number; errors?: unknown };
-    // Log full upstream detail server-side ONLY; never echo it to the client.
+    const e = err as {
+      message?: string;
+      status?: number;
+      errors?: Array<{ code?: string; message?: string }>;
+    };
+    // Log full upstream detail server-side ONLY.
     console.error("[sponsor] createSponsoredTransaction failed", {
       status: e.status,
       message: e.message,
       errors: e.errors,
     });
+    // When Enoki's dry run hit a Move abort (e.g. per-wallet limit, sold out,
+    // window closed), forward JUST the MoveAbort substring so the client's
+    // humanizeError shows the REAL reason instead of a generic "couldn't sponsor".
+    // A Move abort code is public, deterministic on-chain state — not sensitive;
+    // we surface only that substring, never the rest of the Enoki payload.
+    const dryRunMsg = Array.isArray(e.errors)
+      ? e.errors.find((x) => x?.code === "dry_run_failed")?.message
+      : undefined;
+    const moveAbort = dryRunMsg?.match(/MoveAbort\(.*\}\s*,\s*\d+\)/)?.[0];
+    if (moveAbort) {
+      return Response.json({ error: moveAbort }, { status: 400 });
+    }
     const status = e.status ?? 500;
     return Response.json(
       { error: "Could not create sponsored transaction. Please try again." },

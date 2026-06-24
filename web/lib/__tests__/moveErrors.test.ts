@@ -52,6 +52,18 @@ describe("humanizeError", () => {
     );
   });
 
+  it("surfaces the real reason when the sponsor route forwards a dry-run MoveAbort", () => {
+    // The sponsored path used to collapse every on-chain abort into a generic
+    // "couldn't sponsor". It now forwards the MoveAbort, which arrives client-side
+    // as "/api/sponsor 400: MoveAbort(... market ... }, 5)". humanizeError must
+    // parse the abort (matched BEFORE the /api/sponsor catch-all) and map code 5.
+    const raw =
+      '/api/sponsor 400: MoveAbort(MoveLocation { module: ModuleId { address: 0x6eb0, name: Identifier("market") }, function: 2, instruction: 84, function_name: Some("claim_free") }, 5) in command 0';
+    expect(humanizeError(new Error(raw))).toBe(
+      "You've reached the per-wallet ticket limit for this event.",
+    );
+  });
+
   it("recognizes a user-cancelled / rejected transaction", () => {
     expect(humanizeError(new Error("User rejected the request."))).toBe(
       "You cancelled the transaction.",
