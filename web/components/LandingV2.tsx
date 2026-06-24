@@ -416,11 +416,8 @@ export function LandingV2() {
             <FooterCol
               h="Connect"
               links={[
+                { label: "Docs", href: "/docs" },
                 { label: "Support", href: "/support" },
-                { label: "GitHub", href: "https://github.com/hostit-events" },
-                { label: "X (Twitter)", href: "https://x.com/hostit_events" },
-                { label: "Telegram", href: "https://t.me/hostitevents" },
-                { label: "LinkedIn", href: "https://www.linkedin.com/company/hostit-events" },
               ]}
             />
           </div>

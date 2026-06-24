@@ -68,6 +68,15 @@ export function Footer() {
             <ul className="space-y-2 text-sm">
               <li>
                 <Link
+                  href="/docs"
+                  className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Icon icon="ph:book-open-text-fill" size={12} />
+                  Docs
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/support"
                   className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
                 >
