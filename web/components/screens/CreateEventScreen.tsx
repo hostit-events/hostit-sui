@@ -5,11 +5,12 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ENOKI_ENABLED, EMAIL_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
+import { ENOKI_ENABLED, EMAIL_ENABLED, COVER_AI_ENABLED, COINS, coinInfo, toUnits, EVENT_TYPE, ORGANIZER_CAP_TYPE } from "@/lib/config";
 import { createEventTx, createEventWithPriceTx } from "@/lib/ticketing";
 import { humanizeError } from "@/lib/moveErrors";
 import { putEventMetadata, type EventMetadata, type Tier } from "@/lib/metadata";
 import { storeFile } from "@/lib/walrus";
+import { generateCover, buildCoverPrompt } from "@/lib/cover";
 import { useProfile } from "@/lib/profile";
 import { useIsGoogleSession } from "@/lib/auth";
 import {
@@ -364,11 +365,30 @@ function AdvancedCreate({
       toast.error("Pick an image file (PNG, JPG, GIF or WebP).");
       return;
     }
+    if (file.size === 0) {
+      toast.error("That image is empty — try another.");
+      return;
+    }
     if (file.size > 8 * 1024 * 1024) {
       toast.error("That cover is too large — keep it under 8 MB.");
       return;
     }
     setCoverFile(file);
+  }
+  // AI cover: generate from the title + category, then run the result through the
+  // same pickCover() path so preview/validation/Walrus upload are all reused.
+  const [genningCover, setGenningCover] = useState(false);
+  async function generateAiCover() {
+    setGenningCover(true);
+    try {
+      const file = await generateCover(buildCoverPrompt(name, category));
+      pickCover(file);
+      toast.success("Cover generated — replace or remove if you'd like a different one.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't generate a cover.");
+    } finally {
+      setGenningCover(false);
+    }
   }
 
   // ── Step 2: Tickets ──
@@ -1220,10 +1240,32 @@ function AdvancedCreate({
                   onPick={pickCover}
                   onClear={() => setCoverFile(null)}
                 />
-                <p className="text-xs" style={{ color: "var(--fg3)" }}>
-                  Optional — skip it and we&apos;ll seed unique art from your title &amp; category.
-                  Stored on Walrus on publish.
-                </p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs" style={{ color: "var(--fg3)" }}>
+                    Optional — skip it and we&apos;ll seed unique art from your title &amp; category.
+                    Stored on Walrus on publish.
+                  </p>
+                  {COVER_AI_ENABLED && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 min-h-11 sm:min-h-0"
+                      disabled={genningCover}
+                      onClick={generateAiCover}
+                    >
+                      {genningCover ? (
+                        <>
+                          <Icon icon="svg-spinners:3-dots-fade" size={13} /> Generating…
+                        </>
+                      ) : (
+                        <>
+                          <Icon icon="ph:sparkle-fill" size={13} /> Generate with AI
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1525,7 +1567,7 @@ function AdvancedCreate({
                       variant="outline"
                       className="min-h-11 sm:min-h-0"
                       onClick={saveAsDraft}
-                      disabled={!addr || savingDraft || !!busy || txPending}
+                      disabled={!addr || savingDraft || !!busy || txPending || genningCover}
                     >
                       {savingDraft ? (
                         <>

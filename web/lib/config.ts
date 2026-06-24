@@ -336,6 +336,15 @@ export const EMAIL_ENABLED =
   (process.env.NEXT_PUBLIC_EMAIL_ENABLED ?? "") === "true" && EMAIL_REGISTRY_ID.length > 0;
 
 /**
+ * AI event-cover generation (the "Generate with AI" button in create). CLIENT
+ * gate only — the SERVER secrets (`CF_ACCOUNT_ID`, `CF_AI_TOKEN`) are read via
+ * process.env ONLY inside /api/cover and are NEVER exported here (same rule as
+ * ENOKI/Turnstile/email). Set NEXT_PUBLIC_COVER_AI="true" once the Cloudflare
+ * Workers AI token is configured so the button only appears when it works.
+ */
+export const COVER_AI_ENABLED = (process.env.NEXT_PUBLIC_COVER_AI ?? "") === "true";
+
+/**
  * How long a Google (Enoki zkLogin) session stays valid, expressed in epochs.
  *
  * zkLogin caps the lifetime of an ephemeral key at the `maxEpoch` baked into
