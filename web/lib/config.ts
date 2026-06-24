@@ -85,16 +85,21 @@ export const WALRUS_PUBLISHER =
   process.env.NEXT_PUBLIC_WALRUS_PUBLISHER ?? "https://publisher.walrus-testnet.walrus.space";
 export const WALRUS_AGGREGATOR =
   process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR ?? "https://aggregator.walrus-testnet.walrus.space";
-export const WALRUS_EPOCHS = 10;
+// Default blob TTL for avatars, profile envelopes, event metadata + cover images.
+// On testnet an epoch is ~24h, so 53 epochs ≈ 53 days — and 53 is the testnet
+// publisher's hard MAX (verified: epochs=53 stores, epochs=200 is rejected).
+// Walrus rents storage with NO auto-renew, so blobs are garbage-collected when
+// their epochs lapse — that's why a profile avatar set weeks ago stops loading
+// (the <img> 404s and the avatar falls back to its initials swatch). Maxed out
+// here to push that horizon as far as testnet allows; a re-save refreshes it.
+export const WALRUS_EPOCHS = 53;
 /**
- * Walrus storage epochs for SAVED EVENT DRAFTS (GH#46). Drafts are work-in-
- * progress that an organizer may sit on for a while before publishing, so they
- * get a longer TTL than the default `WALRUS_EPOCHS` (10). On testnet an epoch is
- * ~24h, so 30 epochs ≈ 30 days. v1 CEILING: this is a hard Walrus TTL — a draft's
+ * Walrus storage epochs for SAVED EVENT DRAFTS (GH#46). Also maxed at 53 (≈ 53
+ * days) — same hard testnet ceiling as `WALRUS_EPOCHS`. v1 CEILING: a draft's
  * encrypted blob is garbage-collected after it lapses (the device-local index
  * entry will then dangle and `loadDraft` will fail to read it). No auto-renew.
  */
-export const WALRUS_DRAFT_EPOCHS = 30;
+export const WALRUS_DRAFT_EPOCHS = 53;
 
 // === Seal testnet (threshold encryption for sensitive data) ===
 export const SEAL_KEY_SERVER_ID =
