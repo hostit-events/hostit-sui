@@ -136,16 +136,8 @@ export function Header({
               <span className="hidden lg:inline">Create event</span>
             </Link>
           </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button asChild variant="outline" size="icon-sm">
-                <Link href="/settings" aria-label="Settings">
-                  <Icon icon="ic:round-settings" size={16} />
-                </Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Settings</TooltipContent>
-          </Tooltip>
+          {/* Settings lives in the account dropdown (AuthControl) — no duplicate
+              gear here. */}
           {/* notifications bell — on-chain-derived inbox (renders nothing signed out) */}
           <NotificationsBellContainer />
           {notificationsSlot}

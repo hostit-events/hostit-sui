@@ -1,28 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NETWORK } from "@/lib/config";
 import { cn } from "@/lib/utils";
-
-/** How long the banner stays before it auto-collapses (ms). */
-const AUTO_HIDE_MS = 6000;
 
 /**
  * Mobile-visible network indicator. The app defaults to Sui testnet (see
  * lib/config.ts NETWORK), so tickets and payments move TEST coins, not real
- * money. It announces that on load, then auto-collapses after a few seconds (or
- * immediately when the user dismisses it) so it doesn't permanently eat vertical
- * space. Auto-hides entirely on mainnet, so no edit is needed when the network
- * env flips to production.
+ * money. It announces that and stays until the user dismisses it (✕).
+ *
+ * NO auto-hide timer: the banner sits ABOVE the `sticky top-0` Header in normal
+ * flow, so collapsing it shifts the whole header up by its height. A blind 6s
+ * auto-collapse made the header visibly jump ~6s after load ("header not
+ * stable"). A user-initiated dismiss is fine (expected, CLS-exempt). Hidden
+ * entirely on mainnet, so no edit when the env flips to production.
  */
 export function TestnetBanner() {
   const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    if (NETWORK === "mainnet") return;
-    const t = setTimeout(() => setVisible(false), AUTO_HIDE_MS);
-    return () => clearTimeout(t);
-  }, []);
 
   if (NETWORK === "mainnet") return null;
   return (
