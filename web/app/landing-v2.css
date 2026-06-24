@@ -170,7 +170,6 @@
 .lv-beat-fig { position: relative; aspect-ratio: 4/5; border: 1px solid var(--hair); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .lv-beat-fig .word { position: absolute; font-family: var(--font-mono); font-size: 12px; letter-spacing: .3em; text-transform: uppercase; color: var(--paper-faint); }
 .lv-beat-fig .word.tl { top: 22px; left: 22px; } .lv-beat-fig .word.br { bottom: 22px; right: 22px; }
-.lv-beat-fig .accent-line { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); width: calc(var(--tk, 0) * 100%); }
 
 .bt-ticket { position: absolute; left: 50%; top: 50%; width: min(82%, 380px); display: flex; align-items: stretch; transform: translate(-50%, calc(-46% + (1 - var(--tk,0)) * 26%)) rotate(calc((var(--tk,0) - 1) * 6deg)) scale(calc(0.93 + var(--tk,0) * 0.07)); filter: drop-shadow(0 26px 48px rgba(0,0,0,.55)); will-change: transform; z-index: 1; }
 .bt-main { position: relative; flex: 1; background: linear-gradient(180deg, #121935, #0C1124); border: 1px solid var(--hair-2); border-right: none; border-radius: 13px 0 0 13px; padding: 20px 22px; overflow: hidden; }

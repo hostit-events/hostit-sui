@@ -548,7 +548,6 @@ function Beat({ n, tag, title, body, list, kind, word, on, roadmap }: any) {
         <span className="word tl">{word}</span>
         <BeatFig kind={kind} word={word} />
         <span className="word br">{n}</span>
-        <span className="accent-line" />
       </div>
     </article>
   );
