@@ -15,7 +15,7 @@ vi.mock("@mysten/dapp-kit-react", () => ({
   useDAppKit: () => ({ disconnectWallet: vi.fn() }),
 }));
 
-import { useGoogleSignIn, RETURN_TO_KEY } from "../auth";
+import { useGoogleSignIn, RETURN_TO_KEY, safeReturnTo } from "../auth";
 
 describe("useGoogleSignIn", () => {
   beforeEach(() => {
@@ -56,5 +56,30 @@ describe("useGoogleSignIn", () => {
     const { result } = renderHook(() => useGoogleSignIn());
     await result.current("https://evil.example/phish");
     expect(sessionStorage.getItem(RETURN_TO_KEY)).toBeNull();
+  });
+
+  // The backslash open-redirect: "/\evil.com" passes a naive startsWith("/") &&
+  // !startsWith("//") guard but URL-normalizes to host evil.com. Must NOT stash.
+  it("drops a backslash open-redirect returnTo", async () => {
+    const { result } = renderHook(() => useGoogleSignIn());
+    await result.current("/\\evil.com");
+    expect(sessionStorage.getItem(RETURN_TO_KEY)).toBeNull();
+  });
+});
+
+describe("safeReturnTo (open-redirect guard)", () => {
+  it("accepts a same-origin app path and preserves search + hash", () => {
+    expect(safeReturnTo("/discover")).toBe("/discover");
+    expect(safeReturnTo("/event/0x1?ref=x#top")).toBe("/event/0x1?ref=x#top");
+  });
+
+  it("rejects the classic and backslash open-redirect forms", () => {
+    // `/\evil.com` and `/\/evil.com` normalize to host evil.com under WHATWG URL.
+    expect(safeReturnTo("/\\evil.com")).toBeNull();
+    expect(safeReturnTo("/\\/evil.com")).toBeNull();
+    expect(safeReturnTo("//evil.com")).toBeNull(); // protocol-relative
+    expect(safeReturnTo("https://evil.example/phish")).toBeNull(); // absolute
+    expect(safeReturnTo("")).toBeNull();
+    expect(safeReturnTo(null)).toBeNull();
   });
 });

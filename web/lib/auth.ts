@@ -14,6 +14,28 @@ import { GOOGLE_CLIENT_ID, NETWORK } from "./config";
  */
 export const RETURN_TO_KEY = "hostit:next";
 
+/**
+ * Normalize an in-app return target to a SAME-ORIGIN path, or null. Used on both
+ * the store side (useGoogleSignIn) and the read side (AuthScreen) so a malicious
+ * `?next=` can't redirect a freshly-authenticated user off-site.
+ *
+ * A bare `startsWith("/") && !startsWith("//")` check is NOT enough: `/\evil.com`
+ * passes it, but WHATWG URL parsing normalizes the backslash to `/`, so it
+ * resolves to host `evil.com` (classic open-redirect). We reject backslashes
+ * outright AND confirm the resolved origin matches ours — the URL parser is the
+ * real sink, so we validate against it.
+ */
+export function safeReturnTo(raw: string | null | undefined): string | null {
+  if (typeof window === "undefined") return null;
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return null;
+  try {
+    const u = new URL(raw, window.location.origin);
+    return u.origin === window.location.origin ? u.pathname + u.search + u.hash : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Enoki only knows mainnet/testnet/devnet; map localnet → testnet. */
 export const ENOKI_NETWORK = (
   NETWORK === "mainnet" ? "mainnet" : NETWORK === "devnet" ? "devnet" : "testnet"
@@ -42,11 +64,10 @@ export function useGoogleSignIn() {
   const enokiFlow = useEnokiFlow();
   return useCallback(
     async (returnTo?: string) => {
-      // Stash the return target out-of-band. Only same-origin app paths (AuthScreen
-      // re-validates on read); an absolute/protocol-relative URL is dropped.
-      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
-        sessionStorage.setItem(RETURN_TO_KEY, returnTo);
-      }
+      // Stash the return target out-of-band. Only a validated same-origin path is
+      // kept (AuthScreen re-validates on read); anything off-origin is dropped.
+      const safe = safeReturnTo(returnTo);
+      if (safe) sessionStorage.setItem(RETURN_TO_KEY, safe);
       const url = await enokiFlow.createAuthorizationURL({
         provider: "google",
         clientId: GOOGLE_CLIENT_ID,

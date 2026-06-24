@@ -53,6 +53,12 @@ export function TurnstileGate() {
         return token ?? null;
       } catch {
         return null;
+      } finally {
+        // The bounded wait has settled (token, timeout-rejection, or error). On a
+        // timeout, getResponsePromise rejects WITHOUT firing onSuccess/onError/
+        // onExpire, so clearing here is the only thing that prevents the centered
+        // challenge overlay from outliving the wait and blocking the whole app.
+        setInteractive(false);
       }
     };
     registerTurnstileGetter(fn);

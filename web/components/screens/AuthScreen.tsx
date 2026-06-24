@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuthCallback } from "@mysten/enoki/react";
 import { useCurrentAccount } from "@/lib/hooks";
-import { RETURN_TO_KEY } from "@/lib/auth";
+import { RETURN_TO_KEY, safeReturnTo } from "@/lib/auth";
 import { ENOKI_ENABLED } from "@/lib/config";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { Icon } from "@/components/Icon";
@@ -46,9 +46,10 @@ export function AuthScreen() {
     // sign-in; fall back to the legacy `?next=` param for any in-flight links.
     let raw = sessionStorage.getItem(RETURN_TO_KEY);
     sessionStorage.removeItem(RETURN_TO_KEY);
+    // Legacy `?next=` is attacker-controllable (a crafted /auth?next=… link), so
+    // run it through the same same-origin validator as the store side.
     if (!raw) raw = new URLSearchParams(window.location.search).get("next");
-    // Only allow same-origin app paths — never an absolute/protocol-relative URL.
-    return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
+    return safeReturnTo(raw);
   });
 
   useEffect(() => {

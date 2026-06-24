@@ -36,7 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { isValidSuiAddress } from "@mysten/sui/utils";
+import { isValidSuiAddress, normalizeSuiAddress } from "@mysten/sui/utils";
 import type {
   GetOwnedObjectsParams,
   PaginatedObjectsResponse,
@@ -218,7 +218,11 @@ function TicketStub({
   // and forfeits refund, so it's gated behind an explicit recipient + confirm.
   const sendTo = recipient.trim();
   const recipientValid = isValidSuiAddress(sendTo);
-  const isSelfSend = recipientValid && sendTo.toLowerCase() === address.toLowerCase();
+  // Normalize both sides: isValidSuiAddress accepts a bare (no-0x) or short-form
+  // address, so a raw lowercase compare would miss "my own address without 0x"
+  // and skip the self-send guard. normalizeSuiAddress 0x-pads both to 32 bytes.
+  const isSelfSend =
+    recipientValid && normalizeSuiAddress(sendTo) === normalizeSuiAddress(address);
   const canSend = recipientValid && !isSelfSend;
 
   function closeSend() {

@@ -8,9 +8,10 @@ import type { BuyPayload } from "@/components/BuyTicketDialog";
 // round-trip and is per-tab, so it can't leak the intent to other tabs.
 
 const KEY = "hostit:pendingBuy";
-// Bound staleness: a sign-in round-trip is seconds. Ignore anything older so a
-// cancelled sign-in can't pop the buy dialog unexpectedly much later.
-const TTL_MS = 15 * 60 * 1000;
+// Bound staleness: a real sign-in round-trip is seconds, so keep this tight — a
+// cancelled sign-in (abandoned via browser-back, never consumed at /auth) must
+// not pop the buy dialog when an account later appears for an unrelated reason.
+const TTL_MS = 3 * 60 * 1000;
 
 // BuyPayload carries bigint fields (priceUnits/remaining/maxPerUser) that JSON
 // can't serialize, so they're stored as decimal strings and revived by name —

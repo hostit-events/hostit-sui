@@ -48,7 +48,7 @@ describe("pendingBuy", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-23T00:00:00Z"));
     stashPendingBuy(paid);
-    vi.setSystemTime(new Date("2026-06-23T00:16:00Z")); // > 15 min later
+    vi.setSystemTime(new Date("2026-06-23T00:05:00Z")); // 5 min later, past the 3 min TTL
     expect(takePendingBuy()).toBeNull();
   });
 
