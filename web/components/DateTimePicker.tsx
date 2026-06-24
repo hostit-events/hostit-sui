@@ -1,11 +1,13 @@
 "use client";
 
+import { format } from "date-fns";
+import { ChevronDownIcon } from "lucide-react";
+
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Icon } from "@/components/Icon";
+import * as React from "react";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -25,15 +27,16 @@ function combine(day: Date, time: string): string {
 }
 
 /**
- * shadcn Calendar + time input for a single local datetime. Value/onChange use
- * the "YYYY-MM-DDTHH:mm" string (local zone) — a drop-in for datetime-local.
+ * shadcn "Time Picker": a Date dropdown (Calendar in a Popover) next to a Time
+ * input. Value/onChange use the "YYYY-MM-DDTHH:mm" local string — a drop-in for
+ * datetime-local (and for this component's previous calendar+time-input form).
  */
 export function DateTimePicker({
   id,
   value,
   onChange,
   min,
-  placeholder = "Pick date & time",
+  placeholder = "Select date",
 }: {
   id?: string;
   value: string;
@@ -42,6 +45,7 @@ export function DateTimePicker({
   min?: string;
   placeholder?: string;
 }) {
+  const [open, setOpen] = React.useState(false);
   const date = value ? new Date(value) : undefined;
   const valid = date && !Number.isNaN(date.getTime());
   const time = valid ? `${pad(date!.getHours())}:${pad(date!.getMinutes())}` : "";
@@ -49,49 +53,44 @@ export function DateTimePicker({
   const minDate = min ? new Date(min) : undefined;
   const minValid = minDate && !Number.isNaN(minDate.getTime());
 
-  const label = valid
-    ? date!.toLocaleString(undefined, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      })
-    : placeholder;
-
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          id={id}
-          variant="outline"
-          className="w-full justify-start gap-2 font-normal data-[empty=true]:text-muted-foreground"
-          data-empty={!valid}
-        >
-          <Icon icon="proicons:calendar" size={16} />
-          {label}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="single"
-          selected={valid ? date : undefined}
-          defaultMonth={valid ? date : minValid ? minDate : undefined}
-          disabled={minValid ? { before: minDate! } : undefined}
-          onSelect={(day) => day && onChange(combine(day, time || "12:00"))}
-          autoFocus
-        />
-        <div className="space-y-1.5 border-t p-3">
-          <Label htmlFor={id ? `${id}-time` : undefined}>Time</Label>
-          <Input
-            id={id ? `${id}-time` : undefined}
-            type="time"
-            value={time}
-            onChange={(e) => onChange(combine(valid ? date! : new Date(), e.target.value))}
+    <div className="flex flex-wrap items-center gap-2">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            id={id}
+            variant="outline"
+            className="w-36 justify-between font-normal data-[empty=true]:text-muted-foreground"
+            data-empty={!valid}
+          >
+            {valid ? format(date!, "PP") : placeholder}
+            <ChevronDownIcon className="size-4 opacity-60" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto overflow-hidden p-0" align="start">
+          <Calendar
+            mode="single"
+            selected={valid ? date : undefined}
+            defaultMonth={valid ? date : minValid ? minDate : undefined}
+            disabled={minValid ? { before: minDate! } : undefined}
+            captionLayout="dropdown"
+            onSelect={(day) => {
+              if (!day) return;
+              onChange(combine(day, time || "12:00"));
+              setOpen(false);
+            }}
+            autoFocus
           />
-        </div>
-      </PopoverContent>
-    </Popover>
+        </PopoverContent>
+      </Popover>
+      <Input
+        id={id ? `${id}-time` : undefined}
+        type="time"
+        value={time}
+        onChange={(e) => onChange(combine(valid ? date! : new Date(), e.target.value))}
+        aria-label="Time"
+        className="w-[7.5rem] appearance-none [&::-webkit-calendar-picker-indicator]:hidden"
+      />
+    </div>
   );
 }
