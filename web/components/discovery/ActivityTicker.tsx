@@ -7,15 +7,19 @@ import type { ActivityMint } from "@/lib/events";
 
 export interface ActivityTickerProps {
   mints: ActivityMint[];
+  /** True while the feed is still loading — reserve the card's height so activity
+   *  landing doesn't push the page down (CLS). Collapses once we know it's empty. */
+  loading?: boolean;
 }
 
 /**
  * Live activity "announcements" card — a glass panel with a pulsing LIVE pill that
  * cycles recent on-chain ticket mints / POAP claims. Driven entirely by
  * `useActivityFeed()` (real `TicketMinted` / `PoapClaimed` logs). Renders nothing
- * when the feed is empty (correct for a fresh package with no mints).
+ * when the feed is GENUINELY empty (fresh package, no mints); while still
+ * `loading`, reserves the card's height so the page doesn't jump when it lands.
  */
-export function ActivityTicker({ mints }: ActivityTickerProps) {
+export function ActivityTicker({ mints, loading = false }: ActivityTickerProps) {
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
@@ -24,7 +28,11 @@ export function ActivityTicker({ mints }: ActivityTickerProps) {
     return () => clearInterval(t);
   }, [mints.length]);
 
-  if (mints.length === 0) return null;
+  if (mints.length === 0) {
+    return loading ? (
+      <div aria-hidden className="h-[98px] rounded-2xl border bg-card/40 backdrop-blur" />
+    ) : null;
+  }
 
   const visibleCount = 3;
   const window = Array.from({ length: Math.min(visibleCount, mints.length) }, (_, i) => {

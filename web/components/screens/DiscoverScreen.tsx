@@ -7,7 +7,7 @@ import { useEventList, useEventObjects, useActivityFeed, buildDiscoverEvents } f
 import { useEventsWithMarkets } from "@/lib/markets";
 import { useSuiNSNames } from "@/lib/verification";
 import { CATEGORIES } from "@/lib/data";
-import { EventCard } from "@/components/EventCard";
+import { EventCard, EventCardSkeleton } from "@/components/EventCard";
 import { Icon } from "@/components/Icon";
 import { ActivityTicker } from "@/components/discovery/ActivityTicker";
 import { TrendingRow } from "@/components/discovery/TrendingRow";
@@ -17,7 +17,46 @@ import { RecommendedRow } from "@/components/discovery/RecommendedRow";
 import { openCommandPalette } from "@/components/discovery/DiscoveryCommand";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+
+/**
+ * Height-matched placeholder for the curated discovery rows (FeaturedCarousel +
+ * two horizontal rows), shown during the initial load so the grid below doesn't
+ * jump down when the real rows appear. Approximate by design — the exact rows
+ * are data-dependent — but close enough to keep the swap near-in-place.
+ */
+function DiscoverRowsSkeleton() {
+  const RowHeader = () => (
+    <div className="flex items-center gap-2">
+      <Skeleton className="h-7 w-7 rounded-lg" />
+      <div className="space-y-1.5">
+        <Skeleton className="h-5 w-36" />
+        <Skeleton className="h-3 w-52" />
+      </div>
+    </div>
+  );
+  return (
+    <div className="space-y-10" aria-hidden>
+      <div className="space-y-3">
+        <RowHeader />
+        <div className="flex gap-4 overflow-hidden">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-[226px] w-[300px] shrink-0 rounded-2xl" />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3">
+        <RowHeader />
+        <div className="flex gap-3 overflow-hidden">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[180px] w-[230px] shrink-0 rounded-xl" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function DiscoverScreen() {
   const account = useCurrentAccount();
@@ -32,7 +71,7 @@ export function DiscoverScreen() {
   const organizers = useMemo(() => Array.from(new Set(events.map((e) => e.organizer))), [events]);
   const names = useSuiNSNames(organizers);
 
-  const { mints } = useActivityFeed();
+  const { mints, isLoading: activityLoading } = useActivityFeed();
 
   const [cat, setCat] = useState("all");
   // event_id -> searchable metadata (from Walrus metadata, fetched lazily by cards)
@@ -88,7 +127,7 @@ export function DiscoverScreen() {
         <p className="page-sub">Events, tickets and proof-of-attendance — live on Sui.</p>
       </header>
 
-      <ActivityTicker mints={mints} />
+      <ActivityTicker mints={mints} loading={activityLoading} />
 
       {/* Mobile search + commands — the header search/calendar is desktop-only
           (md+). Opens the Cmd+K palette, which also has the calendar action. */}
@@ -127,9 +166,17 @@ export function DiscoverScreen() {
       )}
 
       {isLoading ? (
-        <Card role="status" aria-live="polite">
-          <CardContent className="mono">Loading events…</CardContent>
-        </Card>
+        // Mirror the loaded layout (curated rows + grid) while events load, so
+        // the content swaps in place instead of the grid jumping down ~800px
+        // when the rows appear and the footer dropping ~2500px. (#CLS)
+        <div className="space-y-8" role="status" aria-label="Loading events">
+          {browsing && <DiscoverRowsSkeleton />}
+          <div className="ev-grid">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <EventCardSkeleton key={i} />
+            ))}
+          </div>
+        </div>
       ) : isError ? (
         <Card role="status" aria-live="polite">
           <CardContent className="flex flex-wrap items-center gap-2">

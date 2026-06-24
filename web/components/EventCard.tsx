@@ -84,19 +84,10 @@ export function EventCard({
     };
   }, [eventId, uri, onMetadata]);
 
-  if (!f) {
-    return (
-      <Card className="gap-0 py-0">
-        <div className="poster rounded-none" style={{ height: 150 }}>
-          <EventPoster seed={eventId} className="absolute inset-0" />
-        </div>
-        <div className="flex flex-col gap-2 px-4 pb-4 pt-3.5">
-          <Skeleton className="h-5 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-        </div>
-      </Card>
-    );
-  }
+  // While the on-chain object is still loading, render the height-matched
+  // skeleton (seeded poster gradient) so the card doesn't grow ~130px when its
+  // data lands — see EventCardSkeleton.
+  if (!f) return <EventCardSkeleton seed={eventId} />;
 
   const name = String(f.name);
   const minted = BigInt((f.minted as string) ?? "0");
@@ -213,6 +204,37 @@ export function EventCard({
         payload={buyPayload}
         onSuccess={() => (onRefetch ? onRefetch() : q.refetch())}
       />
+    </Card>
+  );
+}
+
+/**
+ * Height-matched placeholder for an EventCard (~340px — the loaded-card height),
+ * so a card streaming in (skeleton → full) and a page-load skeleton grid both
+ * reserve the real card's footprint and don't shift the layout. `seed` renders
+ * the deterministic poster gradient (used by an EventCard whose object is still
+ * loading); without it the poster is a neutral pulse (used by the loading grid).
+ * Structure + paddings mirror the real card so the heights line up.
+ */
+export function EventCardSkeleton({ seed }: { seed?: string }) {
+  return (
+    <Card className="gap-0 py-0" aria-hidden>
+      <div className="poster rounded-none" style={{ height: 150 }}>
+        {seed ? (
+          <EventPoster seed={seed} className="absolute inset-0" />
+        ) : (
+          <Skeleton className="absolute inset-0 rounded-none" />
+        )}
+      </div>
+      <div className="flex flex-col gap-2.5 px-4 pb-4 pt-3.5">
+        <Skeleton className="h-5 w-3/4" /> {/* title */}
+        <Skeleton className="h-4 w-1/2" /> {/* city/date */}
+        <Skeleton className="h-4 w-2/5" /> {/* date */}
+        <Skeleton className="h-4 w-3/5" /> {/* organizer */}
+        <div className="border-t pt-3">
+          <Skeleton className="h-9 w-28" /> {/* CTA */}
+        </div>
+      </div>
     </Card>
   );
 }
