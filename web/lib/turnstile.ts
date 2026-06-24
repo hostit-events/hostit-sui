@@ -24,9 +24,11 @@ function secret(): string {
   return (process.env.TURNSTILE_SECRET_KEY ?? "").trim();
 }
 
-/** True when a secret is configured, i.e. the bot-wall is enforced server-side. */
+/** True when a secret is configured AND the kill switch is off, i.e. the bot-wall
+ *  is enforced server-side. NEXT_PUBLIC_TURNSTILE_OFF="true" disables enforcement
+ *  WITHOUT deleting the secret (Cloudflare edge took over — see lib/config.ts). */
 export function turnstileEnforced(): boolean {
-  return secret().length > 0;
+  return secret().length > 0 && process.env.NEXT_PUBLIC_TURNSTILE_OFF !== "true";
 }
 
 export type TurnstileResult =
@@ -47,8 +49,11 @@ export async function verifyTurnstile(
   token: string | null | undefined,
   ip: string,
 ): Promise<TurnstileResult> {
+  // Skip entirely when the bot-wall is off (no secret OR the kill switch) — so a
+  // tokenless request (widget disabled) is NOT mistaken for a bot once Cloudflare
+  // edge owns the challenge.
+  if (!turnstileEnforced()) return { ok: true, skipped: true };
   const s = secret();
-  if (!s) return { ok: true, skipped: true };
   if (!token) return { ok: false, reason: "failed" };
 
   const form = new URLSearchParams({ secret: s, response: token });

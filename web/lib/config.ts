@@ -313,7 +313,15 @@ export const ENOKI_ENABLED = ENOKI_API_KEY.length > 0;
  */
 export const TURNSTILE_SITE_KEY =
   process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
-export const TURNSTILE_ENABLED = TURNSTILE_SITE_KEY.length > 0;
+/**
+ * Reversible kill switch (keys preserved). Set NEXT_PUBLIC_TURNSTILE_OFF="true"
+ * to fully disable the in-app widget WITHOUT deleting the site/secret keys —
+ * used once Cloudflare's edge Managed Challenge took over the bot-wall, so the
+ * page isn't double-challenged. Flip the var off to re-enable. Read server-side
+ * too (NEXT_PUBLIC_* is in process.env on the server) — see lib/turnstile.ts.
+ */
+export const TURNSTILE_OFF = process.env.NEXT_PUBLIC_TURNSTILE_OFF === "true";
+export const TURNSTILE_ENABLED = TURNSTILE_SITE_KEY.length > 0 && !TURNSTILE_OFF;
 
 /**
  * Account email layer (GH#96). The CLIENT shows the email-binding UI only when
