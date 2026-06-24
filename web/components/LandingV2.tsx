@@ -61,10 +61,12 @@ export function LandingV2() {
     if (!intro) return;
     // mark played in the timeout (not the initializer) so React Strict Mode's dev
     // double-mount can't suppress the splash on first load.
+    // Matches the .lv-intro introOut completion (0.8s delay + 0.5s) — unmount the
+    // overlay right as it finishes sliding away. Shortened from 2.6s.
     const t = setTimeout(() => {
       introPlayed = true;
       setIntro(false);
-    }, 2600);
+    }, 1300);
     return () => clearTimeout(t);
   }, [intro]);
 

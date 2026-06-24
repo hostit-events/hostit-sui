@@ -44,10 +44,10 @@
 .lv-animate .rv { opacity: 0; transform: translateY(30px); }
 .lv-animate .rv.in { opacity: 1; transform: none; }
 
-.lv-intro { position: fixed; inset: 0; z-index: 300; background: var(--ink); display: flex; align-items: center; justify-content: center; animation: introOut 0.9s var(--ease-long) 1.7s forwards; }
+.lv-intro { position: fixed; inset: 0; z-index: 300; background: var(--ink); display: flex; align-items: center; justify-content: center; animation: introOut 0.5s var(--ease-long) 0.8s forwards; }
 .lv-intro-word { overflow: hidden; padding: 0 4px; }
-.lv-intro-logo { display: block; height: clamp(40px, 8vw, 104px); width: auto; transform: translateY(120%); animation: introWord 1.1s var(--ease) 0.15s forwards; }
-.lv-intro-rule { position: absolute; bottom: 0; left: 0; height: 2px; width: 0; background: var(--accent); animation: introRule 1.7s var(--ease-long) forwards; }
+.lv-intro-logo { display: block; height: clamp(40px, 8vw, 104px); width: auto; transform: translateY(120%); animation: introWord 0.65s var(--ease) 0.1s forwards; }
+.lv-intro-rule { position: absolute; bottom: 0; left: 0; height: 2px; width: 0; background: var(--accent); animation: introRule 0.8s var(--ease-long) forwards; }
 @keyframes introWord { to { transform: translateY(0); } }
 @keyframes introRule { to { width: 100%; } }
 @keyframes introOut { to { transform: translateY(-100%); } }
