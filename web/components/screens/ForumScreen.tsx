@@ -5,6 +5,8 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useDAppKit } from "@mysten/dapp-kit-react";
 import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
+import { useEnokiFlow, useZkLogin } from "@mysten/enoki/react";
+import { ENOKI_NETWORK } from "@/lib/auth";
 import type { SessionKey } from "@mysten/seal";
 import type {
   GetObjectParams,
@@ -26,6 +28,7 @@ import { humanizeError } from "@/lib/moveErrors";
 import { createSessionKey } from "@/lib/seal";
 import {
   FORUM_CHANNELS,
+  DEFAULT_FORUM_CHANNEL,
   EV_FORUM_POST,
   EV_FORUM_MODERATED,
   encryptForumMessage,
@@ -70,14 +73,30 @@ interface DecodedMessage {
   text: string | null; // null => decrypt failed / not yet decrypted
 }
 
+// An outgoing message rendered optimistically (iMessage/WhatsApp style): it shows
+// in the stream the instant you hit send, before the encrypt → Walrus → on-chain
+// round-trip lands. `blobId` is filled once stored on Walrus; the entry is dropped
+// when its on-chain post appears in the feed (reconciliation), or kept as
+// "failed" with a retry.
+interface PendingMsg {
+  localId: string;
+  channel: string;
+  text: string;
+  ts: number;
+  blobId?: string;
+  status: "sending" | "sent" | "failed";
+  error?: string;
+}
+
 export function ForumScreen({ id }: { id: string }) {
   const account = useCurrentAccount();
   const addr = account?.address ?? null;
   const suiClient = useCurrentClient();
   const dAppKit = useDAppKit();
+  const enokiFlow = useEnokiFlow();
+  const zk = useZkLogin();
   const regular = useSignAndExecute();
   const sponsored = useSponsorAndExecute();
-  const posting = regular.isPending || sponsored.isPending;
 
   // --- Gate: does the wallet hold a ticket OR the organizer cap for THIS event? --
   const ownedQ = useSuiQuery<
@@ -157,7 +176,12 @@ export function ForumScreen({ id }: { id: string }) {
   }, [eventQ.data]);
 
   // --- Channels -------------------------------------------------------------
-  const [channel, setChannel] = useState<string>(FORUM_CHANNELS[0]?.id ?? "general");
+  const [channel, setChannel] = useState<string>(DEFAULT_FORUM_CHANNEL);
+  const channelMeta = useMemo(() => FORUM_CHANNELS.find((c) => c.id === channel), [channel]);
+  const organizerOnlyChannel = Boolean(channelMeta?.organizerOnly);
+  // Who may post in the active channel: everyone in normal channels; only the
+  // organizer in an organizer-only channel (announcements).
+  const canPost = !organizerOnlyChannel || isOrganizer;
 
   // --- Posts (on-chain anchors) for this event ------------------------------
   // FULLY enumerate the global PostCreated/PostModerated logs (cursor-followed via
@@ -183,11 +207,28 @@ export function ForumScreen({ id }: { id: string }) {
 
   const channelPosts = useMemo<ForumPostJson[]>(() => {
     if (!postsQ.data) return [];
-    return postsQ.data.data
+    let rows = postsQ.data.data
       .map((ev) => ev.parsedJson as ForumPostJson)
-      .filter((p) => p && p.event_id === id && p.channel === channel)
-      .sort((a, b) => Number(a.ts_ms) - Number(b.ts_ms)); // oldest -> newest
-  }, [postsQ.data, id, channel]);
+      .filter((p) => p && p.event_id === id && p.channel === channel);
+    // Organizer-only channels: only the organizer's own posts are valid here, so a
+    // ticket holder can't surface a message by crafting a raw `post` with this
+    // channel string — the read layer drops any non-organizer author.
+    if (organizerOnlyChannel) {
+      rows = rows.filter((p) => organizerAddr != null && p.author === organizerAddr);
+    }
+    return rows.sort((a, b) => Number(a.ts_ms) - Number(b.ts_ms)); // oldest -> newest
+  }, [postsQ.data, id, channel, organizerOnlyChannel, organizerAddr]);
+
+  // On-chain blob ids posted to THIS event — used to reconcile optimistic
+  // (pending) messages: once a pending message's blob appears on-chain, drop it.
+  const eventBlobIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const ev of postsQ.data?.data ?? []) {
+      const p = ev.parsedJson as ForumPostJson;
+      if (p && p.event_id === id) s.add(p.blob_id);
+    }
+    return s;
+  }, [postsQ.data, id]);
 
   // True when either source hit the page bound (older posts / moderation actions
   // exist but aren't loaded) — surfaced as a banner below the channel list.
@@ -219,6 +260,16 @@ export function ForumScreen({ id }: { id: string }) {
       setSigning(true);
       try {
         const sk = await createSessionKey(suiClient, addr, async (message) => {
+          // zkLogin (Google/Enoki) has no dapp-kit wallet — signing via
+          // CurrentAccountSigner there throws "No wallet is connected". Sign with
+          // the Enoki ephemeral keypair instead (seamless, no popup); external
+          // wallets still go through CurrentAccountSigner (one prompt). Mirrors
+          // lib/hooks.ts + lib/memoryClient.ts.
+          if (zk.address) {
+            const keypair = await enokiFlow.getKeypair({ network: ENOKI_NETWORK });
+            const r = await keypair.signPersonalMessage(message);
+            return { signature: r.signature };
+          }
           const signer = new CurrentAccountSigner(dAppKit);
           const r = await signer.signPersonalMessage(message);
           return { signature: r.signature };
@@ -236,7 +287,7 @@ export function ForumScreen({ id }: { id: string }) {
     })();
     sessionPromiseRef.current = promise;
     return promise;
-  }, [addr, suiClient, dAppKit]);
+  }, [addr, suiClient, dAppKit, zk.address, enokiFlow]);
 
   // --- Decrypted message cache (keyed by blob id) ---------------------------
   const [decoded, setDecoded] = useState<Record<string, DecodedMessage>>({});
@@ -317,57 +368,115 @@ export function ForumScreen({ id }: { id: string }) {
     }
   }
 
-  // --- Composer -------------------------------------------------------------
+  // --- Composer (optimistic send) -------------------------------------------
   const [draft, setDraft] = useState("");
+  const [pending, setPending] = useState<PendingMsg[]>([]);
   const streamRef = useRef<HTMLDivElement>(null);
-  const sendingRef = useRef(false);
+  const pendingSeqRef = useRef(0);
+  const inFlightRef = useRef(false);
 
   const MAX_MESSAGE_LEN = 1000;
 
+  // Optimistic bubbles for the active channel not yet reconciled with the chain.
+  const visiblePending = useMemo(
+    () =>
+      pending.filter(
+        (p) => p.channel === channel && !(p.blobId && eventBlobIds.has(p.blobId)),
+      ),
+    [pending, channel, eventBlobIds],
+  );
+
   useEffect(() => {
-    // keep the stream pinned to the newest message
+    // keep the stream pinned to the newest message (incl. optimistic bubbles)
     const el = streamRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [orderedPosts.length, decoded]);
+  }, [orderedPosts.length, visiblePending.length, decoded]);
 
-  async function sendMessage() {
-    if (sendingRef.current) return;
+  // Enqueue: clear the input and show the bubble IMMEDIATELY; the processor below
+  // does the encrypt → Walrus → on-chain work. (iMessage/WhatsApp/Discord feel.)
+  function enqueueMessage() {
     const text = draft.trim();
-    if (!text || !addr || !cred) return;
-    sendingRef.current = true;
-    try {
-      // Encrypt body to the event policy and pin it on Walrus.
-      const blobId = await encryptForumMessage(suiClient, id, {
-        text,
-        author: addr,
-        ts: Date.now(),
-      });
-      // Anchor the post on-chain — ticket holders via post, organizer via the cap.
-      const tx =
-        cred.kind === "ticket"
-          ? forumPostTx(id, cred.ticketId, channel, blobId)
-          : forumPostAsOrganizerTx(id, cred.capId, channel, blobId);
-      const out = ENOKI_ENABLED
-        ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
-        : await regular.mutateAsync({ transaction: tx });
-      toast.success("Message posted", {
-        description: <TxLink digest={out.digest} chars={10} />,
-      });
-      setDraft("");
-      // Optimistically show our own message immediately (we know the plaintext).
-      setDecoded((m) => ({
-        ...m,
-        [blobId]: { blobId, channel, author: addr, tsMs: Date.now(), text },
-      }));
-      // Make sure a session exists so subsequent fetches can decrypt others'.
-      void ensureSession();
-      postsQ.refetch();
-    } catch (e: unknown) {
-      toast.error(humanizeError(e));
-    } finally {
-      sendingRef.current = false;
-    }
+    if (!text || !addr || !cred || !canPost) return;
+    setPending((cur) => [
+      ...cur,
+      { localId: `p${pendingSeqRef.current++}`, channel, text, ts: Date.now(), status: "sending" },
+    ]);
+    setDraft("");
   }
+
+  // Sequential processor — one in flight at a time. Forum posts reference the
+  // sender's OWNED Ticket object, so concurrent txs risk equivocation; we queue.
+  useEffect(() => {
+    if (inFlightRef.current || !addr || !cred) return;
+    const next = pending.find((p) => p.status === "sending");
+    if (!next) return;
+    inFlightRef.current = true;
+    (async () => {
+      try {
+        // Encrypt to the event policy + pin on Walrus (skip if a retry already did).
+        let blobId = next.blobId;
+        if (!blobId) {
+          blobId = await encryptForumMessage(suiClient, id, {
+            text: next.text,
+            author: addr,
+            ts: next.ts,
+          });
+          const stored = blobId;
+          setPending((cur) =>
+            cur.map((p) => (p.localId === next.localId ? { ...p, blobId: stored } : p)),
+          );
+        }
+        // Anchor on-chain — ticket holders via post, organizer via the cap.
+        const tx =
+          cred.kind === "ticket"
+            ? forumPostTx(id, cred.ticketId, next.channel, blobId)
+            : forumPostAsOrganizerTx(id, cred.capId, next.channel, blobId);
+        const out = ENOKI_ENABLED
+          ? await sponsored.mutateAsync({ transaction: tx, sender: addr })
+          : await regular.mutateAsync({ transaction: tx });
+        // Seed plaintext so the post renders instantly once refetch lands it.
+        const seeded = blobId;
+        setDecoded((m) => ({
+          ...m,
+          [seeded]: { blobId: seeded, channel: next.channel, author: addr, tsMs: next.ts, text: next.text },
+        }));
+        setPending((cur) =>
+          cur.map((p) => (p.localId === next.localId ? { ...p, status: "sent" } : p)),
+        );
+        toast.success("Message posted", {
+          description: <TxLink digest={out.digest} chars={10} />,
+        });
+        void ensureSession(); // so subsequent fetches can decrypt others'
+        postsQ.refetch();
+      } catch (e: unknown) {
+        setPending((cur) =>
+          cur.map((p) =>
+            p.localId === next.localId ? { ...p, status: "failed", error: humanizeError(e) } : p,
+          ),
+        );
+      } finally {
+        inFlightRef.current = false;
+      }
+    })();
+  }, [pending, addr, cred, suiClient, id, sponsored, regular, ensureSession, postsQ]);
+
+  // Reconcile: once a sent message's blob is on-chain, drop its optimistic bubble
+  // (the real post — with its plaintext already seeded — takes over seamlessly).
+  useEffect(() => {
+    setPending((cur) => {
+      const next = cur.filter((p) => !(p.blobId && eventBlobIds.has(p.blobId)));
+      return next.length === cur.length ? cur : next;
+    });
+  }, [eventBlobIds]);
+
+  const retryPending = useCallback((localId: string) => {
+    setPending((cur) =>
+      cur.map((p) => (p.localId === localId ? { ...p, status: "sending", error: undefined } : p)),
+    );
+  }, []);
+  const dismissPending = useCallback((localId: string) => {
+    setPending((cur) => cur.filter((p) => p.localId !== localId));
+  }, []);
 
   // --- Moderation (organizer only) ------------------------------------------
   const moderatingRef = useRef(false);
@@ -457,8 +566,6 @@ export function ForumScreen({ id }: { id: string }) {
   }
 
   // --- Render: gated-in (rail + stream + composer) --------------------------
-  const activeChannel = FORUM_CHANNELS.find((c) => c.id === channel);
-
   return (
     <ForumShell id={id}>
       <div
@@ -510,8 +617,8 @@ export function ForumScreen({ id }: { id: string }) {
             style={{ padding: "14px 18px" }}
           >
             <div className="flex items-center gap-2 font-semibold">
-              <Icon icon={activeChannel?.icon ?? "ic:round-tag"} size={18} />
-              {activeChannel?.label ?? channel}
+              <Icon icon={channelMeta?.icon ?? "ic:round-tag"} size={18} />
+              {channelMeta?.label ?? channel}
             </div>
             <div className="flex items-center gap-2">
               {signing || decrypting ? (
@@ -546,11 +653,11 @@ export function ForumScreen({ id }: { id: string }) {
             className="grow flex flex-col gap-3"
             style={{ padding: 18, overflowY: "auto", maxHeight: 520 }}
           >
-            {postsQ.isLoading && channelPosts.length === 0 ? (
+            {postsQ.isLoading && channelPosts.length === 0 && visiblePending.length === 0 ? (
               <div className="mono" style={{ color: "var(--fg3)" }}>
                 Loading messages…
               </div>
-            ) : postsQ.isError && channelPosts.length === 0 ? (
+            ) : postsQ.isError && channelPosts.length === 0 && visiblePending.length === 0 ? (
               <div
                 className="flex flex-col items-center justify-center grow text-center"
                 style={{ color: "var(--color-danger)", gap: 8, padding: "40px 0" }}
@@ -561,39 +668,55 @@ export function ForumScreen({ id }: { id: string }) {
                   Retry
                 </Button>
               </div>
-            ) : channelPosts.length === 0 ? (
+            ) : channelPosts.length === 0 && visiblePending.length === 0 ? (
               <div
                 className="flex flex-col items-center justify-center grow text-center"
                 style={{ color: "var(--fg3)", gap: 8, padding: "40px 0" }}
               >
-                <Icon icon="ic:round-forum" size={40} />
+                <Icon icon={organizerOnlyChannel ? "ic:round-campaign" : "ic:round-forum"} size={40} />
                 <div className="font-semibold" style={{ color: "var(--fg2)" }}>
-                  No messages yet
+                  {organizerOnlyChannel ? "No announcements yet" : "No messages yet"}
                 </div>
-                <p className="text-sm">Be the first to post in #{activeChannel?.label}.</p>
+                <p className="text-sm">
+                  {organizerOnlyChannel
+                    ? isOrganizer
+                      ? "Post the first announcement — only you can post here; ticket holders read it."
+                      : "The organizer hasn’t posted any announcements yet."
+                    : `Be the first to post in #${channelMeta?.label}.`}
+                </p>
               </div>
             ) : (
-              orderedPosts.map((p) => (
-                <MessageRow
-                  key={p.blob_id}
-                  msg={
-                    decoded[p.blob_id] ?? {
-                      blobId: p.blob_id,
-                      channel: p.channel,
-                      author: p.author,
-                      tsMs: Number(p.ts_ms),
-                      text: null,
+              <>
+                {orderedPosts.map((p) => (
+                  <MessageRow
+                    key={p.blob_id}
+                    msg={
+                      decoded[p.blob_id] ?? {
+                        blobId: p.blob_id,
+                        channel: p.channel,
+                        author: p.author,
+                        tsMs: Number(p.ts_ms),
+                        text: null,
+                      }
                     }
-                  }
-                  mine={p.author === addr}
-                  isOrganizerPost={Boolean(organizerAddr && p.author === organizerAddr)}
-                  mod={modState.get(p.blob_id)}
-                  canModerate={isOrganizer}
-                  onModerate={runModerate}
-                  onResign={unlockMessages}
-                  sessionReady={sessionReady}
-                />
-              ))
+                    mine={p.author === addr}
+                    isOrganizerPost={Boolean(organizerAddr && p.author === organizerAddr)}
+                    mod={modState.get(p.blob_id)}
+                    canModerate={isOrganizer}
+                    onModerate={runModerate}
+                    onResign={unlockMessages}
+                    sessionReady={sessionReady}
+                  />
+                ))}
+                {visiblePending.map((p) => (
+                  <PendingRow
+                    key={p.localId}
+                    msg={p}
+                    onRetry={() => retryPending(p.localId)}
+                    onDismiss={() => dismissPending(p.localId)}
+                  />
+                ))}
+              </>
             )}
           </div>
 
@@ -607,48 +730,64 @@ export function ForumScreen({ id }: { id: string }) {
             </p>
           )}
 
-          {/* Composer */}
-          <div className="flex items-end gap-2 border-t" style={{ padding: 14 }}>
-            <Textarea
-              className="grow"
-              style={{ minHeight: 52 }}
-              placeholder={`Message #${activeChannel?.label ?? channel}…`}
-              value={draft}
-              maxLength={MAX_MESSAGE_LEN}
-              disabled={posting}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  if (posting) return;
-                  void sendMessage();
+          {/* Composer — or a read-only notice in an organizer-only channel */}
+          {canPost ? (
+            <div className="flex items-end gap-2 border-t" style={{ padding: 14 }}>
+              <Textarea
+                className="grow"
+                style={{ minHeight: 52 }}
+                placeholder={
+                  organizerOnlyChannel
+                    ? "Post an announcement to all ticket holders…"
+                    : `Message #${channelMeta?.label ?? channel}…`
                 }
-              }}
-            />
-            <div className="flex flex-col items-end gap-1.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    className="min-h-11 sm:min-h-0"
-                    disabled={posting || !draft.trim()}
-                    onClick={() => void sendMessage()}
-                  >
-                    <Icon icon="ic:round-send" size={16} />
-                    {posting ? "Posting…" : isOrganizer && !myTicketId ? "Send as organizer" : "Send"}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Encrypts to the event policy, pins to Walrus, anchors on-chain.
-                </TooltipContent>
-              </Tooltip>
-              <span
-                className="mono tabular-nums"
-                style={{ fontSize: 10, color: "var(--fg3)", whiteSpace: "nowrap" }}
-              >
-                {draft.length}/{MAX_MESSAGE_LEN} · ⌘/Ctrl+Enter
-              </span>
+                value={draft}
+                maxLength={MAX_MESSAGE_LEN}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    enqueueMessage();
+                  }
+                }}
+              />
+              <div className="flex flex-col items-end gap-1.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      className="min-h-11 sm:min-h-0"
+                      disabled={!draft.trim()}
+                      onClick={enqueueMessage}
+                    >
+                      <Icon icon="ic:round-send" size={16} />
+                      {organizerOnlyChannel
+                        ? "Announce"
+                        : isOrganizer && !myTicketId
+                          ? "Send as organizer"
+                          : "Send"}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Encrypts to the event policy, pins to Walrus, anchors on-chain.
+                  </TooltipContent>
+                </Tooltip>
+                <span
+                  className="mono tabular-nums"
+                  style={{ fontSize: 10, color: "var(--fg3)", whiteSpace: "nowrap" }}
+                >
+                  {draft.length}/{MAX_MESSAGE_LEN} · ⌘/Ctrl+Enter
+                </span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div
+              className="mono flex items-center justify-center gap-2 border-t text-sm"
+              style={{ padding: 16, color: "var(--fg3)" }}
+            >
+              <Icon icon="ic:round-campaign" size={15} />
+              Only the organizer can post in #{channelMeta?.label}. Their announcements show here.
+            </div>
+          )}
         </Card>
       </div>
     </ForumShell>
@@ -840,6 +979,70 @@ function MessageRow({
           )}
         </Card>
       )}
+    </div>
+  );
+}
+
+// Optimistic outgoing bubble: right-aligned like "you", with a sending spinner /
+// sent check / failed-with-retry footer. Replaced by the real MessageRow once the
+// on-chain post lands (reconciliation in ForumScreen).
+function PendingRow({
+  msg,
+  onRetry,
+  onDismiss,
+}: {
+  msg: PendingMsg;
+  onRetry: () => void;
+  onDismiss: () => void;
+}) {
+  const time = new Date(msg.ts).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const failed = msg.status === "failed";
+  return (
+    <div className="flex flex-col gap-1" style={{ alignItems: "flex-end" }}>
+      <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--fg3)" }}>
+        <Badge variant="default">you</Badge>
+        <span className="mono">{time}</span>
+      </div>
+      <Card
+        className="bg-primary/10"
+        style={{
+          padding: "10px 14px",
+          maxWidth: "78%",
+          opacity: msg.status === "sending" ? 0.6 : 1,
+        }}
+      >
+        <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.text}</span>
+      </Card>
+      <span
+        className="mono flex items-center gap-1.5"
+        style={{ fontSize: 10, color: failed ? "var(--color-danger)" : "var(--fg3)" }}
+      >
+        {msg.status === "sending" ? (
+          <>
+            <Icon icon="svg-spinners:3-dots-fade" size={12} /> Sending…
+          </>
+        ) : msg.status === "sent" ? (
+          <>
+            <Icon icon="ph:check-circle-fill" size={12} /> Sent
+          </>
+        ) : (
+          <>
+            <Icon icon="ic:round-error-outline" size={12} />
+            {msg.error ?? "Failed to send"}
+            <button onClick={onRetry} className="underline hover:text-foreground">
+              Retry
+            </button>
+            <button onClick={onDismiss} className="underline hover:text-foreground">
+              Dismiss
+            </button>
+          </>
+        )}
+      </span>
     </div>
   );
 }

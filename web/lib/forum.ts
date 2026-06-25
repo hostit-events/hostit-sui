@@ -16,12 +16,29 @@ export const EV_FORUM_POST = `${PACKAGE_ID}::forum::PostCreated`;
 // PostModerated lives in the single package (fresh-publish model).
 export const EV_FORUM_MODERATED = `${PACKAGE_ID}::forum::PostModerated`;
 
-export const FORUM_CHANNELS = [
+export interface ForumChannel {
+  id: string;
+  label: string;
+  icon: string;
+  /** Organizer-only channel: only the event organizer posts; everyone else reads.
+   *  Enforced client-side — the composer is hidden for non-organizers AND the feed
+   *  is filtered to organizer-authored posts, so a ticket holder can't inject by
+   *  crafting a raw `post` with this channel string. (The Move layer already
+   *  supports organizer posting via `post_as_organizer`.) */
+  organizerOnly?: boolean;
+}
+
+export const FORUM_CHANNELS: ForumChannel[] = [
+  { id: "announcement", label: "announcements", icon: "ic:round-campaign", organizerOnly: true },
   { id: "general", label: "general", icon: "ic:round-tag" },
   { id: "lineup", label: "lineup", icon: "ion:musical-notes" },
   { id: "rideshare", label: "ride-share", icon: "ic:round-directions-car" },
   { id: "market", label: "market", icon: "ic:round-sell" },
 ];
+
+/** Channel users land on by default — the chatty one (announcements is read-only
+ *  for everyone but the organizer, so it's a poor first impression as a landing). */
+export const DEFAULT_FORUM_CHANNEL = "general";
 
 // Moderation action codes — MUST mirror forum.move's client-side mapping.
 export const MOD_HIDE = 0;
