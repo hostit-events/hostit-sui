@@ -25,11 +25,29 @@ export function TestnetBanner() {
       aria-hidden={!visible}
       className={cn(
         "relative overflow-hidden border-b border-amber-500/20 bg-amber-500/10 px-9 text-center font-mono text-xs text-amber-200/90 transition-[max-height,opacity,padding] duration-500 ease-out",
-        visible ? "max-h-10 py-1.5 opacity-100" : "max-h-0 border-b-0 py-0 opacity-0",
+        visible ? "max-h-24 py-1.5 opacity-100" : "max-h-0 border-b-0 py-0 opacity-0",
       )}
     >
       <span className="font-semibold uppercase tracking-wide">{NETWORK}</span>
-      {" — tickets and payments use test coins"}
+      {" — 👋 Welcome! You're on Sui testnet, so everything runs on free test coins — no real money, explore freely. Need some? Grab test "}
+      <a
+        href="https://faucet.suilearn.io"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold underline underline-offset-2 hover:text-amber-100"
+      >
+        SUI
+      </a>
+      {" or "}
+      <a
+        href="https://faucet.circle.com/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold underline underline-offset-2 hover:text-amber-100"
+      >
+        USDC
+      </a>
+      {" — both free."}
       <button
         type="button"
         onClick={() => setVisible(false)}
