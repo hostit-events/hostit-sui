@@ -264,7 +264,9 @@ export function TicketDialog(props: TicketDialogProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92vh] gap-0 overflow-y-auto rounded-t-2xl px-4 pb-8">
+      {/* z-index above the tab bar is handled in the shared SheetContent; the
+          safe-area bottom pad here clears the home indicator under the actions. */}
+      <SheetContent side="bottom" className="max-h-[92dvh] gap-0 overflow-y-auto rounded-t-2xl px-4 pb-[calc(2rem_+_env(safe-area-inset-bottom,0px))]">
         <SheetHeader className="px-0">
           <SheetTitle className="truncate">{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>
