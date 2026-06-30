@@ -1,6 +1,6 @@
 import React from "react";
 import {
-  ArrowDownLeft, ArrowLeftRight, Bookmark, Box, Calendar, CircleAlert, CloudCheck, Coins, Cpu, Database, DollarSign, DoorClosed, DoorOpen, Globe, Hourglass, Image, Inbox, Info, LineChart, ListChecks, LoaderCircle, Medal, Megaphone, MessagesSquare, Monitor, Music, QrCode, Rocket, Save, Shield, Tag, Ticket, TriangleAlert, Trophy, Undo2, Wallet, Wine,
+  ArrowDownLeft, ArrowLeftRight, Bookmark, Box, Calendar, ChevronDown, CircleAlert, CloudCheck, Coins, Cpu, Database, DollarSign, DoorClosed, DoorOpen, Globe, Hourglass, Image, Inbox, Info, LineChart, ListChecks, LoaderCircle, Medal, Megaphone, MessagesSquare, Monitor, Music, QrCode, Rocket, Save, Shield, Tag, Ticket, TriangleAlert, Trophy, Undo2, Wallet, Wine,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -112,6 +112,7 @@ const LUCIDE_MAP: Record<string, LucideIcon> = {
   "ic:round-forum": MessagesSquare,
   "ion:chatbubbles": MessagesSquare,
   "ic:round-campaign": Megaphone,
+  "ic:round-expand-more": ChevronDown,
   "ph:arrows-left-right-bold": ArrowLeftRight,
   "ph:arrow-down-left-bold": ArrowDownLeft,
   "ph:arrow-u-up-left-bold": Undo2,

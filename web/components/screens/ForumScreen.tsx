@@ -51,9 +51,32 @@ import { TxLink } from "@/components/TxLink";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  InputGroup,
+  InputGroupTextarea,
+} from "@/components/ui/input-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { Message, MessageContent, MessageHeader, MessageFooter } from "@/components/ui/message";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
+import {
+  MessageScroller,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerButton,
+} from "@/components/ui/message-scroller";
 
 // PostCreated event payload anchored on-chain by `forum::post`.
 interface ForumPostJson {
@@ -371,7 +394,6 @@ export function ForumScreen({ id }: { id: string }) {
   // --- Composer (optimistic send) -------------------------------------------
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<PendingMsg[]>([]);
-  const streamRef = useRef<HTMLDivElement>(null);
   const pendingSeqRef = useRef(0);
   const inFlightRef = useRef(false);
 
@@ -385,12 +407,6 @@ export function ForumScreen({ id }: { id: string }) {
       ),
     [pending, channel, eventBlobIds],
   );
-
-  useEffect(() => {
-    // keep the stream pinned to the newest message (incl. optimistic bubbles)
-    const el = streamRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [orderedPosts.length, visiblePending.length, decoded]);
 
   // Enqueue: clear the input and show the bubble IMMEDIATELY; the processor below
   // does the encrypt → Walrus → on-chain work. (iMessage/WhatsApp/Discord feel.)
@@ -572,51 +588,44 @@ export function ForumScreen({ id }: { id: string }) {
         className="grid gap-5 grid-cols-1 lg:grid-cols-[minmax(180px,220px)_1fr]"
         style={{ alignItems: "start" }}
       >
-        {/* Left rail: channels */}
-        <Card className="p-4" style={{ position: "sticky", top: 16 }}>
+        {/* Left rail: channels (desktop only). On mobile a sticky rail here overlaps
+            the chat, so channels collapse into a drawer opened from the chat header. */}
+        <Card className="hidden p-4 lg:block" style={{ position: "sticky", top: 16 }}>
           <span className="section-label">Channels</span>
-          <ToggleGroup
-            type="single"
-            value={channel}
-            onValueChange={(v) => {
-              if (v) setChannel(v);
-            }}
-            orientation="vertical"
-            variant="outline"
-            className="mt-3 w-full"
-          >
-            {FORUM_CHANNELS.map((c) => (
-              <ToggleGroupItem
-                key={c.id}
-                value={c.id}
-                aria-label={c.label}
-                className="w-full justify-start"
-              >
-                <Icon icon={c.icon} size={16} /> {c.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          {isOrganizer && (
-            <Badge variant="secondary" className="mt-3">
-              <Icon icon="streamline:star-badge-solid" size={11} /> Organizer
-            </Badge>
-          )}
-          <div
-            className="mono"
-            style={{ marginTop: 16, fontSize: 11, color: "var(--fg3)", lineHeight: 1.5 }}
-          >
-            <Icon icon="ic:round-lock" size={12} /> Seal-encrypted ·{" "}
-            {isOrganizer ? "organizer admin" : "ticket-gated"}
+          <div className="mt-3">
+            <ChannelNav channel={channel} onSelect={setChannel} isOrganizer={isOrganizer} />
           </div>
         </Card>
 
-        {/* Center: message stream + composer */}
-        <Card className="flex flex-col gap-0 p-0" style={{ minHeight: 460 }}>
+        {/* Center: message stream + composer. Definite height so the MessageScroller's
+            size-full → flex-1 → viewport chain resolves and actually scrolls. */}
+        <Card className="flex flex-col gap-0 p-0" style={{ height: "min(68vh, 560px)" }}>
           <header
             className="flex items-center justify-between border-b"
             style={{ padding: "14px 18px" }}
           >
-            <div className="flex items-center gap-2 font-semibold">
+            {/* Mobile: a compact dropdown switches channels (the rail is hidden below
+                lg). Desktop: a plain label, since the rail is always visible. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="-ml-2 gap-1.5 font-semibold lg:hidden">
+                  <Icon icon={channelMeta?.icon ?? "ic:round-tag"} size={18} />
+                  {channelMeta?.label ?? channel}
+                  <Icon icon="ic:round-expand-more" size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuLabel>Channels</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={channel} onValueChange={setChannel}>
+                  {FORUM_CHANNELS.map((c) => (
+                    <DropdownMenuRadioItem key={c.id} value={c.id}>
+                      <Icon icon={c.icon} size={16} /> {c.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="hidden items-center gap-2 font-semibold lg:flex">
               <Icon icon={channelMeta?.icon ?? "ic:round-tag"} size={18} />
               {channelMeta?.label ?? channel}
             </div>
@@ -648,144 +657,175 @@ export function ForumScreen({ id }: { id: string }) {
             </div>
           </header>
 
-          <div
-            ref={streamRef}
-            className="grow flex flex-col gap-3"
-            style={{ padding: 18, overflowY: "auto", maxHeight: 520 }}
-          >
-            {postsQ.isLoading && channelPosts.length === 0 && visiblePending.length === 0 ? (
-              <div className="mono" style={{ color: "var(--fg3)" }}>
-                Loading messages…
-              </div>
-            ) : postsQ.isError && channelPosts.length === 0 && visiblePending.length === 0 ? (
-              <div
-                className="flex flex-col items-center justify-center grow text-center"
-                style={{ color: "var(--color-danger)", gap: 8, padding: "40px 0" }}
-              >
-                <Icon icon="ic:round-error-outline" size={40} />
-                <div className="font-semibold">Could not load messages</div>
-                <Button variant="outline" size="sm" onClick={() => postsQ.refetch()}>
-                  Retry
-                </Button>
-              </div>
-            ) : channelPosts.length === 0 && visiblePending.length === 0 ? (
-              <div
-                className="flex flex-col items-center justify-center grow text-center"
-                style={{ color: "var(--fg3)", gap: 8, padding: "40px 0" }}
-              >
-                <Icon icon={organizerOnlyChannel ? "ic:round-campaign" : "ic:round-forum"} size={40} />
-                <div className="font-semibold" style={{ color: "var(--fg2)" }}>
-                  {organizerOnlyChannel ? "No announcements yet" : "No messages yet"}
-                </div>
-                <p className="text-sm">
-                  {organizerOnlyChannel
-                    ? isOrganizer
-                      ? "Post the first announcement — only you can post here; ticket holders read it."
-                      : "The organizer hasn’t posted any announcements yet."
-                    : `Be the first to post in #${channelMeta?.label}.`}
-                </p>
-              </div>
-            ) : (
-              <>
-                {orderedPosts.map((p) => (
-                  <MessageRow
-                    key={p.blob_id}
-                    msg={
-                      decoded[p.blob_id] ?? {
-                        blobId: p.blob_id,
-                        channel: p.channel,
-                        author: p.author,
-                        tsMs: Number(p.ts_ms),
-                        text: null,
-                      }
-                    }
-                    mine={p.author === addr}
-                    isOrganizerPost={Boolean(organizerAddr && p.author === organizerAddr)}
-                    mod={modState.get(p.blob_id)}
-                    canModerate={isOrganizer}
-                    onModerate={runModerate}
-                    onResign={unlockMessages}
-                    sessionReady={sessionReady}
-                  />
-                ))}
-                {visiblePending.map((p) => (
-                  <PendingRow
-                    key={p.localId}
-                    msg={p}
-                    onRetry={() => retryPending(p.localId)}
-                    onDismiss={() => dismissPending(p.localId)}
-                  />
-                ))}
-              </>
-            )}
-          </div>
-
-          {forumTruncated && (
-            <p
-              className="mono text-sm"
-              style={{ color: "var(--fg3)", textAlign: "center", padding: "0 14px 6px" }}
-            >
-              Showing the most recent forum activity — older posts and moderation actions
-              aren&apos;t all loaded yet.
-            </p>
-          )}
+          {/* autoScroll = sticky-bottom: follows new content + bubble reflow (async
+              decrypt expanding the encrypted placeholder to plaintext) WHILE you're at
+              the bottom, but disengages once you scroll up to read history. */}
+          <MessageScrollerProvider autoScroll>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <MessageScroller>
+                <MessageScrollerViewport>
+                  <MessageScrollerContent className="gap-3 p-[18px]">
+                    {forumTruncated && (
+                      // Older posts/moderation actions exist beyond the loaded page bound.
+                      <Marker variant="separator" className="text-xs">
+                        <MarkerContent>
+                          Older posts &amp; moderation actions aren&apos;t all loaded yet.
+                        </MarkerContent>
+                      </Marker>
+                    )}
+                    {postsQ.isLoading && channelPosts.length === 0 && visiblePending.length === 0 ? (
+                      <div className="mono" style={{ color: "var(--fg3)" }}>
+                        Loading messages…
+                      </div>
+                    ) : postsQ.isError && channelPosts.length === 0 && visiblePending.length === 0 ? (
+                      <div
+                        className="flex flex-col items-center justify-center grow text-center"
+                        style={{ color: "var(--color-danger)", gap: 8, padding: "40px 0" }}
+                      >
+                        <Icon icon="ic:round-error-outline" size={40} />
+                        <div className="font-semibold">Could not load messages</div>
+                        <Button variant="outline" size="sm" onClick={() => postsQ.refetch()}>
+                          Retry
+                        </Button>
+                      </div>
+                    ) : channelPosts.length === 0 && visiblePending.length === 0 ? (
+                      <div
+                        className="flex flex-col items-center justify-center grow text-center"
+                        style={{ color: "var(--fg3)", gap: 8, padding: "40px 0" }}
+                      >
+                        <Icon icon={organizerOnlyChannel ? "ic:round-campaign" : "ic:round-forum"} size={40} />
+                        <div className="font-semibold" style={{ color: "var(--fg2)" }}>
+                          {organizerOnlyChannel ? "No announcements yet" : "No messages yet"}
+                        </div>
+                        <p className="text-sm">
+                          {organizerOnlyChannel
+                            ? isOrganizer
+                              ? "Post the first announcement — only you can post here; ticket holders read it."
+                              : "The organizer hasn’t posted any announcements yet."
+                            : `Be the first to post in #${channelMeta?.label}.`}
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {orderedPosts.map((p) => (
+                          // scrollAnchor on YOUR own posts: sending pins you to the
+                          // bottom, but others' messages don't yank you mid-read.
+                          <MessageScrollerItem
+                            key={p.blob_id}
+                            messageId={p.blob_id}
+                            scrollAnchor={p.author === addr}
+                          >
+                            <MessageRow
+                              msg={
+                                decoded[p.blob_id] ?? {
+                                  blobId: p.blob_id,
+                                  channel: p.channel,
+                                  author: p.author,
+                                  tsMs: Number(p.ts_ms),
+                                  text: null,
+                                }
+                              }
+                              mine={p.author === addr}
+                              isOrganizerPost={Boolean(organizerAddr && p.author === organizerAddr)}
+                              mod={modState.get(p.blob_id)}
+                              canModerate={isOrganizer}
+                              onModerate={runModerate}
+                              onResign={unlockMessages}
+                              sessionReady={sessionReady}
+                            />
+                          </MessageScrollerItem>
+                        ))}
+                        {visiblePending.map((p) => (
+                          <MessageScrollerItem key={p.localId} messageId={p.localId} scrollAnchor>
+                            <PendingRow
+                              msg={p}
+                              onRetry={() => retryPending(p.localId)}
+                              onDismiss={() => dismissPending(p.localId)}
+                            />
+                          </MessageScrollerItem>
+                        ))}
+                      </>
+                    )}
+                  </MessageScrollerContent>
+                </MessageScrollerViewport>
+                {/* Jump-to-latest — appears only when scrolled up from the bottom. */}
+                <MessageScrollerButton />
+              </MessageScroller>
+            </div>
+          </MessageScrollerProvider>
 
           {/* Composer — or a read-only notice in an organizer-only channel */}
           {canPost ? (
-            <div className="flex items-end gap-2 border-t" style={{ padding: 14 }}>
-              <Textarea
-                className="grow"
-                style={{ minHeight: 52 }}
-                placeholder={
-                  organizerOnlyChannel
-                    ? "Post an announcement to all ticket holders…"
-                    : `Message #${channelMeta?.label ?? channel}…`
-                }
-                value={draft}
-                maxLength={MAX_MESSAGE_LEN}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    enqueueMessage();
+            <div className="border-t" style={{ padding: 14 }}>
+              {/* Slim composer (Discord-style): single-line input that auto-grows.
+                  Enter sends on a physical keyboard (fine pointer), Shift+Enter = newline;
+                  on touch the soft-keyboard Enter makes a newline and the user taps the
+                  send button beside the box. */}
+              <div className="flex items-end gap-2">
+                <InputGroup className="min-w-0 flex-1">
+                  <InputGroupTextarea
+                    rows={1}
+                    className="max-h-40 min-h-0"
+                    placeholder={
+                      organizerOnlyChannel
+                        ? "Post an announcement to all ticket holders…"
+                        : `Message #${channelMeta?.label ?? channel}…`
+                    }
+                    value={draft}
+                    maxLength={MAX_MESSAGE_LEN}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Send on Enter only with a physical keyboard (fine pointer) and not
+                      // mid-IME-composition; Shift+Enter always inserts a newline. On touch,
+                      // Enter falls through to a newline and the user taps the send button.
+                      if (
+                        e.key === "Enter" &&
+                        !e.shiftKey &&
+                        !e.nativeEvent.isComposing &&
+                        typeof window !== "undefined" &&
+                        window.matchMedia("(pointer: fine)").matches
+                      ) {
+                        e.preventDefault();
+                        enqueueMessage();
+                      }
+                    }}
+                    aria-label={organizerOnlyChannel ? "Write an announcement" : "Write a message"}
+                  />
+                </InputGroup>
+                {/* Send button beside the box — desktop + mobile; disabled until there's text. */}
+                <Button
+                  variant="default"
+                  size="icon"
+                  aria-label={
+                    organizerOnlyChannel
+                      ? "Announce"
+                      : isOrganizer && !myTicketId
+                        ? "Send as organizer"
+                        : "Send"
                   }
-                }}
-              />
-              <div className="flex flex-col items-end gap-1.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      className="min-h-11 sm:min-h-0"
-                      disabled={!draft.trim()}
-                      onClick={enqueueMessage}
-                    >
-                      <Icon icon="ic:round-send" size={16} />
-                      {organizerOnlyChannel
-                        ? "Announce"
-                        : isOrganizer && !myTicketId
-                          ? "Send as organizer"
-                          : "Send"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Encrypts to the event policy, pins to Walrus, anchors on-chain.
-                  </TooltipContent>
-                </Tooltip>
-                <span
-                  className="mono tabular-nums"
-                  style={{ fontSize: 10, color: "var(--fg3)", whiteSpace: "nowrap" }}
+                  className="size-10 shrink-0"
+                  disabled={!draft.trim()}
+                  onClick={enqueueMessage}
                 >
-                  {draft.length}/{MAX_MESSAGE_LEN} · ⌘/Ctrl+Enter
-                </span>
+                  <Icon icon="ic:round-send" size={18} />
+                </Button>
               </div>
+              {/* Desktop hint — physical keyboard only (on touch, Enter inserts a newline). */}
+              <p className="mono mt-1.5 hidden text-[10px] text-muted-foreground [@media(pointer:fine)]:block">
+                <span className="font-semibold text-foreground">Enter</span> to send ·{" "}
+                <span className="font-semibold text-foreground">Shift+Enter</span> for a new line
+              </p>
             </div>
           ) : (
-            <div
-              className="mono flex items-center justify-center gap-2 border-t text-sm"
-              style={{ padding: 16, color: "var(--fg3)" }}
-            >
-              <Icon icon="ic:round-campaign" size={15} />
-              Only the organizer can post in #{channelMeta?.label}. Their announcements show here.
+            <div className="border-t" style={{ padding: 16 }}>
+              <Marker className="justify-center text-sm">
+                <MarkerIcon>
+                  <Icon icon="ic:round-campaign" size={15} />
+                </MarkerIcon>
+                <MarkerContent className="text-center">
+                  Only the organizer can post in #{channelMeta?.label}. Their announcements show here.
+                </MarkerContent>
+              </Marker>
             </div>
           )}
         </Card>
@@ -797,6 +837,55 @@ export function ForumScreen({ id }: { id: string }) {
 // ---------------------------------------------------------------------------
 // Inline subcomponents
 // ---------------------------------------------------------------------------
+
+// Channel list — shared by the desktop rail and the mobile drawer.
+function ChannelNav({
+  channel,
+  onSelect,
+  isOrganizer,
+}: {
+  channel: string;
+  onSelect: (v: string) => void;
+  isOrganizer: boolean;
+}) {
+  return (
+    <>
+      <ToggleGroup
+        type="single"
+        value={channel}
+        onValueChange={(v) => {
+          if (v) onSelect(v);
+        }}
+        orientation="vertical"
+        variant="outline"
+        className="w-full"
+      >
+        {FORUM_CHANNELS.map((c) => (
+          <ToggleGroupItem
+            key={c.id}
+            value={c.id}
+            aria-label={c.label}
+            className="w-full justify-start"
+          >
+            <Icon icon={c.icon} size={16} /> {c.label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      {isOrganizer && (
+        <Badge variant="secondary" className="mt-3">
+          <Icon icon="streamline:star-badge-solid" size={11} /> Organizer
+        </Badge>
+      )}
+      <div
+        className="mono"
+        style={{ marginTop: 16, fontSize: 11, color: "var(--fg3)", lineHeight: 1.5 }}
+      >
+        <Icon icon="ic:round-lock" size={12} /> Seal-encrypted ·{" "}
+        {isOrganizer ? "organizer admin" : "ticket-gated"}
+      </div>
+    </>
+  );
+}
 
 function ForumShell({ id, children }: { id: string; children: React.ReactNode }) {
   return (
@@ -897,89 +986,89 @@ function MessageRow({
   const pinned = Boolean(mod?.pinned);
 
   return (
-    <div
-      className="flex flex-col gap-1"
-      style={{ alignItems: mine ? "flex-end" : "flex-start" }}
-    >
-      <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--fg3)" }}>
-        {pinned && (
-          <Badge variant="secondary">
-            <Icon icon="ic:round-push-pin" size={11} /> pinned
-          </Badge>
-        )}
-        {isOrganizerPost && (
-          <Badge variant="secondary">
-            <Icon icon="streamline:star-badge-solid" size={11} /> organizer
-          </Badge>
-        )}
-        {mine ? (
-          <Badge variant="default">you</Badge>
-        ) : (
-          <AddressDisplay address={msg.author} suffix={4} />
-        )}
-        <span className="mono">{time}</span>
-        {canModerate && (
-          <span className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="inline-flex items-center justify-center min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
-                  aria-label={pinned ? "Unpin" : "Pin"}
-                  onClick={() => onModerate(msg.blobId, pinned ? MOD_UNPIN : MOD_PIN)}
-                >
-                  <Icon icon={pinned ? "ic:round-push-pin" : "ic:outline-push-pin"} size={14} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{pinned ? "Unpin" : "Pin"}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="inline-flex items-center justify-center min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
-                  aria-label={hidden ? "Unhide" : "Hide"}
-                  onClick={() => onModerate(msg.blobId, hidden ? MOD_UNHIDE : MOD_HIDE)}
-                >
-                  <Icon icon={hidden ? "ic:round-visibility" : "ic:round-visibility-off"} size={14} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{hidden ? "Unhide" : "Hide"}</TooltipContent>
-            </Tooltip>
-          </span>
-        )}
-      </div>
-
-      {hidden ? (
-        <Card className="bg-muted" style={{ padding: "10px 14px", maxWidth: "78%" }}>
-          <span className="flex items-center gap-1.5 text-sm text-muted-foreground italic">
-            <Icon icon="ic:round-visibility-off" size={13} /> Hidden by organizer
-          </span>
-        </Card>
-      ) : (
-        <Card
-          className={mine ? "bg-primary/10" : "bg-muted"}
-          style={{ padding: "10px 14px", maxWidth: "78%" }}
-        >
-          {msg.text != null ? (
-            <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.text}</span>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
-                  onClick={onResign}
-                >
-                  <Icon icon="ic:round-lock" size={13} />
-                  [encrypted — re-sign session]
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {sessionReady ? "Decrypt failed — re-sign your session." : "Sign a session to decrypt."}
-              </TooltipContent>
-            </Tooltip>
+    <Message align={mine ? "end" : "start"}>
+      <MessageContent>
+        <MessageHeader className="gap-2">
+          {pinned && (
+            <Badge variant="secondary">
+              <Icon icon="ic:round-push-pin" size={11} /> pinned
+            </Badge>
           )}
-        </Card>
-      )}
-    </div>
+          {isOrganizerPost && (
+            <Badge variant="secondary">
+              <Icon icon="streamline:star-badge-solid" size={11} /> organizer
+            </Badge>
+          )}
+          {mine ? (
+            <Badge variant="default">you</Badge>
+          ) : (
+            <AddressDisplay address={msg.author} suffix={4} />
+          )}
+          <span className="mono">{time}</span>
+          {canModerate && (
+            <span className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="inline-flex items-center justify-center min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
+                    aria-label={pinned ? "Unpin" : "Pin"}
+                    onClick={() => onModerate(msg.blobId, pinned ? MOD_UNPIN : MOD_PIN)}
+                  >
+                    <Icon icon={pinned ? "ic:round-push-pin" : "ic:outline-push-pin"} size={14} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{pinned ? "Unpin" : "Pin"}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="inline-flex items-center justify-center min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
+                    aria-label={hidden ? "Unhide" : "Hide"}
+                    onClick={() => onModerate(msg.blobId, hidden ? MOD_UNHIDE : MOD_HIDE)}
+                  >
+                    <Icon icon={hidden ? "ic:round-visibility" : "ic:round-visibility-off"} size={14} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{hidden ? "Unhide" : "Hide"}</TooltipContent>
+              </Tooltip>
+            </span>
+          )}
+        </MessageHeader>
+
+        {hidden ? (
+          <Bubble variant="muted">
+            <BubbleContent>
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground italic">
+                <Icon icon="ic:round-visibility-off" size={13} /> Hidden by organizer
+              </span>
+            </BubbleContent>
+          </Bubble>
+        ) : (
+          <Bubble variant={mine ? "tinted" : "muted"}>
+            <BubbleContent>
+              {msg.text != null ? (
+                <span className="whitespace-pre-wrap">{msg.text}</span>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-[color,transform] active:scale-[0.96]"
+                      onClick={onResign}
+                    >
+                      <Icon icon="ic:round-lock" size={13} />
+                      [encrypted — re-sign session]
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {sessionReady ? "Decrypt failed — re-sign your session." : "Sign a session to decrypt."}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </BubbleContent>
+          </Bubble>
+        )}
+      </MessageContent>
+    </Message>
   );
 }
 
@@ -1003,46 +1092,40 @@ function PendingRow({
   });
   const failed = msg.status === "failed";
   return (
-    <div className="flex flex-col gap-1" style={{ alignItems: "flex-end" }}>
-      <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--fg3)" }}>
-        <Badge variant="default">you</Badge>
-        <span className="mono">{time}</span>
-      </div>
-      <Card
-        className="bg-primary/10"
-        style={{
-          padding: "10px 14px",
-          maxWidth: "78%",
-          opacity: msg.status === "sending" ? 0.6 : 1,
-        }}
-      >
-        <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.text}</span>
-      </Card>
-      <span
-        className="mono flex items-center gap-1.5"
-        style={{ fontSize: 10, color: failed ? "var(--color-danger)" : "var(--fg3)" }}
-      >
-        {msg.status === "sending" ? (
-          <>
-            <Icon icon="svg-spinners:3-dots-fade" size={12} /> Sending…
-          </>
-        ) : msg.status === "sent" ? (
-          <>
-            <Icon icon="ph:check-circle-fill" size={12} /> Sent
-          </>
-        ) : (
-          <>
-            <Icon icon="ic:round-error-outline" size={12} />
-            {msg.error ?? "Failed to send"}
-            <button onClick={onRetry} className="underline hover:text-foreground">
-              Retry
-            </button>
-            <button onClick={onDismiss} className="underline hover:text-foreground">
-              Dismiss
-            </button>
-          </>
-        )}
-      </span>
-    </div>
+    <Message align="end">
+      <MessageContent>
+        <MessageHeader className="gap-2">
+          <Badge variant="default">you</Badge>
+          <span className="mono">{time}</span>
+        </MessageHeader>
+        <Bubble variant="tinted" className={cn(msg.status === "sending" && "opacity-60")}>
+          <BubbleContent>
+            <span className="whitespace-pre-wrap">{msg.text}</span>
+          </BubbleContent>
+        </Bubble>
+        <MessageFooter className={cn("mono gap-1.5", failed && "text-destructive")}>
+          {msg.status === "sending" ? (
+            <>
+              <Icon icon="svg-spinners:3-dots-fade" size={12} /> Sending…
+            </>
+          ) : msg.status === "sent" ? (
+            <>
+              <Icon icon="ph:check-circle-fill" size={12} /> Sent
+            </>
+          ) : (
+            <>
+              <Icon icon="ic:round-error-outline" size={12} />
+              {msg.error ?? "Failed to send"}
+              <button onClick={onRetry} className="underline hover:text-foreground">
+                Retry
+              </button>
+              <button onClick={onDismiss} className="underline hover:text-foreground">
+                Dismiss
+              </button>
+            </>
+          )}
+        </MessageFooter>
+      </MessageContent>
+    </Message>
   );
 }
