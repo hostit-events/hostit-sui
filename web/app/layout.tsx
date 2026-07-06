@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { Providers } from "./providers";
 import { Geist } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 // shadcn's interface font. Exposed as a CSS variable on <html>; the app uses it
 // as its single typeface (globals.css points --font-sans/-mono/-display at it),
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           strategy="afterInteractive"
         />
         <Providers>{children}</Providers>
+        <SpeedInsights />
       </body>
     </html>
   );
