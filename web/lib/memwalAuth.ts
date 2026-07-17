@@ -31,8 +31,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
-import { NETWORK } from "@/lib/config";
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
+import { NETWORK, rpcUrl } from "@/lib/config";
 import { canonicalizeSuiAddress } from "@/lib/memwal";
 import { kvEnabled, kvClaimOnce } from "@/lib/kvStore";
 // Challenge format lives in a client-safe module (no `server-only`) so the
@@ -65,7 +65,7 @@ let cachedClient: SuiJsonRpcClient | null = null;
 function getVerifyClient(): SuiJsonRpcClient {
   if (!cachedClient) {
     cachedClient = new SuiJsonRpcClient({
-      url: getJsonRpcFullnodeUrl(verifyNetwork),
+      url: rpcUrl(verifyNetwork),
       network: verifyNetwork,
     });
   }

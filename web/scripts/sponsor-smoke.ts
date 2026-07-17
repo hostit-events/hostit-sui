@@ -22,7 +22,8 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { EnokiClient } from "@mysten/enoki";
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
+import { rpcUrl } from "../lib/config";
 import { Transaction } from "@mysten/sui/transactions";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
@@ -73,7 +74,7 @@ function loadCliKeypair(expectedAddress: string): Keypair {
 
 async function main() {
   const client = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl("testnet"),
+    url: rpcUrl("testnet"),
     network: "testnet",
   });
   const enoki = new EnokiClient({ apiKey: ENOKI_PRIVATE_API_KEY });

@@ -7,10 +7,10 @@
 export const dynamic = "force-dynamic";
 
 import { Transaction } from "@mysten/sui/transactions";
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import { normalizeSuiAddress } from "@mysten/sui/utils";
 import { emailHash, emailHashConfigured } from "@/lib/emailHash";
-import { EMAIL_REGISTRY_ID, target } from "@/lib/config";
+import { EMAIL_REGISTRY_ID, target, rpcUrl } from "@/lib/config";
 import { clientIpFromHeaders, rateLimitMemory } from "@/lib/rateLimit";
 import { verifyTurnstile, blockedByTurnstile } from "@/lib/turnstile";
 
@@ -25,7 +25,7 @@ const ZERO = "0x0000000000000000000000000000000000000000000000000000000000000000
 let cachedClient: SuiJsonRpcClient | null = null;
 function suiClient(): SuiJsonRpcClient {
   const net = NETWORK === "localnet" ? "testnet" : NETWORK;
-  if (!cachedClient) cachedClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(net), network: net });
+  if (!cachedClient) cachedClient = new SuiJsonRpcClient({ url: rpcUrl(net), network: net });
   return cachedClient;
 }
 

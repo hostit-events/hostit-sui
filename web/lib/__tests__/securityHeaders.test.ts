@@ -13,7 +13,10 @@ describe("Content-Security-Policy", () => {
 
   it("allows exactly the real runtime origins the app needs", () => {
     for (const o of [
-      "https://fullnode.testnet.sui.io",
+      // Testnet JSON-RPC (BlockVision by default — Mysten disabled JSON-RPC on the
+      // public testnet fullnode; NEXT_PUBLIC_SUI_RPC_URL overrides both this and
+      // the endpoint reads use, so they stay in lockstep).
+      "https://sui-testnet-endpoint.blockvision.org",
       "https://api.enoki.mystenlabs.com",
       "https://aggregator.walrus-testnet.walrus.space",
       "https://seal-aggregator-testnet.mystenlabs.com",

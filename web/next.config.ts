@@ -8,9 +8,22 @@ const isDev = process.env.NODE_ENV !== "production";
 // (zkLogin + sponsor), Iconify (runtime icon data), and Google (zkLogin
 // redirect). NOTE: api.groq.com is called ONLY server-side (app/api/*) and is
 // deliberately NOT listed here. Keep this list in sync if those origins change.
+// Testnet JSON-RPC origin the browser talks to. Mysten disabled JSON-RPC on the
+// public testnet fullnode (see lib/config.ts `rpcUrl`), so this is BlockVision by
+// default and follows NEXT_PUBLIC_SUI_RPC_URL when set — keeping CSP in lockstep
+// with the endpoint reads actually use, so an env swap never trips a CSP block.
+const TESTNET_RPC_ORIGIN = (() => {
+  const u = process.env.NEXT_PUBLIC_SUI_RPC_URL || "https://sui-testnet-endpoint.blockvision.org";
+  try {
+    return new URL(u).origin;
+  } catch {
+    return u;
+  }
+})();
+
 const CONNECT_SRC = [
   "'self'",
-  "https://fullnode.testnet.sui.io",
+  TESTNET_RPC_ORIGIN,
   "https://fullnode.mainnet.sui.io",
   "https://api.enoki.mystenlabs.com",
   "https://aggregator.walrus-testnet.walrus.space",

@@ -12,11 +12,36 @@
 // ids below (PACKAGE_ID, HUB_ID, TRANSFER_POLICY_ID, GOVERNANCE_REGISTRY_ID) via
 // scripts/roll-fresh-publish.mjs + a manual GOVERNANCE_REGISTRY_ID edit.
 
+import { getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
+
 export const NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK ?? "testnet") as
   | "testnet"
   | "mainnet"
   | "devnet"
   | "localnet";
+
+/**
+ * JSON-RPC endpoint per network. Mysten DISABLED JSON-RPC on the public testnet
+ * fullnode (every method 404s as of 2026-07 — host healthy, route gone) while
+ * migrating to gRPC/GraphQL; the mainnet fullnode still serves JSON-RPC. So
+ * testnet defaults to a provider that still serves suix_queryEvents with full
+ * event history (BlockVision). Override with NEXT_PUBLIC_SUI_RPC_URL (public, not
+ * a secret) to swap to a keyed endpoint on rate limits without a redeploy — the
+ * override applies to testnet only, so it can't accidentally point mainnet reads
+ * (SuiNS) at a testnet node. Proper long-term fix: migrate to the gRPC/GraphQL
+ * client. Keep next.config.ts `connect-src` in sync with the host chosen here.
+ */
+export function rpcUrl(
+  network: "testnet" | "mainnet" | "devnet" | "localnet",
+): string {
+  const net = network === "localnet" ? "testnet" : network;
+  if (net === "testnet")
+    return (
+      process.env.NEXT_PUBLIC_SUI_RPC_URL ||
+      "https://sui-testnet-endpoint.blockvision.org"
+    );
+  return getJsonRpcFullnodeUrl(net);
+}
 
 /** SuiVision explorer URL for a transaction digest (mainnet has no subdomain). */
 export function explorerTxUrl(digest: string): string {

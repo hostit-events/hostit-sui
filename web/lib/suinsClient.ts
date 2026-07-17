@@ -7,8 +7,8 @@
 // read-only client for reverse/forward resolution; names only resolve where a
 // name service exists (testnet/mainnet), not on localnet.
 
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
-import { NETWORK } from "./config";
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
+import { NETWORK, rpcUrl } from "./config";
 
 /** The network suiNS names are resolved against (part of every cache key). */
 export const SUINS_NETWORK = NETWORK;
@@ -27,7 +27,7 @@ let cached: SuiNSResolver | null = null;
 export function getSuiNSClient(): SuiNSResolver {
   if (!cached) {
     cached = new SuiJsonRpcClient({
-      url: getJsonRpcFullnodeUrl(SUINS_NETWORK),
+      url: rpcUrl(SUINS_NETWORK),
       network: SUINS_NETWORK,
     }) as unknown as SuiNSResolver;
   }

@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
 import { normalizeSuiAddress } from "@mysten/sui/utils";
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
+import { rpcUrl } from "@/lib/config";
 import { getKv, kvEnabled } from "@/lib/kvStore";
 import { rateLimitMemory, clientIpFromHeaders } from "@/lib/rateLimit";
 import { profilePointerMessage } from "@/lib/accountMessages";
@@ -23,7 +24,7 @@ const NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK ?? "testnet") as
 let cachedClient: SuiJsonRpcClient | null = null;
 function suiClient(): SuiJsonRpcClient {
   const net = NETWORK === "localnet" ? "testnet" : NETWORK;
-  if (!cachedClient) cachedClient = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(net), network: net });
+  if (!cachedClient) cachedClient = new SuiJsonRpcClient({ url: rpcUrl(net), network: net });
   return cachedClient;
 }
 

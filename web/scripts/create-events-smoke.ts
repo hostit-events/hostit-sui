@@ -21,7 +21,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
 import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
@@ -29,7 +29,7 @@ import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { createEventTx, createEventWithPriceTx } from "../lib/ticketing";
 import { putEventMetadata, type EventMetadata } from "../lib/metadata";
-import { SUI_COIN_TYPE, USDC_COIN_TYPE } from "../lib/config";
+import { SUI_COIN_TYPE, USDC_COIN_TYPE, rpcUrl } from "../lib/config";
 
 const SENDER =
   process.env.SMOKE_SENDER ??
@@ -179,7 +179,7 @@ async function main() {
   const limit = process.argv[2] ? Number(process.argv[2]) : SPECS.length;
   const specs = SPECS.slice(0, limit);
   const client = new SuiJsonRpcClient({
-    url: getJsonRpcFullnodeUrl("testnet"),
+    url: rpcUrl("testnet"),
     network: "testnet",
   });
   const kp = loadCliKeypair(SENDER);

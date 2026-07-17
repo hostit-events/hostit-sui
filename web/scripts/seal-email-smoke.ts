@@ -16,7 +16,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
 import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
@@ -33,7 +33,7 @@ import {
   approveOwnEmail,
   approveAttendeeEmail,
 } from "../lib/seal";
-import { PACKAGE_ID } from "../lib/config";
+import { PACKAGE_ID, rpcUrl } from "../lib/config";
 
 const SENDER = "0xc8567c14cbca1f54db22c4ba36e2e031bc782e29428ab08312e3fe3408d6c2d9";
 const HOUR = 3_600_000;
@@ -68,7 +68,7 @@ function createdId(res: { objectChanges?: unknown }, suffix: string): string | n
 }
 
 async function main() {
-  const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl("testnet"), network: "testnet" });
+  const client = new SuiJsonRpcClient({ url: rpcUrl("testnet"), network: "testnet" });
   const kp = loadCliKeypair(SENDER);
   const sign = async (m: Uint8Array) => {
     const { signature } = await kp.signPersonalMessage(m);

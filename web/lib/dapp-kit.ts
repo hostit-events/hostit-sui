@@ -2,8 +2,8 @@
 // load time during build (where `window` doesn't exist).
 
 import { createDAppKit } from "@mysten/dapp-kit-core";
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
-import { NETWORK } from "./config";
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
+import { NETWORK, rpcUrl } from "./config";
 
 type DAppKitInstance = ReturnType<typeof buildDAppKit>;
 
@@ -28,7 +28,7 @@ function buildDAppKit(
     networks: ["testnet", "mainnet", "devnet"] as const,
     createClient: (network) =>
       new SuiJsonRpcClient({
-        url: getJsonRpcFullnodeUrl(network),
+        url: rpcUrl(network),
         network,
       }),
     defaultNetwork: defaultNet,

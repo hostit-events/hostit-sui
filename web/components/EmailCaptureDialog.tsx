@@ -36,6 +36,24 @@ function promptedKey(addr: string) {
   return `hostit:emailPrompted:${addr}`;
 }
 
+// zkLogin reuses the Google sign-in id_token, which lives ~1h. Binding email a
+// while after sign-in sends an expired token, and the server rejects it ("Invalid
+// Google token" — GH#96 route). Cheap client-side `exp` pre-check so we show an
+// actionable message (email is optional — the user can Skip and link it later)
+// instead of the raw 401. The server verify stays authoritative.
+const EXPIRED_MSG =
+  "Your Google sign-in expired. Skip this — you can link your email later from Settings after signing in again.";
+
+function jwtExpired(jwt: string): boolean {
+  try {
+    const b64 = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "="))) as { exp?: number };
+    return typeof payload.exp === "number" && payload.exp * 1000 <= Date.now();
+  } catch {
+    return false; // unparseable → let the server be the judge
+  }
+}
+
 /** App-wide gate: opens the dialog once per connected address that has no email. */
 export function ProfileGate() {
   const account = useCurrentAccount();
@@ -120,11 +138,15 @@ export function EmailCaptureDialog({
     try {
       const jwt = session?.jwt;
       if (!jwt) throw new Error("No Google session — sign in again to link your email.");
+      if (jwtExpired(jwt)) throw new Error(EXPIRED_MSG);
       await bindGoogleEmail({ suiClient: client, address, jwt, sign, submitTx, baseProfile });
       setStep("done");
       onBound();
     } catch (e) {
-      setErr(humanizeError(e));
+      const msg = humanizeError(e);
+      // Server can still reject a token that expired between the pre-check and the
+      // request — map its raw 401 to the same actionable copy.
+      setErr(/invalid google token/i.test(msg) ? EXPIRED_MSG : msg);
     } finally {
       setBusy(false);
     }
