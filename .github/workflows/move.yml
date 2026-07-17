@@ -30,11 +30,11 @@ jobs:
       # --warnings-are-errors` + `sui move test` are green at this version.)
       SUI_VERSION: testnet-v1.73.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Cache Sui CLI
         id: cache-sui
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.local/bin/sui
           key: sui-${{ runner.os }}-${{ env.SUI_VERSION }}
@@ -58,7 +58,7 @@ jobs:
       - run: sui --version
 
       - name: Cache Move git deps (~/.move)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.move
           key: move-${{ runner.os }}-${{ hashFiles('Move.toml', 'Move.lock') }}

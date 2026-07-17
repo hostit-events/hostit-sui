@@ -28,23 +28,24 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Pin bun + Node so CI is reproducible (mirrors move.yml's pinned
       # SUI_VERSION). Bump these deliberately, in lockstep with the toolchain.
+      # node-version stays 24 to match the Vercel runtime (project nodeVersion 24.x).
       - name: Set up bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.18
+          bun-version: 1.3.14
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
       # Cache bun's global module store, keyed on the frozen lockfile.
       - name: Cache bun install (~/.bun/install/cache)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
